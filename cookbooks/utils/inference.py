@@ -10,7 +10,9 @@ def inference(model, processor, video_path, prompt, max_new_tokens=2048, total_p
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": [
                 {"type": "text", "text": prompt},
-                {"video": video_path, "total_pixels": total_pixels, "min_pixels": min_pixels},
+                {"video": video_path, 
+                "total_pixels": total_pixels, 
+                "min_pixels": min_pixels},
             ]
         },
     ]
