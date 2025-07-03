@@ -179,63 +179,103 @@ def create_image_grid(images, num_columns=8):
     return grid_image
 
 
-def display_frames_by_time(frames, timestamps, time_duration, num_columns=4):
+def display_frames_by_time(frames, timestamps, time_duration=None, frame_duration=None, num_columns=4):
     """
-    Display video frames within a specified time window in a grid.
+    Display video frames within a specified time window or frame range in a grid.
     
     Args:
         frames (np.ndarray): Array of video frames from get_video_frames
         timestamps (np.ndarray): Array of frame timestamps from get_video_frames
-        time_duration (str): Time range in format "MM:SS.ss - MM:SS.ss" (e.g., "00:15.00 - 00:20.00")
+        time_duration (str, optional): Time range in format "MM:SS.ss - MM:SS.ss" (e.g., "00:15.00 - 00:20.00")
+        frame_duration (str, optional): Frame range in format "start-end" (e.g., "28-35")
         num_columns (int): Number of columns in the grid (default: 4)
     
     Returns:
-        PIL.Image: Grid image containing frames from the specified time window
+        PIL.Image: Grid image containing frames from the specified time/frame window
+    
+    Note:
+        If both time_duration and frame_duration are provided, frame_duration takes priority.
+        Either time_duration or frame_duration must be provided.
     """
-    # Debug: Print shapes to understand the structure
-    print(f"timestamps shape: {timestamps.shape}")
-    print(f"timestamps[0] shape: {timestamps[0].shape if hasattr(timestamps[0], 'shape') else 'no shape'}")
-    print(f"timestamps[0]: {timestamps[0]}")
     
-    # Parse time duration
-    def parse_time(time_str):
-        """Convert MM:SS.ss format to seconds"""
-        parts = time_str.strip().split(':')
-        minutes = int(parts[0])
-        seconds = float(parts[1])
-        return minutes * 60 + seconds
+    if frame_duration is None and time_duration is None:
+        raise ValueError("Either time_duration or frame_duration must be provided")
     
-    # Extract start and end times
-    start_time_str, end_time_str = time_duration.split(' - ')
-    start_time = parse_time(start_time_str)
-    end_time = parse_time(end_time_str)
-    
-    # Handle both 1D and 2D timestamp arrays
-    if timestamps.ndim == 2:
-        # If timestamps is 2D, use the first timestamp of each frame
-        timestamps_for_filtering = timestamps[:, 0]
+    if frame_duration is not None:
+        # Parse frame duration (e.g., "28-35")
+        try:
+            start_frame_str, end_frame_str = frame_duration.split('-')
+            start_frame = int(start_frame_str.strip())
+            end_frame = int(end_frame_str.strip())
+        except ValueError:
+            raise ValueError("frame_duration must be in format 'start-end' (e.g., '28-35')")
+        
+        # Validate frame indices
+        total_frames = len(frames)
+        if start_frame < 0 or end_frame >= total_frames or start_frame > end_frame:
+            raise ValueError(f"Invalid frame range {frame_duration}. Available frames: 0-{total_frames-1}")
+        
+        # Filter frames based on indices
+        filtered_frames = frames[start_frame:end_frame+1]
+        
+        # Handle both 1D and 2D timestamp arrays for display info
+        if timestamps.ndim == 2:
+            timestamps_for_info = timestamps[:, 0]
+        else:
+            timestamps_for_info = timestamps
+        
+        filtered_timestamps = timestamps_for_info[start_frame:end_frame+1]
+        
+        print(f"Found {len(filtered_frames)} frames in frame range {frame_duration}")
+        print(f"Frame indices: {start_frame} - {end_frame}")
+        print(f"Corresponding timestamps: {filtered_timestamps[0]:.2f}s - {filtered_timestamps[-1]:.2f}s")
+        
     else:
-        timestamps_for_filtering = timestamps
-    
-    # Filter frames within the time window
-    mask = (timestamps_for_filtering >= start_time) & (timestamps_for_filtering <= end_time)
-    
-    # Use np.where to get indices, then index explicitly
-    valid_indices = np.where(mask)[0]
-    filtered_frames = frames[valid_indices]
-    filtered_timestamps = timestamps_for_filtering[valid_indices]
-    
-    if len(filtered_frames) == 0:
-        print(f"No frames found in time range {time_duration}")
-        return None
-    
-    print(f"Found {len(filtered_frames)} frames in time range {time_duration}")
-    print(f"Timestamps: {filtered_timestamps[0]:.2f}s - {filtered_timestamps[-1]:.2f}s")
+        # Original time-based filtering
+        # Debug: Print shapes to understand the structure
+        print(f"timestamps shape: {timestamps.shape}")
+        print(f"timestamps[0] shape: {timestamps[0].shape if hasattr(timestamps[0], 'shape') else 'no shape'}")
+        print(f"timestamps[0]: {timestamps[0]}")
+        
+        # Parse time duration
+        def parse_time(time_str):
+            """Convert MM:SS.ss format to seconds"""
+            parts = time_str.strip().split(':')
+            minutes = int(parts[0])
+            seconds = float(parts[1])
+            return minutes * 60 + seconds
+        
+        # Extract start and end times
+        start_time_str, end_time_str = time_duration.split(' - ')
+        start_time = parse_time(start_time_str)
+        end_time = parse_time(end_time_str)
+        
+        # Handle both 1D and 2D timestamp arrays
+        if timestamps.ndim == 2:
+            # If timestamps is 2D, use the first timestamp of each frame
+            timestamps_for_filtering = timestamps[:, 0]
+        else:
+            timestamps_for_filtering = timestamps
+        
+        # Filter frames within the time window
+        mask = (timestamps_for_filtering >= start_time) & (timestamps_for_filtering <= end_time)
+        
+        # Use np.where to get indices, then index explicitly
+        valid_indices = np.where(mask)[0]
+        filtered_frames = frames[valid_indices]
+        filtered_timestamps = timestamps_for_filtering[valid_indices]
+        
+        if len(filtered_frames) == 0:
+            print(f"No frames found in time range {time_duration}")
+            return None
+        
+        print(f"Found {len(filtered_frames)} frames in time range {time_duration}")
+        print(f"Timestamps: {filtered_timestamps[0]:.2f}s - {filtered_timestamps[-1]:.2f}s")
     
     # Create and display the image grid
+    if len(filtered_frames) > 4:
+        # Get 4 uniformly sampled frames
+        indices = np.linspace(0, len(filtered_frames) - 1, 4, dtype=int)
+        filtered_frames = filtered_frames[indices]
     grid_image = create_image_grid(filtered_frames, num_columns=num_columns)
-    
-    # Display the grid using IPython display
-    display(grid_image)
-    
-    # return grid_image
+    return grid_image
