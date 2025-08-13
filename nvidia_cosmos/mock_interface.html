@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NVIDIA Cosmos Video Search - Mock Interface</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 2fr 1fr;
+            gap: 30px;
+            padding: 30px;
+        }
+        
+        .sidebar {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 10px;
+            height: fit-content;
+        }
+        
+        .section-title {
+            font-size: 1.4rem;
+            color: #2c3e50;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 5px;
+        }
+        
+        .search-box {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+            margin-bottom: 15px;
+            transition: border-color 0.3s;
+        }
+        
+        .search-box:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4);
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(135deg, #95a5a6 0%, #7f8c8d 100%);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .stat-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .stat-label {
+            font-size: 0.9rem;
+            color: #7f8c8d;
+        }
+        
+        .main-panel {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 10px;
+        }
+        
+        .plot-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .video-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .video-card {
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
+            cursor: pointer;
+        }
+        
+        .video-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+        
+        .video-thumbnail {
+            width: 100%;
+            height: 120px;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            margin-bottom: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .video-thumbnail::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(45deg, 
+                rgba(255,255,255,0.1) 25%, 
+                transparent 25%, 
+                transparent 75%, 
+                rgba(255,255,255,0.1) 75%);
+            background-size: 20px 20px;
+        }
+        
+        .video-info {
+            text-align: center;
+        }
+        
+        .video-title {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+            font-size: 0.95rem;
+        }
+        
+        .video-score {
+            color: #27ae60;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+        
+        .preview-panel {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 10px;
+        }
+        
+        .preview-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .preview-thumbnail {
+            width: 100%;
+            height: 200px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3rem;
+            color: white;
+            margin-bottom: 15px;
+        }
+        
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .detail-label {
+            font-weight: 600;
+            color: #7f8c8d;
+        }
+        
+        .detail-value {
+            color: #2c3e50;
+            font-weight: 500;
+        }
+        
+        .search-results {
+            margin-top: 20px;
+        }
+        
+        .result-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .result-item:hover {
+            transform: translateX(5px);
+        }
+        
+        .result-rank {
+            font-weight: bold;
+            color: #3498db;
+            font-size: 1.1rem;
+        }
+        
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        
+        .alert-info {
+            background: #e3f2fd;
+            border: 1px solid #2196f3;
+            color: #1976d2;
+        }
+        
+        .alert-success {
+            background: #e8f5e8;
+            border: 1px solid #4caf50;
+            color: #2e7d32;
+        }
+        
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .video-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🔍 NVIDIA Cosmos Video Search</h1>
+            <p>Mock Interface - Interactive Demo Without CUDA Requirements</p>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Left Sidebar -->
+            <div class="sidebar">
+                <h3 class="section-title">🔍 Search Controls</h3>
+                
+                <!-- Text Search -->
+                <div>
+                    <input type="text" id="textQuery" class="search-box" 
+                           placeholder="Enter search query (e.g., 'car approaching cyclist')" 
+                           value="car approaching cyclist">
+                    <button class="btn" onclick="performTextSearch()">🔍 Search by Text</button>
+                </div>
+                
+                <!-- Video Search -->
+                <div style="margin-top: 20px;">
+                    <select id="videoSelect" class="search-box">
+                        <option value="">Select a video for similarity search...</option>
+                        <option value="car2cyclist_01.mp4">car2cyclist_01.mp4</option>
+                        <option value="car2pedestrian_02.mp4">car2pedestrian_02.mp4</option>
+                        <option value="car2car_03.mp4">car2car_03.mp4</option>
+                        <option value="traffic_intersection_04.mp4">traffic_intersection_04.mp4</option>
+                    </select>
+                    <button class="btn btn-secondary" onclick="performVideoSearch()">🎥 Find Similar Videos</button>
+                </div>
+                
+                <!-- Database Stats -->
+                <h3 class="section-title" style="margin-top: 30px;">📊 Database Stats</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-value">25</div>
+                        <div class="stat-label">Total Videos</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">7</div>
+                        <div class="stat-label">Categories</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">768</div>
+                        <div class="stat-label">Embedding Dim</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">Mock</div>
+                        <div class="stat-label">FAISS Backend</div>
+                    </div>
+                </div>
+                
+                <!-- Settings -->
+                <h3 class="section-title" style="margin-top: 30px;">⚙️ Settings</h3>
+                <div>
+                    <label>Top-K Results: <span id="topKValue">5</span></label>
+                    <input type="range" id="topK" min="1" max="15" value="5" 
+                           style="width: 100%; margin: 10px 0;"
+                           oninput="document.getElementById('topKValue').textContent = this.value">
+                </div>
+                <div style="margin-top: 15px;">
+                    <label>Similarity Threshold: <span id="thresholdValue">0.5</span></label>
+                    <input type="range" id="threshold" min="0" max="1" step="0.1" value="0.5" 
+                           style="width: 100%; margin: 10px 0;"
+                           oninput="document.getElementById('thresholdValue').textContent = this.value">
+                </div>
+            </div>
+            
+            <!-- Main Panel -->
+            <div class="main-panel">
+                <h3 class="section-title">📊 Interactive Similarity Visualization</h3>
+                
+                <!-- Plot Container -->
+                <div class="plot-container">
+                    <div id="similarityPlot" style="height: 400px;"></div>
+                </div>
+                
+                <!-- Search Results -->
+                <div id="searchResults" class="search-results">
+                    <div class="alert alert-info">
+                        👆 Use the search controls on the left to find videos, then explore the interactive plot above!
+                    </div>
+                </div>
+                
+                <!-- Video Grid -->
+                <div id="videoGrid" class="video-grid" style="display: none;">
+                    <!-- Video cards will be populated by JavaScript -->
+                </div>
+            </div>
+            
+            <!-- Right Sidebar -->
+            <div class="preview-panel">
+                <h3 class="section-title">🎬 Video Preview</h3>
+                
+                <div id="videoPreview" class="preview-card" style="display: none;">
+                    <div class="preview-thumbnail">
+                        🎥
+                    </div>
+                    
+                    <div id="videoDetails">
+                        <!-- Video details will be populated by JavaScript -->
+                    </div>
+                    
+                    <div style="margin-top: 20px;">
+                        <button class="btn" onclick="findSimilarToSelected()">🔍 Find Similar</button>
+                        <button class="btn btn-secondary" onclick="exportVideoInfo()">📥 Export Info</button>
+                    </div>
+                </div>
+                
+                <div id="previewPlaceholder" class="alert alert-info">
+                    📺 Select a video from the search results to preview it here!
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Mock data
+        const mockVideos = [
+            { id: 1, name: "car2cyclist_01.mp4", category: "car2cyclist", score: 0.95, duration: 3.2 },
+            { id: 2, name: "car2cyclist_02.mp4", category: "car2cyclist", score: 0.87, duration: 2.8 },
+            { id: 3, name: "car2pedestrian_01.mp4", category: "car2pedestrian", score: 0.73, duration: 4.1 },
+            { id: 4, name: "car2car_01.mp4", category: "car2car", score: 0.65, duration: 2.5 },
+            { id: 5, name: "traffic_intersection_01.mp4", category: "traffic", score: 0.58, duration: 5.0 },
+            { id: 6, name: "highway_merge_01.mp4", category: "highway", score: 0.52, duration: 3.7 },
+            { id: 7, name: "parking_lot_01.mp4", category: "parking", score: 0.45, duration: 2.1 }
+        ];
+        
+        let currentResults = [];
+        let selectedVideo = null;
+        
+        // Generate mock coordinates for plotting
+        function generateMockCoordinates(videos) {
+            return videos.map((video, i) => ({
+                ...video,
+                x: Math.random() * 10 - 5,
+                y: Math.random() * 10 - 5
+            }));
+        }
+        
+        // Create similarity plot
+        function createSimilarityPlot(videos) {
+            const data = [{
+                x: videos.map(v => v.x),
+                y: videos.map(v => v.y),
+                mode: 'markers',
+                type: 'scatter',
+                marker: {
+                    size: videos.map(v => v.score * 30 + 10),
+                    color: videos.map(v => v.score),
+                    colorscale: 'Viridis',
+                    showscale: true,
+                    colorbar: {title: "Similarity Score"}
+                },
+                text: videos.map(v => `${v.name}<br>Score: ${v.score}<br>Category: ${v.category}`),
+                hovertemplate: '<b>%{text}</b><extra></extra>'
+            }];
+            
+            const layout = {
+                title: 'Video Similarity Space (Mock t-SNE)',
+                xaxis: { title: 't-SNE Dimension 1' },
+                yaxis: { title: 't-SNE Dimension 2' },
+                hovermode: 'closest',
+                plot_bgcolor: '#f8f9fa',
+                paper_bgcolor: '#ffffff'
+            };
+            
+            Plotly.newPlot('similarityPlot', data, layout, {responsive: true});
+            
+            // Add click handler
+            document.getElementById('similarityPlot').on('plotly_click', function(data) {
+                const pointIndex = data.points[0].pointIndex;
+                selectVideo(videos[pointIndex]);
+            });
+        }
+        
+        // Perform text search
+        function performTextSearch() {
+            const query = document.getElementById('textQuery').value;
+            const topK = parseInt(document.getElementById('topK').value);
+            
+            if (!query.trim()) {
+                alert('Please enter a search query');
+                return;
+            }
+            
+            // Simulate search delay
+            showLoading();
+            
+            setTimeout(() => {
+                // Mock text search logic
+                let results = [...mockVideos];
+                
+                // Simple keyword matching
+                const queryWords = query.toLowerCase().split(' ');
+                results.forEach(video => {
+                    let score = 0.1;
+                    queryWords.forEach(word => {
+                        if (video.category.includes(word) || video.name.toLowerCase().includes(word)) {
+                            score += 0.3;
+                        }
+                    });
+                    video.score = Math.min(1.0, score + Math.random() * 0.2);
+                });
+                
+                // Sort by score and take top-K
+                results.sort((a, b) => b.score - a.score);
+                currentResults = results.slice(0, topK);
+                
+                displayResults(currentResults, `Text search: "${query}"`);
+                hideLoading();
+            }, 500);
+        }
+        
+        // Perform video search
+        function performVideoSearch() {
+            const selectedVideoName = document.getElementById('videoSelect').value;
+            const topK = parseInt(document.getElementById('topK').value);
+            
+            if (!selectedVideoName) {
+                alert('Please select a video');
+                return;
+            }
+            
+            showLoading();
+            
+            setTimeout(() => {
+                // Mock video search logic
+                const queryVideo = mockVideos.find(v => v.name === selectedVideoName);
+                let results = mockVideos.filter(v => v.id !== queryVideo.id);
+                
+                // Simulate similarity based on category
+                results.forEach(video => {
+                    if (video.category === queryVideo.category) {
+                        video.score = 0.7 + Math.random() * 0.25;
+                    } else {
+                        video.score = 0.2 + Math.random() * 0.4;
+                    }
+                });
+                
+                results.sort((a, b) => b.score - a.score);
+                currentResults = results.slice(0, topK);
+                
+                displayResults(currentResults, `Similar to: ${selectedVideoName}`);
+                hideLoading();
+            }, 800);
+        }
+        
+        // Display search results
+        function displayResults(videos, searchInfo) {
+            const resultsContainer = document.getElementById('searchResults');
+            const videoGrid = document.getElementById('videoGrid');
+            
+            // Add mock coordinates for plotting
+            const videosWithCoords = generateMockCoordinates(videos);
+            
+            // Create similarity plot
+            createSimilarityPlot(videosWithCoords);
+            
+            // Show success message
+            resultsContainer.innerHTML = `
+                <div class="alert alert-success">
+                    ✅ ${searchInfo} - Found ${videos.length} results
+                </div>
+            `;
+            
+            // Create video grid
+            videoGrid.innerHTML = '';
+            videos.forEach((video, index) => {
+                const videoCard = document.createElement('div');
+                videoCard.className = 'video-card';
+                videoCard.onclick = () => selectVideo(video);
+                
+                const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
+                const color = colors[index % colors.length];
+                
+                videoCard.innerHTML = `
+                    <div class="video-thumbnail" style="background: linear-gradient(45deg, ${color}, ${color}88);">
+                        🎬
+                    </div>
+                    <div class="video-info">
+                        <div class="video-title">${video.name}</div>
+                        <div class="video-score">Score: ${video.score.toFixed(3)}</div>
+                        <div style="font-size: 0.8rem; color: #7f8c8d; margin-top: 5px;">
+                            ${video.category} • ${video.duration}s
+                        </div>
+                    </div>
+                `;
+                
+                videoGrid.appendChild(videoCard);
+            });
+            
+            videoGrid.style.display = 'grid';
+            
+            // Auto-select first video
+            if (videos.length > 0) {
+                selectVideo(videos[0]);
+            }
+        }
+        
+        // Select a video for preview
+        function selectVideo(video) {
+            selectedVideo = video;
+            
+            const previewContainer = document.getElementById('videoPreview');
+            const placeholderContainer = document.getElementById('previewPlaceholder');
+            const detailsContainer = document.getElementById('videoDetails');
+            
+            // Hide placeholder and show preview
+            placeholderContainer.style.display = 'none';
+            previewContainer.style.display = 'block';
+            
+            // Update video details
+            detailsContainer.innerHTML = `
+                <h4 style="color: #2c3e50; margin-bottom: 15px;">${video.name}</h4>
+                
+                <div class="detail-row">
+                    <span class="detail-label">Similarity Score:</span>
+                    <span class="detail-value">${video.score.toFixed(3)}</span>
+                </div>
+                
+                <div class="detail-row">
+                    <span class="detail-label">Category:</span>
+                    <span class="detail-value">${video.category}</span>
+                </div>
+                
+                <div class="detail-row">
+                    <span class="detail-label">Duration:</span>
+                    <span class="detail-value">${video.duration}s</span>
+                </div>
+                
+                <div class="detail-row">
+                    <span class="detail-label">Resolution:</span>
+                    <span class="detail-value">1080p</span>
+                </div>
+                
+                <div class="detail-row">
+                    <span class="detail-label">File Size:</span>
+                    <span class="detail-value">${(Math.random() * 40 + 5).toFixed(1)}MB</span>
+                </div>
+            `;
+            
+            // Update plot selection (highlight selected point)
+            const plotDiv = document.getElementById('similarityPlot');
+            if (plotDiv.data) {
+                const selectedIndex = currentResults.findIndex(v => v.id === video.id);
+                if (selectedIndex >= 0) {
+                    // Add highlight trace
+                    const highlightTrace = {
+                        x: [currentResults[selectedIndex].x],
+                        y: [currentResults[selectedIndex].y],
+                        mode: 'markers',
+                        type: 'scatter',
+                        marker: {
+                            size: 25,
+                            color: 'red',
+                            symbol: 'star',
+                            line: { width: 2, color: 'darkred' }
+                        },
+                        name: 'Selected',
+                        showlegend: false
+                    };
+                    
+                    Plotly.addTraces('similarityPlot', highlightTrace);
+                }
+            }
+        }
+        
+        // Find videos similar to selected video
+        function findSimilarToSelected() {
+            if (!selectedVideo) {
+                alert('Please select a video first');
+                return;
+            }
+            
+            document.getElementById('videoSelect').value = selectedVideo.name;
+            performVideoSearch();
+        }
+        
+        // Export video information
+        function exportVideoInfo() {
+            if (!selectedVideo) {
+                alert('Please select a video first');
+                return;
+            }
+            
+            const exportData = {
+                video_info: selectedVideo,
+                export_timestamp: new Date().toISOString(),
+                session_data: {
+                    current_results: currentResults,
+                    search_settings: {
+                        top_k: document.getElementById('topK').value,
+                        threshold: document.getElementById('threshold').value
+                    }
+                }
+            };
+            
+            const dataStr = JSON.stringify(exportData, null, 2);
+            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(dataBlob);
+            link.download = `video_info_${selectedVideo.name}.json`;
+            link.click();
+            
+            // Show success message
+            alert(`Video information exported for: ${selectedVideo.name}`);
+        }
+        
+        // Loading state management
+        function showLoading() {
+            document.getElementById('searchResults').innerHTML = `
+                <div class="alert alert-info">
+                    🔄 Searching... Please wait
+                </div>
+            `;
+        }
+        
+        function hideLoading() {
+            // Loading will be hidden when results are displayed
+        }
+        
+        // Initialize the interface
+        document.addEventListener('DOMContentLoaded', function() {
+            // Create initial empty plot
+            const layout = {
+                title: 'Video Similarity Space - Perform a search to see results',
+                xaxis: { title: 't-SNE Dimension 1' },
+                yaxis: { title: 't-SNE Dimension 2' },
+                plot_bgcolor: '#f8f9fa',
+                paper_bgcolor: '#ffffff'
+            };
+            
+            Plotly.newPlot('similarityPlot', [], layout, {responsive: true});
+            
+            // Add enter key support for text search
+            document.getElementById('textQuery').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    performTextSearch();
+                }
+            });
+        });
+    </script>
+</body>
+</html>

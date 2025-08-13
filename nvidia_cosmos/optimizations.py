@@ -14,6 +14,7 @@ import pandas as pd
 
 from base import DatabaseBackend, SearchStrategy
 from config import VideoRetrievalConfig
+from typing import Union
 
 logger = logging.getLogger(__name__)
 
