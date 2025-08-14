@@ -7,7 +7,7 @@ import numpy as np
 try:
     import decord
     DECORD_AVAILABLE = True
-except ImportError:
+except (ImportError, RuntimeError):
     DECORD_AVAILABLE = False
     print("Warning: decord not available. Video processing will be disabled.")
 from transformers import AutoProcessor, AutoModel

@@ -388,3 +388,50 @@ class OptimizedVideoSearchEngine:
         })
         
         return stats
+
+    def get_database_info(self) -> Dict[str, Any]:
+        """Get database information in the format expected by main.py."""
+        try:
+            # Get basic statistics
+            stats = self.get_statistics()
+            
+            # Get video names from metadata
+            video_names = []
+            if hasattr(self.database, 'metadata') and self.database.metadata:
+                video_names = [meta.get('video_name', '') for meta in self.database.metadata]
+            
+            # Calculate database size
+            database_size_mb = 0
+            if hasattr(self.database, 'embedding_matrix') and self.database.embedding_matrix is not None:
+                # Estimate size based on embedding matrix + metadata
+                matrix_size = self.database.embedding_matrix.nbytes / (1024 * 1024)  # MB
+                metadata_size = len(str(self.database.metadata)) / (1024 * 1024)  # Rough estimate
+                database_size_mb = matrix_size + metadata_size
+            
+            # Format the response as expected by main.py
+            info = {
+                'num_videos': stats.get('num_videos', 0),
+                'embedding_dim': stats.get('embedding_dim', 0),
+                'database_size_mb': database_size_mb,
+                'video_names': video_names,
+                'version': '2.0',  # Database version
+                'search_backend': stats.get('search_backend', 'Unknown'),
+                'cache_size': stats.get('cache_size', 0),
+                'using_gpu': stats.get('using_gpu', False)
+            }
+            
+            return info
+            
+        except Exception as e:
+            # Return empty info if database not loaded
+            return {
+                'num_videos': 0,
+                'embedding_dim': 0,
+                'database_size_mb': 0,
+                'video_names': [],
+                'version': '2.0',
+                'search_backend': 'Unknown',
+                'cache_size': 0,
+                'using_gpu': False,
+                'error': str(e)
+            }
