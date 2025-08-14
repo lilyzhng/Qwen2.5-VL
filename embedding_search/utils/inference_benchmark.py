@@ -220,7 +220,7 @@ class InferenceBenchmark:
         # Run inference
         start_time = time.time()
         try:
-            embeddings = self.embedder.extract_embeddings(str(video_path))
+            embeddings = self.embedder.extract_video_embedding(Path(video_path))
             
             # Ensure GPU operations are complete
             if torch.cuda.is_available():

@@ -97,12 +97,37 @@ class CosmosVideoEmbedder(EmbeddingModel):
         self.config = config or VideoRetrievalConfig()
         self.video_processor = VideoFrameProcessor(self.config)
         
-        # Set device
+        # Set device and determine appropriate dtype
         self.device = self.config.device if torch.cuda.is_available() else "cpu"
         if self.device != self.config.device:
             logger.warning(f"CUDA not available, using CPU instead of {self.config.device}")
         
-        logger.info(f"Initializing CosmosVideoEmbedder on {self.device}")
+        # Determine the best dtype for the device
+        if self.device == "cuda":
+            # Check if bfloat16 is supported on this GPU
+            try:
+                # Test if bfloat16 operations work
+                test_tensor = torch.tensor([1.0], dtype=torch.bfloat16, device=self.device)
+                _ = test_tensor + test_tensor  # Simple operation test
+                self.dtype = torch.bfloat16
+                logger.info("Using bfloat16 precision on CUDA")
+            except (RuntimeError, TypeError):
+                # Fallback to float16 if bfloat16 is not supported
+                try:
+                    test_tensor = torch.tensor([1.0], dtype=torch.float16, device=self.device)
+                    _ = test_tensor + test_tensor
+                    self.dtype = torch.float16
+                    logger.info("Using float16 precision on CUDA (bfloat16 not supported)")
+                except (RuntimeError, TypeError):
+                    # Fallback to float32 if neither works
+                    self.dtype = torch.float32
+                    logger.info("Using float32 precision on CUDA (float16 not supported)")
+        else:
+            # CPU typically doesn't support bfloat16 well
+            self.dtype = torch.float32
+            logger.info("Using float32 precision on CPU")
+        
+        logger.info(f"Initializing CosmosVideoEmbedder on {self.device} with dtype {self.dtype}")
         
         # Load model and preprocessor
         try:
@@ -110,7 +135,7 @@ class CosmosVideoEmbedder(EmbeddingModel):
             self.model = AutoModel.from_pretrained(
                 self.config.model_name, 
                 trust_remote_code=True
-            ).to(self.device, dtype=torch.bfloat16 if self.device == "cuda" else torch.float32)
+            ).to(self.device, dtype=self.dtype)
             
             # Set model to evaluation mode
             self.model.eval()
@@ -138,7 +163,7 @@ class CosmosVideoEmbedder(EmbeddingModel):
             dummy_batch = np.transpose(np.expand_dims(dummy_frames, 0), (0, 1, 4, 2, 3))
             
             with torch.no_grad():
-                inputs = self.preprocess(videos=dummy_batch).to(self.device)
+                inputs = self.preprocess(videos=dummy_batch).to(self.device, dtype=self.dtype)
                 outputs = self.model.get_video_embeddings(**inputs)
                 self._embedding_dim = outputs.visual_proj.shape[-1]
         
@@ -166,7 +191,7 @@ class CosmosVideoEmbedder(EmbeddingModel):
             with torch.no_grad():
                 video_inputs = self.preprocess(videos=batch).to(
                     self.device, 
-                    dtype=torch.bfloat16 if self.device == "cuda" else torch.float32
+                    dtype=self.dtype
                 )
                 video_out = self.model.get_video_embeddings(**video_inputs)
                 
@@ -200,7 +225,7 @@ class CosmosVideoEmbedder(EmbeddingModel):
             with torch.no_grad():
                 text_inputs = self.preprocess(text=[text]).to(
                     self.device,
-                    dtype=torch.bfloat16 if self.device == "cuda" else torch.float32
+                    dtype=self.dtype
                 )
                 text_out = self.model.get_text_embeddings(**text_inputs)
                 
@@ -274,7 +299,7 @@ class CosmosVideoEmbedder(EmbeddingModel):
                     with torch.no_grad():
                         inputs = self.preprocess(videos=batch_tensor).to(
                             self.device,
-                            dtype=torch.bfloat16 if self.device == "cuda" else torch.float32
+                            dtype=self.dtype
                         )
                         outputs = self.model.get_video_embeddings(**inputs)
                     
