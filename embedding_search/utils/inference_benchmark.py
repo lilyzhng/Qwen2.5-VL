@@ -399,9 +399,18 @@ class InferenceBenchmark:
             print(f"   Range: {summary['min_inference_time_seconds']:.3f}s - {summary['max_inference_time_seconds']:.3f}s")
             print(f"   Std Dev: {summary['std_inference_time_seconds']:.3f}s")
             
-            print(f"\n🎮 GPU VRAM USAGE:")
-            print(f"   Peak VRAM: {summary['max_gpu_vram_mb']:.1f} MB ({summary['max_gpu_vram_mb']/1024:.2f} GB)")
-            print(f"   Avg VRAM: {summary['avg_gpu_vram_mb']:.1f} MB ({summary['avg_gpu_vram_mb']/1024:.2f} GB)")
+            # GPU info with context
+            sys_info = results['system_info']
+            if sys_info['cuda_available']:
+                total_vram_gb = sys_info['gpu_memory_gb']
+                peak_used_gb = summary['max_gpu_vram_mb'] / 1024
+                vram_utilization = (peak_used_gb / total_vram_gb) * 100
+                
+                print(f"\n🎮 GPU VRAM USAGE:")
+                print(f"   Peak VRAM: {summary['max_gpu_vram_mb']:.1f} MB ({peak_used_gb:.2f} GB)")
+                print(f"   Total VRAM: {total_vram_gb:.1f} GB")
+                print(f"   VRAM Utilization: {vram_utilization:.1f}% of total")
+                print(f"   Available: {total_vram_gb - peak_used_gb:.1f} GB")
             
             print(f"\n⚡ GPU UTILIZATION:")
             print(f"   Peak Usage: {summary['max_gpu_utilization_percent']:.1f}%")
