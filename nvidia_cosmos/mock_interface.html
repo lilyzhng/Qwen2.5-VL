@@ -48,7 +48,7 @@
         
         .main-content {
             display: grid;
-            grid-template-columns: 1fr 2fr 1fr;
+            grid-template-columns: 1fr 2fr;
             gap: 30px;
             padding: 30px;
         }
@@ -144,6 +144,290 @@
             border-radius: 10px;
             margin-bottom: 20px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .top-k-section {
+            margin-top: 20px;
+        }
+        
+        .top-k-container {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 25px;
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        
+        .featured-video {
+            transition: all 0.3s ease;
+        }
+        
+        .featured-video:hover {
+            transform: translateY(-2px);
+        }
+        
+        .featured-thumbnail {
+            width: 100%;
+            height: 300px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 4rem;
+            color: white;
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .featured-thumbnail::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(45deg, 
+                rgba(255,255,255,0.1) 25%, 
+                transparent 25%, 
+                transparent 75%, 
+                rgba(255,255,255,0.1) 75%);
+            background-size: 30px 30px;
+        }
+        
+        .featured-info {
+            text-align: center;
+        }
+        
+        .featured-title {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        
+        .featured-score {
+            font-size: 1.4rem;
+            color: #27ae60;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        
+        .featured-details {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #ecf0f1;
+        }
+        
+        .featured-detail {
+            text-align: center;
+        }
+        
+        .featured-detail-label {
+            font-size: 0.9rem;
+            color: #7f8c8d;
+            margin-bottom: 5px;
+        }
+        
+        .featured-detail-value {
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .top-k-column {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .top-k-column::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .top-k-column::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+        
+        .top-k-column::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 3px;
+        }
+        
+        .top-k-column::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        
+        .video-row {
+            display: flex;
+            gap: 15px;
+            overflow-x: auto;
+            padding: 15px 0;
+            margin-top: 20px;
+        }
+        
+        .video-row::-webkit-scrollbar {
+            height: 8px;
+        }
+        
+        .video-row::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        
+        .video-row::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        
+        .video-row::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        
+        .video-card-small {
+            min-width: 180px;
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
+            cursor: pointer;
+        }
+        
+        .video-card-small:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+        }
+        
+        .video-card-small.selected {
+            border: 3px solid #3498db;
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(52, 152, 219, 0.3);
+        }
+        
+        .video-card-column {
+            background: white;
+            border-radius: 8px;
+            padding: 12px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
+            cursor: pointer;
+            border: 2px solid transparent;
+        }
+        
+        .video-card-column:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+        }
+        
+        .video-card-column.selected {
+            border: 2px solid #3498db;
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.3);
+        }
+        
+        .video-thumbnail-column {
+            width: 100%;
+            height: 80px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            margin-bottom: 8px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .video-thumbnail-column::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(45deg, 
+                rgba(255,255,255,0.1) 25%, 
+                transparent 25%, 
+                transparent 75%, 
+                rgba(255,255,255,0.1) 75%);
+            background-size: 12px 12px;
+        }
+        
+        .video-info-column {
+            text-align: center;
+        }
+        
+        .video-title-column {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 4px;
+            font-size: 0.8rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .video-score-column {
+            color: #27ae60;
+            font-weight: bold;
+            font-size: 0.75rem;
+        }
+        
+        .video-thumbnail-small {
+            width: 100%;
+            height: 100px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .video-thumbnail-small::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(45deg, 
+                rgba(255,255,255,0.1) 25%, 
+                transparent 25%, 
+                transparent 75%, 
+                rgba(255,255,255,0.1) 75%);
+            background-size: 15px 15px;
+        }
+        
+        .video-info-small {
+            text-align: center;
+        }
+        
+        .video-title-small {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .video-score-small {
+            color: #27ae60;
+            font-weight: bold;
+            font-size: 0.85rem;
         }
         
         .video-grid {
@@ -311,6 +595,40 @@
             .video-grid {
                 grid-template-columns: 1fr;
             }
+            
+            .top-k-container {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .top-k-column {
+                max-height: 400px;
+                flex-direction: row;
+                overflow-x: auto;
+                overflow-y: hidden;
+            }
+            
+            .video-card-column {
+                min-width: 140px;
+            }
+            
+            .featured-thumbnail {
+                height: 200px;
+                font-size: 3rem;
+            }
+            
+            .featured-title {
+                font-size: 1.4rem;
+            }
+            
+            .featured-details {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .video-card-small {
+                min-width: 150px;
+            }
         }
     </style>
 </head>
@@ -326,10 +644,11 @@
         <div class="main-content">
             <!-- Left Sidebar -->
             <div class="sidebar">
-                <h3 class="section-title">🔍 Search Controls</h3>
+                <h3 class="section-title">🔍 Search & Settings</h3>
                 
                 <!-- Text Search -->
-                <div>
+                <div style="margin-bottom: 20px;">
+                    <label>Text Query:</label>
                     <input type="text" id="textQuery" class="search-box" 
                            placeholder="Enter search query (e.g., 'car approaching cyclist')" 
                            value="car approaching cyclist">
@@ -337,41 +656,37 @@
                 </div>
                 
                 <!-- Video Search -->
-                <div style="margin-top: 20px;">
+                <div style="margin-bottom: 20px;">
+                    <label>Video Query:</label>
                     <select id="videoSelect" class="search-box">
                         <option value="">Select a video for similarity search...</option>
                         <option value="car2cyclist_01.mp4">car2cyclist_01.mp4</option>
-                        <option value="car2pedestrian_02.mp4">car2pedestrian_02.mp4</option>
-                        <option value="car2car_03.mp4">car2car_03.mp4</option>
-                        <option value="traffic_intersection_04.mp4">traffic_intersection_04.mp4</option>
+                        <option value="car2cyclist_02.mp4">car2cyclist_02.mp4</option>
+                        <option value="car2pedestrian_01.mp4">car2pedestrian_01.mp4</option>
+                        <option value="car2car_01.mp4">car2car_01.mp4</option>
+                        <option value="traffic_intersection_01.mp4">traffic_intersection_01.mp4</option>
+                        <option value="highway_merge_01.mp4">highway_merge_01.mp4</option>
+                        <option value="parking_lot_01.mp4">parking_lot_01.mp4</option>
                     </select>
                     <button class="btn btn-secondary" onclick="performVideoSearch()">🎥 Find Similar Videos</button>
                 </div>
                 
-                <!-- Database Stats -->
-                <h3 class="section-title" style="margin-top: 30px;">📊 Database Stats</h3>
-                <div class="stats-grid">
-                    <div class="stat-item">
-                        <div class="stat-value">25</div>
-                        <div class="stat-label">Total Videos</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value">7</div>
-                        <div class="stat-label">Categories</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value">768</div>
-                        <div class="stat-label">Embedding Dim</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value">Mock</div>
-                        <div class="stat-label">FAISS Backend</div>
-                    </div>
+                <!-- Search Settings -->
+                <div style="margin-bottom: 20px;">
+                    <label>Top-K Results: <span id="topKValue">5</span></label>
+                    <input type="range" id="topK" min="1" max="15" value="5" 
+                           style="width: 100%; margin: 10px 0;"
+                           oninput="updateTopKValue(this.value)">
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <label>Similarity Threshold: <span id="thresholdValue">0.5</span></label>
+                    <input type="range" id="threshold" min="0" max="1" step="0.1" value="0.5" 
+                           style="width: 100%; margin: 10px 0;"
+                           oninput="document.getElementById('thresholdValue').textContent = this.value">
                 </div>
                 
-                <!-- Visualization Settings -->
-                <h3 class="section-title" style="margin-top: 30px;">📊 Visualization</h3>
-                <div>
+                <!-- Visualization Method -->
+                <div style="margin-bottom: 20px;">
                     <label>Visualization Method:</label>
                     <select id="vizMethod" class="search-box" onchange="updateVisualizationMethod()">
                         <option value="umap">🌟 UMAP (Recommended)</option>
@@ -383,8 +698,8 @@
                     </select>
                 </div>
                 
-                <!-- Advanced Options -->
-                <div id="advancedOptions" style="margin-top: 15px;">
+                <!-- Advanced Visualization Options -->
+                <div id="advancedOptions" style="margin-bottom: 20px;">
                     <div id="umapOptions" style="display: block;">
                         <label>UMAP Neighbors: <span id="neighborsValue">15</span></label>
                         <input type="range" id="neighbors" min="5" max="50" value="15" 
@@ -411,19 +726,25 @@
                     </div>
                 </div>
                 
-                <!-- Search Settings -->
-                <h3 class="section-title" style="margin-top: 30px;">⚙️ Search Settings</h3>
-                <div>
-                    <label>Top-K Results: <span id="topKValue">5</span></label>
-                    <input type="range" id="topK" min="1" max="15" value="5" 
-                           style="width: 100%; margin: 10px 0;"
-                           oninput="document.getElementById('topKValue').textContent = this.value">
-                </div>
-                <div style="margin-top: 15px;">
-                    <label>Similarity Threshold: <span id="thresholdValue">0.5</span></label>
-                    <input type="range" id="threshold" min="0" max="1" step="0.1" value="0.5" 
-                           style="width: 100%; margin: 10px 0;"
-                           oninput="document.getElementById('thresholdValue').textContent = this.value">
+                <!-- Database Stats -->
+                <h3 class="section-title" style="margin-top: 30px;">📊 Database Stats</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-value">25</div>
+                        <div class="stat-label">Total Videos</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">7</div>
+                        <div class="stat-label">Categories</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">768</div>
+                        <div class="stat-label">Embedding Dim</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">Mock</div>
+                        <div class="stat-label">FAISS Backend</div>
+                    </div>
                 </div>
             </div>
             
@@ -431,10 +752,7 @@
             <div class="main-panel">
                 <h3 class="section-title">📊 Advanced Embedding Visualization</h3>
                 
-                <!-- Method Info Banner -->
-                <div id="methodInfo" class="alert alert-info" style="margin-bottom: 20px;">
-                    🌟 <strong>UMAP:</strong> Best balance of speed and quality. Preserves both local and global structure better than t-SNE.
-                </div>
+
                 
                 <!-- Visualization Tabs -->
                 <div style="margin-bottom: 20px;">
@@ -450,15 +768,7 @@
                     <div id="similarityPlot" style="height: 500px;"></div>
                 </div>
                 
-                <!-- Performance Stats -->
-                <div id="performanceStats" class="alert" style="background: #f8f9fa; border: 1px solid #dee2e6; margin-top: 15px;">
-                    <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 20px;">
-                        <div><strong>Computation Time:</strong> <span id="computeTime">~0.12s</span></div>
-                        <div><strong>Global Structure:</strong> <span id="globalScore">⭐⭐⭐⭐⭐</span></div>
-                        <div><strong>Reproducibility:</strong> <span id="reproducibilityScore">⭐⭐⭐⭐</span></div>
-                        <div><strong>Method:</strong> <span id="currentMethod">UMAP</span></div>
-                    </div>
-                </div>
+
                 
                 <!-- Search Results -->
                 <div id="searchResults" class="search-results">
@@ -467,37 +777,47 @@
                     </div>
                 </div>
                 
-                <!-- Video Grid -->
-                <div id="videoGrid" class="video-grid" style="display: none;">
-                    <!-- Video cards will be populated by JavaScript -->
-                </div>
-            </div>
-            
-            <!-- Right Sidebar -->
-            <div class="preview-panel">
-                <h3 class="section-title">🎬 Video Preview</h3>
-                
-                <div id="videoPreview" class="preview-card" style="display: none;">
-                    <div class="preview-thumbnail">
+                                <!-- Top K Results Section -->
+                <div id="topKSection" class="top-k-section" style="display: none;">
+                    <h3 class="section-title">📊 Top K Results</h3>
+                    
+                    <div class="top-k-container">
+                        <!-- Featured Video (Left Side) -->
+                        <div id="featuredVideo" class="featured-video">
+                            <div id="featuredThumbnail" class="featured-thumbnail">
                         🎥
                     </div>
                     
-                    <div id="videoDetails">
-                        <!-- Video details will be populated by JavaScript -->
-                    </div>
-                    
-                    <div style="margin-top: 20px;">
-                        <button class="btn" onclick="findSimilarToSelected()">🔍 Find Similar</button>
-                        <button class="btn btn-secondary" onclick="exportVideoInfo()">📥 Export Info</button>
-                        <button class="btn btn-secondary" onclick="showContrastiveView()" style="margin-top: 10px; width: 100%;">🎯 Contrastive View</button>
+                            <div id="featuredInfo" class="featured-info">
+                                <div id="featuredTitle" class="featured-title">Video Title</div>
+                                <div id="featuredScore" class="featured-score">Score: 0.000</div>
+                                
+                                <div class="featured-details">
+                                    <div class="featured-detail">
+                                        <div class="featured-detail-label">Category</div>
+                                        <div id="featuredCategory" class="featured-detail-value">-</div>
+                                    </div>
+                                    <div class="featured-detail">
+                                        <div class="featured-detail-label">Duration</div>
+                                        <div id="featuredDuration" class="featured-detail-value">-</div>
+                                    </div>
+                                    <div class="featured-detail">
+                                        <div class="featured-detail-label">File Size</div>
+                                        <div id="featuredSize" class="featured-detail-value">-</div>
+                                    </div>
+                                </div>
                     </div>
                 </div>
                 
-                <div id="previewPlaceholder" class="alert alert-info">
-                    📺 Select a video from the search results to preview it here!
+                        <!-- Top K Videos Column (Right Side) -->
+                        <div>
+                            <h4 id="topKColumnTitle" style="margin-bottom: 15px; color: #2c3e50;">Top 5 Results</h4>
+                            <div id="topKColumn" class="top-k-column">
+                                <!-- Video cards will be populated by JavaScript -->
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                
-
             </div>
         </div>
     </div>
@@ -516,6 +836,9 @@
         
         let currentResults = [];
         let selectedVideo = null;
+        let featuredVideo = null;
+        let queryVector = null;
+        let currentSearchType = null; // 'text' or 'video'
         let currentVizMethod = 'umap';
         let currentTab = '2d';
         
@@ -557,13 +880,13 @@
                 reproducibility: '⭐⭐⭐⭐⭐',
                 generateCoords: (videos) => {
                     // Simulate PCA linear separation
-                    return videos.map((video, i) => ({
-                        ...video,
+            return videos.map((video, i) => ({
+                ...video,
                         x: i * 0.5 + Math.random() * 0.3,
                         y: video.score * 4 + Math.random() * 0.5,
                         z: (i % 3) * 2 + Math.random() * 0.5
-                    }));
-                }
+            }));
+        }
             },
             trimap: {
                 name: 'TriMAP',
@@ -623,6 +946,9 @@
         // Create 2D scatter plot
         function create2DPlot(videos) {
             const config = methodConfigs[currentVizMethod];
+            const topK = parseInt(document.getElementById('topK').value);
+            
+            // Main data trace for all videos
             const data = [{
                 x: videos.map(v => v.x),
                 y: videos.map(v => v.y),
@@ -645,8 +971,47 @@
                     line: { width: 2, color: 'white' }
                 },
                 text: videos.map(v => `${v.name}<br>Score: ${v.score.toFixed(3)}<br>Category: ${v.category}<br>Duration: ${v.duration}s`),
-                hovertemplate: '<b>%{text}</b><extra></extra>'
+                hovertemplate: '<b>%{text}</b><extra></extra>',
+                name: 'Videos'
             }];
+            
+            // Add query vector if exists
+            if (queryVector) {
+                data.push({
+                    x: [queryVector.x],
+                    y: [queryVector.y],
+                    mode: 'markers',
+                    type: 'scatter',
+                    marker: {
+                        size: 30,
+                        color: queryVector.type === 'text' ? '#FF4444' : '#4444FF',
+                        symbol: queryVector.type === 'text' ? 'diamond' : 'star',
+                        line: { width: 3, color: 'white' }
+                    },
+                    text: [`Query: ${queryVector.content}`],
+                    hovertemplate: '<b>%{text}</b><extra></extra>',
+                    name: queryVector.type === 'text' ? 'Text Query' : 'Video Query'
+                });
+            }
+            
+            // Highlight top K results
+            if (videos.length > 0) {
+                const topKVideos = videos.slice(0, topK);
+                data.push({
+                    x: topKVideos.map(v => v.x),
+                    y: topKVideos.map(v => v.y),
+                    mode: 'markers',
+                    type: 'scatter',
+                    marker: {
+                        size: 35,
+                        color: 'rgba(0,0,0,0)',
+                        line: { width: 3, color: '#00FF00' }
+                    },
+                    text: topKVideos.map(v => `Top ${topKVideos.indexOf(v) + 1}: ${v.name}`),
+                    hovertemplate: '<b>%{text}</b><extra></extra>',
+                    name: `Top ${topK} Results`
+                });
+            }
             
             const layout = {
                 title: `Video Embedding Space - ${config.name} Projection`,
@@ -664,8 +1029,8 @@
             plotDiv.removeAllListeners('plotly_click'); // Remove existing listeners
             plotDiv.on('plotly_click', function(data) {
                 const pointIndex = data.points[0].pointIndex;
-                if (currentResults && currentResults[pointIndex]) {
-                    selectVideo(currentResults[pointIndex]);
+                if (data.points[0].data.name === 'Videos' && currentResults && currentResults[pointIndex]) {
+                    setFeaturedVideo(currentResults[pointIndex]);
                 }
             });
         }
@@ -673,6 +1038,9 @@
         // Create 3D scatter plot
         function create3DPlot(videos) {
             const config = methodConfigs[currentVizMethod];
+            const topK = parseInt(document.getElementById('topK').value);
+            
+            // Main data trace for all videos
             const data = [{
                 x: videos.map(v => v.x),
                 y: videos.map(v => v.y),
@@ -688,8 +1056,49 @@
                     opacity: 0.8
                 },
                 text: videos.map(v => `${v.name}<br>Score: ${v.score.toFixed(3)}<br>Category: ${v.category}`),
-                hovertemplate: '<b>%{text}</b><extra></extra>'
+                hovertemplate: '<b>%{text}</b><extra></extra>',
+                name: 'Videos'
             }];
+            
+            // Add query vector if exists
+            if (queryVector) {
+                data.push({
+                    x: [queryVector.x],
+                    y: [queryVector.y],
+                    z: [queryVector.z],
+                    mode: 'markers',
+                    type: 'scatter3d',
+                    marker: {
+                        size: 20,
+                        color: queryVector.type === 'text' ? '#FF4444' : '#4444FF',
+                        symbol: queryVector.type === 'text' ? 'diamond' : 'cross',
+                        line: { width: 2, color: 'white' }
+                    },
+                    text: [`Query: ${queryVector.content}`],
+                    hovertemplate: '<b>%{text}</b><extra></extra>',
+                    name: queryVector.type === 'text' ? 'Text Query' : 'Video Query'
+                });
+            }
+            
+            // Highlight top K results
+            if (videos.length > 0) {
+                const topKVideos = videos.slice(0, topK);
+                data.push({
+                    x: topKVideos.map(v => v.x),
+                    y: topKVideos.map(v => v.y),
+                    z: topKVideos.map(v => v.z),
+                    mode: 'markers',
+                    type: 'scatter3d',
+                    marker: {
+                        size: 25,
+                        color: 'rgba(0,0,0,0)',
+                        line: { width: 4, color: '#00FF00' }
+                    },
+                    text: topKVideos.map(v => `Top ${topKVideos.indexOf(v) + 1}: ${v.name}`),
+                    hovertemplate: '<b>%{text}</b><extra></extra>',
+                    name: `Top ${topK} Results`
+                });
+            }
             
             const layout = {
                 title: `3D Video Embedding Space - ${config.name}`,
@@ -708,8 +1117,8 @@
             plotDiv.removeAllListeners('plotly_click');
             plotDiv.on('plotly_click', function(data) {
                 const pointIndex = data.points[0].pointIndex;
-                if (currentResults && currentResults[pointIndex]) {
-                    selectVideo(currentResults[pointIndex]);
+                if (data.points[0].data.name === 'Videos' && currentResults && currentResults[pointIndex]) {
+                    setFeaturedVideo(currentResults[pointIndex]);
                 }
             });
         }
@@ -760,6 +1169,16 @@
             showLoading();
             
             setTimeout(() => {
+                // Create mock query vector for text search
+                queryVector = {
+                    type: 'text',
+                    content: query,
+                    x: Math.random() * 10 - 5,
+                    y: Math.random() * 10 - 5,
+                    z: Math.random() * 4 - 2
+                };
+                currentSearchType = 'text';
+                
                 // Mock text search logic
                 let results = [...mockVideos];
                 
@@ -797,31 +1216,58 @@
             showLoading();
             
             setTimeout(() => {
-                // Mock video search logic
-                const queryVideo = mockVideos.find(v => v.name === selectedVideoName);
-                let results = mockVideos.filter(v => v.id !== queryVideo.id);
-                
-                // Simulate similarity based on category
-                results.forEach(video => {
-                    if (video.category === queryVideo.category) {
-                        video.score = 0.7 + Math.random() * 0.25;
-                    } else {
-                        video.score = 0.2 + Math.random() * 0.4;
+                try {
+                    // Mock video search logic
+                    const queryVideo = mockVideos.find(v => v.name === selectedVideoName);
+                    
+                    if (!queryVideo) {
+                        console.error('Query video not found:', selectedVideoName);
+                        console.log('Available videos:', mockVideos.map(v => v.name));
+                        alert(`Video "${selectedVideoName}" not found in database`);
+                        hideLoading();
+                        return;
                     }
-                });
-                
-                results.sort((a, b) => b.score - a.score);
-                currentResults = results.slice(0, topK);
-                
-                displayResults(currentResults, `Similar to: ${selectedVideoName}`);
-                hideLoading();
+                    
+                    // Create mock query vector for video search
+                    queryVector = {
+                        type: 'video',
+                        content: selectedVideoName,
+                        video: queryVideo,
+                        x: Math.random() * 10 - 5,
+                        y: Math.random() * 10 - 5,
+                        z: Math.random() * 4 - 2
+                    };
+                    currentSearchType = 'video';
+                    
+                    let results = mockVideos.filter(v => v.id !== queryVideo.id);
+                    
+                    // Simulate similarity based on category
+                    results.forEach(video => {
+                        if (video.category === queryVideo.category) {
+                            video.score = 0.7 + Math.random() * 0.25;
+                        } else {
+                            video.score = 0.2 + Math.random() * 0.4;
+                        }
+                    });
+                    
+                    results.sort((a, b) => b.score - a.score);
+                    currentResults = results.slice(0, topK);
+                    
+                    console.log('Video search results:', currentResults);
+                    displayResults(currentResults, `Similar to: ${selectedVideoName}`);
+                    hideLoading();
+                } catch (error) {
+                    console.error('Error in video search:', error);
+                    alert('An error occurred during video search. Check console for details.');
+                    hideLoading();
+                }
             }, 800);
         }
         
         // Display search results
         function displayResults(videos, searchInfo) {
             const resultsContainer = document.getElementById('searchResults');
-            const videoGrid = document.getElementById('videoGrid');
+            const topKSection = document.getElementById('topKSection');
             
             // Store results globally and add coordinates
             currentResults = videos;
@@ -838,83 +1284,108 @@
                 </div>
             `;
             
-            // Create video grid
-            videoGrid.innerHTML = '';
-            videosWithCoords.forEach((video, index) => {
-                const videoCard = document.createElement('div');
-                videoCard.className = 'video-card';
-                videoCard.onclick = () => selectVideo(video);
-                
-                const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
-                const color = colors[index % colors.length];
-                
-                videoCard.innerHTML = `
-                    <div class="video-thumbnail" style="background: linear-gradient(45deg, ${color}, ${color}88);">
-                        🎬
-                    </div>
-                    <div class="video-info">
-                        <div class="video-title">${video.name}</div>
-                        <div class="video-score">Score: ${video.score.toFixed(3)}</div>
-                        <div style="font-size: 0.8rem; color: #7f8c8d; margin-top: 5px;">
-                            ${video.category} • ${video.duration}s
-                        </div>
-                    </div>
-                `;
-                
-                videoGrid.appendChild(videoCard);
-            });
+            // Show top K section
+            topKSection.style.display = 'block';
             
-            videoGrid.style.display = 'grid';
-            
-            // Auto-select first video
+            // Set featured video (top 1) and create top K column
             if (videosWithCoords.length > 0) {
-                selectVideo(videosWithCoords[0]);
+                const topK = parseInt(document.getElementById('topK').value);
+                setFeaturedVideo(videosWithCoords[0]);
+                createTopKColumn(videosWithCoords.slice(0, topK));
             }
         }
         
-        // Select a video for preview
-        function selectVideo(video) {
-            selectedVideo = video;
+        // Set the featured video (large display)
+        function setFeaturedVideo(video) {
+            featuredVideo = video;
+            selectedVideo = video; // Keep compatibility
+                
+                const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
+            const colorIndex = currentResults.findIndex(v => v.id === video.id);
+            const color = colors[colorIndex % colors.length];
             
-            const previewContainer = document.getElementById('videoPreview');
-            const placeholderContainer = document.getElementById('previewPlaceholder');
-            const detailsContainer = document.getElementById('videoDetails');
+            // Update featured video display
+            document.getElementById('featuredThumbnail').style.background = 
+                `linear-gradient(135deg, ${color} 0%, ${color}88 100%)`;
+            document.getElementById('featuredTitle').textContent = video.name;
+            document.getElementById('featuredScore').textContent = `Score: ${video.score.toFixed(3)}`;
+            document.getElementById('featuredCategory').textContent = video.category;
+            document.getElementById('featuredDuration').textContent = `${video.duration}s`;
+            document.getElementById('featuredSize').textContent = `${(Math.random() * 40 + 5).toFixed(1)}MB`;
             
-            // Hide placeholder and show preview
-            placeholderContainer.style.display = 'none';
-            previewContainer.style.display = 'block';
+            // Update column selection
+            updateColumnSelection(video.id);
             
-            // Update video details
-            detailsContainer.innerHTML = `
-                <h4 style="color: #2c3e50; margin-bottom: 15px;">${video.name}</h4>
-                
-                <div class="detail-row">
-                    <span class="detail-label">Similarity Score:</span>
-                    <span class="detail-value">${video.score.toFixed(3)}</span>
-                </div>
-                
-                <div class="detail-row">
-                    <span class="detail-label">Category:</span>
-                    <span class="detail-value">${video.category}</span>
-                </div>
-                
-                <div class="detail-row">
-                    <span class="detail-label">Duration:</span>
-                    <span class="detail-value">${video.duration}s</span>
-                </div>
-                
-                <div class="detail-row">
-                    <span class="detail-label">Resolution:</span>
-                    <span class="detail-value">1080p</span>
-                </div>
-                
-                <div class="detail-row">
-                    <span class="detail-label">File Size:</span>
-                    <span class="detail-value">${(Math.random() * 40 + 5).toFixed(1)}MB</span>
-                </div>
-            `;
+            // Update plot highlight
+            updatePlotHighlight(video);
+        }
+        
+        // Update Top-K value and refresh results
+        function updateTopKValue(value) {
+            document.getElementById('topKValue').textContent = value;
+            document.getElementById('topKColumnTitle').textContent = `Top ${value} Results`;
             
-            // Update plot selection (highlight selected point)
+            // Refresh the column if we have current results
+            if (currentResults && currentResults.length > 0) {
+                const topK = parseInt(value);
+                createTopKColumn(currentResults.slice(0, topK));
+            }
+        }
+        
+        // Create the top K videos column
+        function createTopKColumn(videos) {
+            const topKColumn = document.getElementById('topKColumn');
+            const topKTitle = document.getElementById('topKColumnTitle');
+            topKColumn.innerHTML = '';
+            
+            // Update title with current count
+            topKTitle.textContent = `Top ${videos.length} Results`;
+            
+            const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
+            
+            videos.forEach((video, index) => {
+                const videoCard = document.createElement('div');
+                videoCard.className = 'video-card-column';
+                videoCard.dataset.videoId = video.id;
+                videoCard.onclick = () => setFeaturedVideo(video);
+                
+                const color = colors[index % colors.length];
+                
+                videoCard.innerHTML = `
+                    <div class="video-thumbnail-column" style="background: linear-gradient(45deg, ${color}, ${color}88);">
+                        🎬
+                </div>
+                    <div class="video-info-column">
+                        <div class="video-title-column">${video.name}</div>
+                        <div class="video-score-column">Score: ${video.score.toFixed(3)}</div>
+                </div>
+                `;
+                
+                topKColumn.appendChild(videoCard);
+            });
+            
+            // Mark first video as selected initially
+            if (videos.length > 0 && featuredVideo) {
+                updateColumnSelection(featuredVideo.id);
+            }
+        }
+        
+        // Update column selection highlighting
+        function updateColumnSelection(videoId) {
+            // Remove previous selection
+            document.querySelectorAll('.video-card-column').forEach(card => {
+                card.classList.remove('selected');
+            });
+            
+            // Add selection to current video
+            const selectedCard = document.querySelector(`[data-video-id="${videoId}"]`);
+            if (selectedCard) {
+                selectedCard.classList.add('selected');
+            }
+        }
+        
+        // Update plot highlighting
+        function updatePlotHighlight(video) {
             if (currentResults && currentResults.length > 0) {
                 const selectedIndex = currentResults.findIndex(v => v.id === video.id);
                 if (selectedIndex >= 0) {
@@ -933,51 +1404,53 @@
                     
                     // Add highlight trace for 2D and 3D views
                     if (currentTab !== 'heatmap') {
-                        const highlightTrace = {
-                            x: [currentResults[selectedIndex].x],
-                            y: [currentResults[selectedIndex].y],
-                            mode: 'markers',
+                    const highlightTrace = {
+                        x: [currentResults[selectedIndex].x],
+                        y: [currentResults[selectedIndex].y],
+                        mode: 'markers',
                             type: currentTab === '3d' ? 'scatter3d' : 'scatter',
-                            marker: {
+                        marker: {
                                 size: currentTab === '3d' ? 20 : 25,
-                                color: 'red',
-                                symbol: 'star',
-                                line: { width: 2, color: 'darkred' }
-                            },
-                            name: 'Selected',
-                            showlegend: false
-                        };
+                            color: 'red',
+                            symbol: 'star',
+                            line: { width: 2, color: 'darkred' }
+                        },
+                        name: 'Selected',
+                        showlegend: false
+                    };
                         
                         if (currentTab === '3d') {
                             highlightTrace.z = [currentResults[selectedIndex].z];
                         }
-                        
-                        Plotly.addTraces('similarityPlot', highlightTrace);
+                    
+                    Plotly.addTraces('similarityPlot', highlightTrace);
                     }
                 }
             }
         }
         
-        // Find videos similar to selected video
-        function findSimilarToSelected() {
-            if (!selectedVideo) {
+        
+        
+        // Find videos similar to featured video
+        function findSimilarToFeatured() {
+            if (!featuredVideo) {
                 alert('Please select a video first');
                 return;
             }
             
-            document.getElementById('videoSelect').value = selectedVideo.name;
+            document.getElementById('videoSelect').value = featuredVideo.name;
             performVideoSearch();
         }
         
         // Export video information
         function exportVideoInfo() {
-            if (!selectedVideo) {
+            if (!featuredVideo) {
                 alert('Please select a video first');
                 return;
             }
             
             const exportData = {
-                video_info: selectedVideo,
+                video_info: featuredVideo,
                 export_timestamp: new Date().toISOString(),
                 session_data: {
                     current_results: currentResults,
@@ -993,11 +1466,11 @@
             
             const link = document.createElement('a');
             link.href = URL.createObjectURL(dataBlob);
-            link.download = `video_info_${selectedVideo.name}.json`;
+            link.download = `video_info_${featuredVideo.name}.json`;
             link.click();
             
             // Show success message
-            alert(`Video information exported for: ${selectedVideo.name}`);
+            alert(`Video information exported for: ${featuredVideo.name}`);
         }
         
         // Loading state management
@@ -1016,16 +1489,6 @@
         // Update visualization method
         function updateVisualizationMethod() {
             currentVizMethod = document.getElementById('vizMethod').value;
-            const config = methodConfigs[currentVizMethod];
-            
-            // Update method info
-            document.getElementById('methodInfo').innerHTML = config.info;
-            
-            // Update performance stats
-            document.getElementById('computeTime').textContent = config.computeTime;
-            document.getElementById('globalScore').textContent = config.globalScore;
-            document.getElementById('reproducibilityScore').textContent = config.reproducibility;
-            document.getElementById('currentMethod').textContent = config.name;
             
             // Show/hide method-specific options
             document.querySelectorAll('[id$="Options"]').forEach(el => el.style.display = 'none');
@@ -1059,13 +1522,13 @@
         
         // Show contrastive learning view
         function showContrastiveView() {
-            if (!selectedVideo) {
+            if (!featuredVideo) {
                 alert('Please select a video first');
                 return;
             }
             
             // Generate mock contrastive data
-            const anchor = selectedVideo;
+            const anchor = featuredVideo;
             const positives = currentResults.filter(v => v.category === anchor.category && v.id !== anchor.id).slice(0, 2);
             const negatives = currentResults.filter(v => v.category !== anchor.category).slice(0, 3);
             
@@ -1125,7 +1588,7 @@
             
             Plotly.newPlot('similarityPlot', [], layout, {responsive: true});
             
-            // Initialize method info
+            // Initialize visualization options
             updateVisualizationMethod();
         }
         
