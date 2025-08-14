@@ -1,0 +1,31 @@
+# NVIDIA Cosmos Video Retrieval System Configuration
+
+# Model configuration
+model_name: "/path/to/your/local/cosmos-model"
+device: "cuda"  # Use "cpu" if CUDA is not available
+batch_size: 4   # Number of videos to process in parallel
+num_frames: 8   # Number of frames to extract per video
+
+# Database configuration
+database_path: "video_embeddings"  # Base path for database files (without extension)
+use_safe_serialization: true       # Use JSON + numpy instead of pickle
+
+# Video processing
+supported_formats: [".mp4", ".avi", ".mov", ".mkv", ".webm"]
+thumbnail_size: [224, 224]
+
+# Search configuration
+default_top_k: 5              # Default number of results to return
+similarity_threshold: 0.0     # Minimum similarity score (0-1)
+
+# Paths
+video_database_dir: "/Users/lilyzhang/Desktop/Qwen2.5-VL/nvidia_cosmos/videos/video_database"
+user_input_dir: "/Users/lilyzhang/Desktop/Qwen2.5-VL/nvidia_cosmos/videos/user_input"
+
+# Performance
+enable_caching: true
+cache_size: 1000
+
+# Logging
+log_level: "INFO"
+log_format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
