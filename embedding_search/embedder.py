@@ -11,6 +11,7 @@ except (ImportError, RuntimeError):
     DECORD_AVAILABLE = False
     print("Warning: decord not available. Video processing will be disabled.")
 from transformers import AutoProcessor, AutoModel
+import cv2
 from pathlib import Path
 from typing import Union, List, Dict, Tuple, Any, Optional
 from tqdm import tqdm
@@ -50,7 +51,7 @@ class VideoFrameProcessor(VideoProcessor):
         self.config = config
     
     def load_frames(self, video_path: Path, num_frames: int = None) -> np.ndarray:
-        """Load frames from a video file with error handling."""
+        """Load frames from a video file with error handling and automatic resolution scaling."""
         if not DECORD_AVAILABLE:
             raise VideoLoadError("decord package is not available. Please install it for video processing.")
             
@@ -66,6 +67,20 @@ class VideoFrameProcessor(VideoProcessor):
             # Sample frames uniformly
             frame_ids = np.linspace(0, total_frames - 1, num_frames, dtype=int).tolist()
             frames = reader.get_batch(frame_ids).asnumpy()
+            
+            # Get target resolution from config (default 448x448)
+            target_height, target_width = self.config.resolution
+            
+            # Resize frames if they don't match target resolution
+            original_height, original_width = frames.shape[1], frames.shape[2]
+            if original_height != target_height or original_width != target_width:
+                resized_frames = []
+                for frame in frames:
+                    # cv2.resize expects (width, height)
+                    resized_frame = cv2.resize(frame, (target_width, target_height))
+                    resized_frames.append(resized_frame)
+                frames = np.array(resized_frames)
+                logger.debug(f"Resized frames from {original_width}x{original_height} to {target_width}x{target_height}")
             
             logger.debug(f"Loaded {num_frames} frames from {video_path.name}")
             return frames
