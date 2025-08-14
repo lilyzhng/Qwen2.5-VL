@@ -20,3 +20,8 @@ umap-learn>=0.5.4  # For UMAP dimensionality reduction (better than t-SNE)
 trimap>=1.1.4  # For TriMAP dimensionality reduction (alternative to t-SNE)
 # Additional visualization and ML dependencies
 seaborn>=0.12.0  # Statistical data visualization
+
+# Performance monitoring dependencies (optional)
+psutil>=5.9.0  # System monitoring
+GPUtil>=1.4.0  # GPU monitoring (optional)
+nvidia-ml-py>=12.535.108  # NVIDIA Management Library (optional)

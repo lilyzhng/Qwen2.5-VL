@@ -110,6 +110,36 @@ Edit `config.yaml` to customize:
 - Search parameters
 - Performance optimizations
 
+## 📊 Performance Monitoring
+
+The inference benchmark tool provides comprehensive performance analysis:
+
+### Metrics Tracked:
+- **⏱️ Inference Time**: Per-video processing time
+- **🎮 GPU VRAM Usage**: Peak and average VRAM consumption  
+- **🖥️ GPU Utilization**: GPU core utilization percentage
+- **💻 CPU Utilization**: CPU core usage during inference
+- **🧠 RAM Usage**: System memory consumption
+
+### Sample Output:
+```
+🖥️  SYSTEM CONFIGURATION:
+   CPU: 8 cores @ 3200 MHz
+   RAM: 32.0 GB
+   GPU: NVIDIA GeForce RTX 4080
+   VRAM: 16.0 GB
+
+📊 PERFORMANCE SUMMARY:
+   Average: 0.245s per video
+   Peak VRAM: 2847.3 MB
+   Peak CPU: 78.5%
+   Peak RAM: 4521.2 MB (4.4 GB)
+   
+📈 THROUGHPUT:
+   Videos per minute: 245
+   Videos per hour: 14694
+```
+
 ## 📊 Performance
 
 The system includes several optimizations:
@@ -118,9 +148,27 @@ The system includes several optimizations:
 - **Embedding Caching**: Reduced computation time
 - **Optimized Database**: Safe, fast storage format
 
-## 🧪 Testing
+## 🧪 Testing & Performance
 
-Run performance tests:
+### Performance Monitoring
+Test monitoring infrastructure:
+```bash
+python utils/test_monitoring.py
+```
+
+Benchmark NVIDIA Cosmos model inference:
+```bash
+# Basic benchmark
+python utils/inference_benchmark.py
+
+# Custom configuration
+python utils/inference_benchmark.py --video-dir /path/to/videos --max-videos 20 --device cuda
+
+# Get help
+python utils/inference_benchmark.py --help
+```
+
+### Legacy Performance Tests
 ```bash
 python utils/performance_test.py
 ```
