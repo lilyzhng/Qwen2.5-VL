@@ -10,8 +10,8 @@ import sys
 import json
 import yaml
 
-from video_search import VideoSearchEngine
-from video_visualizer import VideoResultsVisualizer
+from search import OptimizedVideoSearchEngine as VideoSearchEngine
+from visualizer import VideoResultsVisualizer
 from config import VideoRetrievalConfig
 from exceptions import (
     VideoRetrievalError, VideoNotFoundError, NoResultsError

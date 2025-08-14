@@ -14,8 +14,8 @@ import cv2
 from unittest.mock import Mock, patch, MagicMock
 import json
 
-from video_visualizer import VideoResultsVisualizer
-from video_search_optimized import OptimizedVideoSearchEngine
+from visualizer import VideoResultsVisualizer
+from search import OptimizedVideoSearchEngine
 from config import VideoRetrievalConfig
 
 

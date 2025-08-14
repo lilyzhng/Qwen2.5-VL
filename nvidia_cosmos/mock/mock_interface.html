@@ -722,7 +722,7 @@
     <div class="container">
         <!-- Header -->
         <div class="header">
-            <h1> ALFA 0.1 - Similarity Search</h1>
+            <h1> ALFA 0.1 - Embedding Search</h1>
         </div>
         
         <!-- Main Content -->
@@ -742,7 +742,7 @@
                 <!-- Video Search -->
                 <div style="margin-bottom: 20px;">
                     <select id="videoSelect" class="search-box">
-                        <option value="">Select a video for similarity search...</option>
+                        <option value="">Select a video ...</option>
                         <option value="car2cyclist_01.mp4">car2cyclist_01.mp4</option>
                         <option value="car2cyclist_02.mp4">car2cyclist_02.mp4</option>
                         <option value="car2pedestrian_01.mp4">car2pedestrian_01.mp4</option>
@@ -833,9 +833,8 @@
             
             <!-- Main Panel -->
             <div class="main-panel">
-                <h3 class="section-title">📊 Embedding Visualization</h3>
-                
-
+                <h3 class="section-title">📊 Vector Space </h3>
+            
                 
                 <!-- Visualization Tabs -->
                 <div style="margin-bottom: 20px;">
@@ -1687,7 +1686,7 @@
         function initializeInterface() {
             // Create initial empty plot
             const layout = {
-                title: 'Advanced Video Embedding Visualization - Perform a search to see results',
+                title: 'Embedding Visualization - Perform a search to see results',
                 xaxis: { title: 'UMAP Dimension 1' },
                 yaxis: { title: 'UMAP Dimension 2' },
                 plot_bgcolor: '#f8f9fa',

@@ -16,8 +16,8 @@ from typing import Optional, List, Dict, Tuple
 import logging
 
 # Import our components
-from video_search_optimized import OptimizedVideoSearchEngine
-from video_visualizer import VideoResultsVisualizer
+from search import OptimizedVideoSearchEngine
+from visualizer import VideoResultsVisualizer
 from config import VideoRetrievalConfig
 from exceptions import VideoNotFoundError, NoResultsError
 

@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 import argparse
 
-from video_search import VideoSearchEngine
+from search import OptimizedVideoSearchEngine as VideoSearchEngine
 from config import VideoRetrievalConfig
 
 logging.basicConfig(level=logging.INFO)

@@ -12,7 +12,7 @@ import time
 from functools import wraps
 
 from base import EmbeddingModel
-from video_embedder import CosmosVideoEmbedder
+from embedder import CosmosVideoEmbedder
 from optimizations import (
     OptimizedVideoDatabase, FaissSearchStrategy, OptimizedEmbeddingCache,
     batch_normalize_embeddings

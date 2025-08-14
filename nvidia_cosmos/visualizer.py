@@ -1,5 +1,5 @@
 """
-Video Results Visualizer for displaying search results.
+Results Visualizer for displaying search results.
 """
 
 import cv2
