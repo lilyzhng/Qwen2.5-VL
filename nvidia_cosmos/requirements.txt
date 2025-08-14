@@ -16,3 +16,7 @@ faiss-cpu>=1.7.4  # For CPU systems
 pyarrow>=14.0.0  # For Parquet support
 plotly>=5.17.0  # For interactive visualizations (as in official demo)
 streamlit>=1.28.0  # Optional: for web interface like official demo
+umap-learn>=0.5.4  # For UMAP dimensionality reduction (better than t-SNE)
+trimap>=1.1.4  # For TriMAP dimensionality reduction (alternative to t-SNE)
+# Additional visualization and ML dependencies
+seaborn>=0.12.0  # Statistical data visualization
