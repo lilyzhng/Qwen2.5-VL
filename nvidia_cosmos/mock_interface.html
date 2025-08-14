@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NVIDIA Cosmos Video Search - Mock Interface</title>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -13,32 +14,56 @@
         }
         
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 25%, #334155 75%, #475569 100%);
             min-height: 100vh;
             padding: 20px;
+            color: #334155;
+            line-height: 1.6;
         }
         
         .container {
             max-width: 1400px;
             margin: 0 auto;
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            background: rgba(255, 255, 255, 0.98);
+            border-radius: 20px;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.15), 0 0 0 1px rgba(255,255,255,0.1);
             overflow: hidden;
+            backdrop-filter: blur(10px);
         }
         
         .header {
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
             color: white;
-            padding: 30px;
+            padding: 40px 30px;
             text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="50" cy="50" r="1" fill="%23ffffff" opacity="0.05"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
+            pointer-events: none;
         }
         
         .header h1 {
-            font-size: 2.5rem;
+            font-size: 3rem;
             margin-bottom: 10px;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            font-weight: 700;
+            background: linear-gradient(45deg, #ffffff, #e0e7ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.02em;
+            position: relative;
+            z-index: 1;
+            text-shadow: none;
         }
         
         .header p {
@@ -54,56 +79,101 @@
         }
         
         .sidebar {
-            background: #f8f9fa;
-            padding: 25px;
-            border-radius: 10px;
+            background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+            padding: 30px;
+            border-radius: 16px;
             height: fit-content;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05), 0 0 0 1px rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            position: relative;
         }
         
         .section-title {
             font-size: 1.4rem;
-            color: #2c3e50;
-            margin-bottom: 15px;
-            border-bottom: 2px solid #3498db;
-            padding-bottom: 5px;
+            color: #1e293b;
+            margin-bottom: 20px;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            position: relative;
+            padding-bottom: 12px;
+            border-bottom: none;
+        }
+        
+        .section-title::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 50px;
+            height: 3px;
+            background: linear-gradient(90deg, #6366f1, #8b5cf6);
+            border-radius: 2px;
         }
         
         .search-box {
             width: 100%;
-            padding: 12px;
-            border: 2px solid #ddd;
-            border-radius: 8px;
+            padding: 14px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
             font-size: 1rem;
-            margin-bottom: 15px;
-            transition: border-color 0.3s;
+            margin-bottom: 16px;
+            transition: all 0.3s ease;
+            background: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+            font-family: inherit;
         }
         
         .search-box:focus {
             outline: none;
-            border-color: #3498db;
+            border-color: #6366f1;
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1), 0 4px 8px rgba(0,0,0,0.05);
+            transform: translateY(-1px);
         }
         
         .btn {
-            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
             color: white;
             border: none;
-            padding: 12px 24px;
-            border-radius: 8px;
+            padding: 14px 24px;
+            border-radius: 12px;
             cursor: pointer;
             font-size: 1rem;
             font-weight: 600;
-            transition: transform 0.2s, box-shadow 0.2s;
+            transition: all 0.3s ease;
             width: 100%;
-            margin-bottom: 10px;
+            margin-bottom: 12px;
+            box-shadow: 0 4px 8px rgba(99, 102, 241, 0.2);
+            position: relative;
+            overflow: hidden;
         }
         
         .btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4);
+            box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4);
+        }
+        
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+        
+        .btn:hover::before {
+            left: 100%;
         }
         
         .btn-secondary {
-            background: linear-gradient(135deg, #95a5a6 0%, #7f8c8d 100%);
+            background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+            box-shadow: 0 4px 8px rgba(100, 116, 139, 0.2);
+        }
+        
+        .btn-secondary:hover {
+            box-shadow: 0 8px 20px rgba(100, 116, 139, 0.4);
         }
         
         .stats-grid {
@@ -114,22 +184,31 @@
         }
         
         .stat-item {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            padding: 20px;
+            border-radius: 16px;
             text-align: center;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08), 0 0 0 1px rgba(255,255,255,0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            border: 1px solid rgba(226, 232, 240, 0.5);
         }
         
         .stat-value {
-            font-size: 1.8rem;
-            font-weight: bold;
-            color: #2c3e50;
+            font-size: 2rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+            letter-spacing: -0.02em;
         }
         
         .stat-label {
             font-size: 0.9rem;
-            color: #7f8c8d;
+            color: #64748b;
+            font-weight: 500;
+            letter-spacing: 0.02em;
         }
         
         .main-panel {
@@ -172,8 +251,8 @@
         .featured-thumbnail {
             width: 100%;
             height: 300px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 12px;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+            border-radius: 20px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -182,6 +261,7 @@
             margin-bottom: 20px;
             position: relative;
             overflow: hidden;
+            box-shadow: 0 20px 40px rgba(99, 102, 241, 0.3);
         }
         
         .featured-thumbnail::before {
@@ -642,19 +722,17 @@
     <div class="container">
         <!-- Header -->
         <div class="header">
-            <h1>🔍 NVIDIA Cosmos Video Search</h1>
-            <p>Mock Interface - Interactive Demo Without CUDA Requirements</p>
+            <h1> ALFA 0.1 - Similarity Search</h1>
         </div>
         
         <!-- Main Content -->
         <div class="main-content">
             <!-- Left Sidebar -->
             <div class="sidebar">
-                <h3 class="section-title">🔍 Search & Settings</h3>
+                <h3 class="section-title">🔍 Settings</h3>
                 
                 <!-- Text Search -->
                 <div style="margin-bottom: 20px;">
-                    <label>Text Query:</label>
                     <input type="text" id="textQuery" class="search-box" 
                            placeholder="Enter search query (e.g., 'car approaching cyclist')" 
                            value="car approaching cyclist">
@@ -663,7 +741,6 @@
                 
                 <!-- Video Search -->
                 <div style="margin-bottom: 20px;">
-                    <label>Video Query:</label>
                     <select id="videoSelect" class="search-box">
                         <option value="">Select a video for similarity search...</option>
                         <option value="car2cyclist_01.mp4">car2cyclist_01.mp4</option>
@@ -674,7 +751,7 @@
                         <option value="highway_merge_01.mp4">highway_merge_01.mp4</option>
                         <option value="parking_lot_01.mp4">parking_lot_01.mp4</option>
                     </select>
-                    <button class="btn btn-secondary" onclick="performVideoSearch()">🎥 Find Similar Videos</button>
+                    <button class="btn btn-secondary" onclick="performVideoSearch()">🎥 Search by Video</button>
                 </div>
                 
                 <!-- Search Settings -->
@@ -756,7 +833,7 @@
             
             <!-- Main Panel -->
             <div class="main-panel">
-                <h3 class="section-title">📊 Advanced Embedding Visualization</h3>
+                <h3 class="section-title">📊 Embedding Visualization</h3>
                 
 
                 
@@ -1246,8 +1323,8 @@
             
             setTimeout(() => {
                 try {
-                    // Mock video search logic
-                    const queryVideo = mockVideos.find(v => v.name === selectedVideoName);
+                // Mock video search logic
+                const queryVideo = mockVideos.find(v => v.name === selectedVideoName);
                     
                     if (!queryVideo) {
                         console.error('Query video not found:', selectedVideoName);
@@ -1268,23 +1345,23 @@
                     };
                     currentSearchType = 'video';
                     
-                    let results = mockVideos.filter(v => v.id !== queryVideo.id);
-                    
-                    // Simulate similarity based on category
-                    results.forEach(video => {
-                        if (video.category === queryVideo.category) {
-                            video.score = 0.7 + Math.random() * 0.25;
-                        } else {
-                            video.score = 0.2 + Math.random() * 0.4;
-                        }
-                    });
-                    
-                    results.sort((a, b) => b.score - a.score);
-                    currentResults = results.slice(0, topK);
-                    
+                let results = mockVideos.filter(v => v.id !== queryVideo.id);
+                
+                // Simulate similarity based on category
+                results.forEach(video => {
+                    if (video.category === queryVideo.category) {
+                        video.score = 0.7 + Math.random() * 0.25;
+                    } else {
+                        video.score = 0.2 + Math.random() * 0.4;
+                    }
+                });
+                
+                results.sort((a, b) => b.score - a.score);
+                currentResults = results.slice(0, topK);
+                
                     console.log('Video search results:', currentResults);
-                    displayResults(currentResults, `Similar to: ${selectedVideoName}`);
-                    hideLoading();
+                displayResults(currentResults, `Similar to: ${selectedVideoName}`);
+                hideLoading();
                 } catch (error) {
                     console.error('Error in video search:', error);
                     alert('An error occurred during video search. Check console for details.');
@@ -1303,9 +1380,6 @@
             const videosWithCoords = generateMockCoordinates(videos);
             currentResults = videosWithCoords; // Update with coordinates
             
-            // Create similarity plot
-            createSimilarityPlot(videosWithCoords);
-            
             // Show success message
             resultsContainer.innerHTML = `
                 <div class="alert alert-success">
@@ -1322,6 +1396,11 @@
                 setFeaturedVideo(videosWithCoords[0]);
                 createTopKColumn(videosWithCoords.slice(0, topK));
             }
+            
+            // Create similarity plot with proper highlighting after everything is set up
+            setTimeout(() => {
+                createSimilarityPlot(videosWithCoords);
+            }, 50);
         }
         
         // Set the featured video (large display)

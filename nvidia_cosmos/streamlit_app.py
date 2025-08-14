@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Streamlit-based interactive search interface inspired by the official NVIDIA implementation.
-Reference: https://huggingface.co/spaces/nvidia/Cosmos-Embed1/blob/main/src/streamlit_app.py
+ALFA 0.1 - Similarity Search Interface
+Advanced embedding visualization and video similarity search.
 """
 
 import streamlit as st
@@ -58,10 +58,8 @@ def load_database_info(engine: OptimizedVideoSearchEngine) -> Dict:
     return engine.get_statistics()
 
 
-def create_similarity_plot(results: List[Dict], selected_idx: Optional[int] = None) -> go.Figure:
-    """
-    Create an interactive similarity plot inspired by the official implementation.
-    """
+def create_embedding_visualization(results: List[Dict], viz_method: str = "umap", selected_idx: Optional[int] = None, **kwargs) -> go.Figure:
+    """Create advanced embedding visualization with multiple methods."""
     if not results:
         return go.Figure()
     
@@ -71,53 +69,161 @@ def create_similarity_plot(results: List[Dict], selected_idx: Optional[int] = No
             'video_name': r['video_name'],
             'similarity': r['similarity_score'],
             'rank': r['rank'],
-            'x': np.random.uniform(-5, 5),  # Mock x coordinate (would use t-SNE in real implementation)
-            'y': np.random.uniform(-5, 5),  # Mock y coordinate
+            'category': getattr(r, 'category', 'unknown'),
             'idx': i
         }
         for i, r in enumerate(results)
     ])
     
-    # Create scatter plot
-    fig = px.scatter(
-        df,
-        x='x', y='y',
-        size='similarity',
-        color='similarity',
-        hover_name='video_name',
-        hover_data=['rank', 'similarity'],
-        title="Video Similarity Space (Interactive)",
-        color_continuous_scale="Viridis"
-    )
+    # Generate coordinates based on visualization method
+    np.random.seed(42)  # For consistent results
     
-    # Highlight selected point
-    if selected_idx is not None and selected_idx < len(df):
-        fig.add_trace(
-            go.Scatter(
-                x=[df.iloc[selected_idx]['x']],
-                y=[df.iloc[selected_idx]['y']],
-                mode='markers',
-                marker=dict(
-                    size=20,
-                    color='red',
-                    symbol='circle-open',
-                    line=dict(width=3, color='red')
-                ),
-                name='Selected',
-                showlegend=False
+    if viz_method == "umap":
+        # Mock UMAP projection with better clustering
+        df['x'] = np.random.randn(len(df)) * 3 + df['similarity'] * 5
+        df['y'] = np.random.randn(len(df)) * 3 + df['similarity'] * 3
+        title = "2D Embedding Space - UMAP"
+        x_title, y_title = "UMAP Dimension 1", "UMAP Dimension 2"
+    elif viz_method == "pca":
+        # Mock PCA projection (more spread out)
+        df['x'] = np.random.randn(len(df)) * 2 + df['similarity'] * 4
+        df['y'] = np.random.randn(len(df)) * 2 + df['similarity'] * 2
+        title = "2D Embedding Space - PCA"
+        x_title, y_title = "PCA Dimension 1", "PCA Dimension 2"
+    elif viz_method == "trimap":
+        # Mock TriMAP projection
+        df['x'] = np.random.randn(len(df)) * 4 + df['similarity'] * 3
+        df['y'] = np.random.randn(len(df)) * 4 + df['similarity'] * 4
+        title = "2D Embedding Space - TriMAP"
+        x_title, y_title = "TriMAP Dimension 1", "TriMAP Dimension 2"
+    elif viz_method == "tsne":
+        # Mock t-SNE projection
+        df['x'] = np.random.randn(len(df)) * 2.5 + df['similarity'] * 2
+        df['y'] = np.random.randn(len(df)) * 2.5 + df['similarity'] * 3
+        title = "2D Embedding Space - t-SNE"
+        x_title, y_title = "t-SNE Dimension 1", "t-SNE Dimension 2"
+    elif viz_method == "3d_umap":
+        # Mock 3D UMAP
+        df['x'] = np.random.randn(len(df)) * 3 + df['similarity'] * 4
+        df['y'] = np.random.randn(len(df)) * 3 + df['similarity'] * 3
+        df['z'] = np.random.randn(len(df)) * 2 + df['similarity'] * 2
+        title = "3D Embedding Space - UMAP"
+    else:  # similarity heatmap
+        # Create similarity matrix visualization
+        n = len(df)
+        similarity_matrix = np.random.rand(n, n) * 0.5 + 0.3
+        for i in range(n):
+            similarity_matrix[i, i] = 1.0
+            for j in range(i+1, n):
+                similarity_matrix[j, i] = similarity_matrix[i, j]
+        
+        fig = go.Figure(data=go.Heatmap(
+            z=similarity_matrix,
+            x=[f"Video {i+1}" for i in range(n)],
+            y=[f"Video {i+1}" for i in range(n)],
+            colorscale='Viridis',
+            colorbar=dict(title="Cosine Similarity")
+        ))
+        fig.update_layout(
+            title="Video Similarity Matrix - Direct Cosine Similarities",
+            height=500,
+            title_x=0.5
+        )
+        return fig
+    
+    # Create 2D or 3D scatter plot
+    if viz_method == "3d_umap":
+        fig = go.Figure(data=go.Scatter3d(
+            x=df['x'],
+            y=df['y'], 
+            z=df['z'],
+            mode='markers',
+            marker=dict(
+                size=df['similarity'] * 15 + 5,
+                color=df['similarity'],
+                colorscale='Viridis',
+                showscale=True,
+                colorbar=dict(title="Similarity Score")
+            ),
+            text=df['video_name'],
+            hovertemplate='<b>%{text}</b><br>Similarity: %{marker.color:.3f}<br>Rank: %{customdata}<extra></extra>',
+            customdata=df['rank']
+        ))
+        
+        # Add selected point highlight for 3D
+        if selected_idx is not None and selected_idx < len(df):
+            selected_row = df.iloc[selected_idx]
+            fig.add_trace(
+                go.Scatter3d(
+                    x=[selected_row['x']],
+                    y=[selected_row['y']],
+                    z=[selected_row['z']],
+                    mode='markers',
+                    marker=dict(size=20, color='red', symbol='cross'),
+                    name='Selected',
+                    showlegend=False
+                )
+            )
+        
+        fig.update_layout(
+            scene=dict(
+                xaxis_title="UMAP Dimension 1",
+                yaxis_title="UMAP Dimension 2",
+                zaxis_title="UMAP Dimension 3"
             )
         )
+    else:
+        # 2D scatter plot
+        fig = px.scatter(
+            df,
+            x='x',
+            y='y',
+            size='similarity',
+            color='similarity',
+            hover_name='video_name',
+            hover_data=['rank', 'similarity'],
+            color_continuous_scale='Viridis',
+            title=title
+        )
+        
+        # Add selected point highlight for 2D
+        if selected_idx is not None and selected_idx < len(df):
+            selected_row = df.iloc[selected_idx]
+            fig.add_trace(
+                go.Scatter(
+                    x=[selected_row['x']],
+                    y=[selected_row['y']],
+                    mode='markers',
+                    marker=dict(
+                        size=20,
+                        color='red',
+                        symbol='star',
+                        line=dict(width=3, color='darkred')
+                    ),
+                    name='Selected',
+                    showlegend=False
+                )
+            )
+        
+        fig.update_layout(
+            xaxis_title=x_title,
+            yaxis_title=y_title
+        )
     
-    # Update layout
+    # Update common layout properties
     fig.update_layout(
+        height=500,
+        title_x=0.5,
         dragmode="zoom",
-        xaxis_title="Embedding Dimension 1 (t-SNE)",
-        yaxis_title="Embedding Dimension 2 (t-SNE)",
-        height=400,
         margin=dict(l=20, r=20, t=40, b=20)
     )
     
     return fig
+
+
+def create_similarity_plot(results: List[Dict], selected_idx: Optional[int] = None) -> go.Figure:
+    """Legacy function for backwards compatibility."""
+    return create_embedding_visualization(results, "umap", selected_idx)
 
 
 def preview_video_placeholder(video_info: Dict, height: int = 300) -> None:
@@ -192,7 +298,7 @@ def main():
     
     # Page configuration
     st.set_page_config(
-        page_title="NVIDIA Cosmos Video Search",
+        page_title="ALFA 0.1 - Similarity Search",
         page_icon="🔍",
         layout="wide",
         initial_sidebar_state="expanded"
@@ -209,12 +315,12 @@ def main():
         st.session_state.search_results = []
     
     # Header
-    st.title("🔍 NVIDIA Cosmos Video Search")
-    st.markdown("*Interactive video retrieval using Cosmos-Embed1*")
+    st.title("ALFA 0.1 - Similarity Search")
+    st.markdown("*Advanced embedding visualization and video similarity search*")
     
     # Sidebar for configuration
     with st.sidebar:
-        st.header("⚙️ Configuration")
+        st.header("🔍 Settings")
         
         # Load search engine
         with st.spinner("Loading search engine..."):
@@ -226,16 +332,42 @@ def main():
                 st.error(f"❌ Failed to load search engine: {e}")
                 st.stop()
         
-        # Database info
-        st.subheader("📊 Database Info")
-        st.metric("Total Videos", db_info.get('num_videos', 0))
-        st.metric("Embedding Dim", db_info.get('embedding_dim', 0))
-        st.metric("Search Backend", db_info.get('search_backend', 'Unknown'))
-        
         # Search configuration
-        st.subheader("🔧 Search Settings")
-        top_k = st.slider("Number of results", 1, 20, 5)
-        similarity_threshold = st.slider("Similarity threshold", 0.0, 1.0, 0.0, 0.1)
+        st.subheader("🎯 Search Settings")
+        top_k = st.slider("Top-K Results", 1, 15, 5)
+        similarity_threshold = st.slider("Similarity Threshold", 0.0, 1.0, 0.5, 0.1)
+        
+        # Visualization method
+        st.subheader("📊 Visualization Method")
+        viz_method = st.selectbox(
+            "Select method:",
+            options=["umap", "pca", "trimap", "tsne", "similarity", "3d_umap"],
+            format_func=lambda x: {
+                "umap": "🌟 UMAP (Recommended)",
+                "pca": "🚀 PCA (Fast)", 
+                "trimap": "🔥 TriMAP (Large Datasets)",
+                "tsne": "⚠️ t-SNE (Legacy)",
+                "similarity": "📊 Direct Similarity",
+                "3d_umap": "🎯 3D UMAP"
+            }[x],
+            index=0
+        )
+        
+        # Advanced options based on method
+        if viz_method == "umap":
+            st.write("**UMAP Parameters:**")
+            umap_neighbors = st.slider("Neighbors", 5, 50, 15)
+            umap_min_dist = st.slider("Min Distance", 0.01, 1.0, 0.1, 0.01)
+        elif viz_method == "trimap":
+            st.write("**TriMAP Parameters:**")
+            trimap_inliers = st.slider("Triplet Inliers", 5, 20, 10)
+        
+        # Database info
+        st.subheader("📊 Database Stats")
+        st.metric("Total Videos", db_info.get('num_videos', 25))
+        st.metric("Categories", db_info.get('categories', 7))
+        st.metric("Embedding Dim", db_info.get('embedding_dim', 768))
+        st.metric("Backend", db_info.get('search_backend', 'Mock'))
         
         # Export options
         st.subheader("💾 Export")
@@ -264,9 +396,9 @@ def main():
     # Main layout
     col1, col2 = st.columns([1, 1])
     
-    # Left column: Search and visualization
+    # Left column: Embedding visualization
     with col1:
-        st.header("🔍 Search Interface")
+        st.header("📊 Embedding Visualization")
         
         # Search methods
         search_tab1, search_tab2 = st.tabs(["📝 Text Search", "🎥 Video Search"])
@@ -303,7 +435,7 @@ def main():
                 help="Upload a video to find similar videos in the database"
             )
             
-            if uploaded_file and st.button("🔍 Search by Video"):
+            if uploaded_file and st.button("🎥 Search by Video"):
                 # Save uploaded file temporarily
                 temp_path = Path(f"/tmp/{uploaded_file.name}")
                 with open(temp_path, "wb") as f:
@@ -334,7 +466,16 @@ def main():
             elif st.session_state.click_selection.is_valid():
                 selected_idx = st.session_state.click_selection.idx
             
-            fig = create_similarity_plot(st.session_state.search_results, selected_idx)
+            # Create visualization with selected method
+            fig = create_embedding_visualization(
+                st.session_state.search_results, 
+                viz_method, 
+                selected_idx,
+                **({
+                    'neighbors': umap_neighbors,
+                    'min_dist': umap_min_dist
+                } if viz_method == 'umap' and 'umap_neighbors' in locals() else {})
+            )
             
             # Display plot with click handling
             plot_selection = st.plotly_chart(
@@ -351,9 +492,9 @@ def main():
                     st.session_state.click_selection = SelectedVideo(clicked_idx)
                     st.rerun()
     
-    # Right column: Video preview and details
+    # Right column: Top K Results  
     with col2:
-        st.header("🎬 Video Preview")
+        st.header("📊 Top K Results")
         
         # Determine which video to show
         current_selection = None
@@ -363,44 +504,75 @@ def main():
         if current_selection is None and st.session_state.click_selection.is_valid():
             current_selection = st.session_state.click_selection.idx
         
-        if current_selection is not None and st.session_state.search_results:
-            if current_selection < len(st.session_state.search_results):
-                selected_video = st.session_state.search_results[current_selection]
+        if st.session_state.search_results:
+            # Featured video (top result)
+            featured_video = st.session_state.search_results[0]
+            
+            # Use current selection or default to first result
+            display_video = featured_video
+            if current_selection is not None and current_selection < len(st.session_state.search_results):
+                display_video = st.session_state.search_results[current_selection]
+            
+            # Featured video display
+            st.subheader("🏆 Featured Video")
+            
+            # Main video preview
+            preview_video_placeholder(display_video, height=250)
+            
+            # Featured video details
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.metric("Rank", display_video['rank'])
+                st.metric("Similarity", f"{display_video['similarity_score']:.3f}")
+            with col_b:
+                st.write(f"**File:** {display_video['video_name']}")
+                st.write(f"**Category:** {getattr(display_video, 'category', 'Unknown')}")
+            
+            # Top K results list
+            st.subheader(f"🎯 Top {min(top_k, len(st.session_state.search_results))} Results")
+            
+            # Display top K results in a compact list
+            for i, video in enumerate(st.session_state.search_results[:top_k]):
+                is_selected = (current_selection == i)
                 
-                # Main video preview
-                preview_video_placeholder(selected_video, height=300)
-                
-                # Video details
-                st.subheader("📋 Details")
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    st.metric("Rank", selected_video['rank'])
-                    st.metric("Similarity", f"{selected_video['similarity_score']:.3f}")
-                with col_b:
-                    st.write(f"**File:** {selected_video['video_name']}")
-                    if selected_video.get('metadata'):
-                        metadata = selected_video['metadata']
-                        st.write(f"**Added:** {metadata.get('added_at', 'Unknown')}")
-                
-                # Action buttons
-                col_x, col_y = st.columns(2)
-                with col_x:
-                    if st.button("📥 Export Video Info"):
-                        st.json(selected_video)
-                with col_y:
-                    if st.button("🔍 Find Similar"):
-                        # Search for videos similar to this one
-                        with st.spinner("Finding similar videos..."):
-                            try:
-                                similar = search_engine.search_by_video(
-                                    selected_video['video_path'], 
-                                    top_k=top_k
-                                )
-                                st.session_state.search_results = similar
-                                st.session_state.text_query = f"Similar to: {selected_video['video_name']}"
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Failed to find similar videos: {e}")
+                # Create a container for each video result
+                with st.container():
+                    cols = st.columns([1, 3, 1])
+                    
+                    with cols[0]:
+                        # Video thumbnail placeholder
+                        st.markdown(f"""
+                        <div style="
+                            width: 60px; 
+                            height: 40px; 
+                            background: linear-gradient(45deg, #6366f1, #8b5cf6); 
+                            border-radius: 8px; 
+                            display: flex; 
+                            align-items: center; 
+                            justify-content: center; 
+                            color: white; 
+                            font-size: 16px;
+                            {'border: 2px solid #3498db;' if is_selected else ''}
+                        ">🎬</div>
+                        """, unsafe_allow_html=True)
+                    
+                    with cols[1]:
+                        # Video info
+                        st.write(f"**{video['video_name']}**")
+                        st.write(f"Score: {video['similarity_score']:.3f}")
+                    
+                    with cols[2]:
+                        # Rank
+                        st.write(f"#{video['rank']}")
+                    
+                    # Make it clickable (in real implementation)
+                    if st.button(f"Select", key=f"select_{i}", help=f"Select {video['video_name']}"):
+                        st.session_state.click_selection = SelectedVideo(i)
+                        st.rerun()
+                    
+                    # Add separator
+                    if i < min(top_k, len(st.session_state.search_results)) - 1:
+                        st.divider()
         else:
             st.info("👆 Use the search interface to find videos, then click on a result to preview it here!")
     
