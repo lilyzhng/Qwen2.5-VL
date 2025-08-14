@@ -305,8 +305,32 @@ def preview_video_with_thumbnail(video_info: Dict, height: int = 300) -> None:
             visualizer = VideoResultsVisualizer()
             thumbnail = visualizer.extract_thumbnail(full_path)
             
-            # Display just the thumbnail cleanly
-            st.image(thumbnail, use_container_width=True)
+            # Display thumbnail with proper aspect ratio (16:9)
+            import base64
+            import io
+            from PIL import Image
+            
+            # Convert numpy array to PIL if needed
+            if isinstance(thumbnail, np.ndarray):
+                thumbnail_pil = Image.fromarray(thumbnail)
+            else:
+                thumbnail_pil = thumbnail
+            
+            # Convert to base64
+            img_buffer = io.BytesIO()
+            thumbnail_pil.save(img_buffer, format='JPEG')
+            img_str = base64.b64encode(img_buffer.getvalue()).decode()
+            
+            # Create a container with 16:9 aspect ratio
+            st.markdown(
+                f"""
+                <div style="position: relative; width: 100%; padding-bottom: 56.25%; /* 16:9 aspect ratio */">
+                    <img src="data:image/jpeg;base64,{img_str}" 
+                         style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 8px;">
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
                 
         else:
             # Video file doesn't exist, show placeholder
@@ -339,7 +363,7 @@ def preview_video_placeholder(video_info: Dict, height: int = 300) -> None:
     """, unsafe_allow_html=True)
 
 
-def create_neighbor_grid(neighbors: List[Dict], num_cols: int = 5) -> None:
+def create_neighbor_grid(neighbors: List[Dict], num_cols: int = 3) -> None:
     """Create a grid of neighbor videos with real thumbnails."""
     if not neighbors:
         st.write("No neighbors to display")
@@ -803,6 +827,22 @@ def main():
             display: none !important;
         }
         
+        /* Remove bottom margins from main container */
+        .main .block-container {
+            padding-bottom: 0 !important;
+            margin-bottom: 0 !important;
+        }
+        
+        /* Remove bottom margins from expanders */
+        .streamlit-expanderHeader {
+            margin-bottom: 0 !important;
+        }
+        
+        .streamlit-expanderContent {
+            padding-bottom: 0 !important;
+            margin-bottom: 0 !important;
+        }
+        
         /* Mobile responsiveness */
         @media (max-width: 768px) {
             .main-header h1 {
@@ -835,7 +875,7 @@ def main():
         st.session_state.search_results = []
     
     # Initialize default values for variables used across components
-    top_k = 5
+    top_k = 3
     similarity_threshold = 0.5
     viz_method = "umap"
     umap_neighbors = 15
@@ -952,10 +992,10 @@ def main():
         
         # Advanced options based on method (minimal)
         if viz_method == "umap":
-            umap_neighbors = st.slider("Neighbors", 5, 50, umap_neighbors)
+            umap_neighbors = st.slider("Neighbors", 3, 50, umap_neighbors)
             umap_min_dist = st.slider("Min Distance", 0.01, 1.0, umap_min_dist, 0.01)
         elif viz_method == "trimap":
-            trimap_inliers = st.slider("Triplet Inliers", 5, 20, trimap_inliers)
+            trimap_inliers = st.slider("Triplet Inliers", 3, 20, trimap_inliers)
         
         # Database Stats Section
         st.markdown('<div class="section-title">Stats</div>', unsafe_allow_html=True)
@@ -1116,16 +1156,15 @@ def main():
                 featured_video = st.session_state.search_results[current_selection]
             
             # Large featured video display
-            st.markdown('<div class="featured-video">', unsafe_allow_html=True)
+            # st.markdown('<div class="featured-video">', unsafe_allow_html=True)
             preview_video_with_thumbnail(featured_video, height=300)
             
             # Featured video info - clean and simple
             st.markdown(f"""
             <div style="text-align: center; margin-top: 1rem;">
-                <h3 style="color: #1e293b; margin-bottom: 0.5rem;">{featured_video['video_name']}</h3>
-                <p style="color: #6366f1; font-weight: 600; font-size: 1.4rem;">
-                    Score: {featured_video['similarity_score']:.3f}
-                </p>
+                <h3 style="color: #1e293b; margin-bottom: 0.5rem; font-size: 1.4rem;">
+                    {featured_video['video_name']} <span style="color: #6366f1; margin-left: 20px;">Score: {featured_video['similarity_score']:.3f}</span>
+                </h3>
             </div>
             """, unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
@@ -1133,71 +1172,70 @@ def main():
         with results_col:
             st.markdown(f'<div style="font-size: 1rem; font-weight: 600; color: #1e293b; margin-bottom: 1rem; text-align: center;">Top {min(top_k, len(st.session_state.search_results))} Results</div>', unsafe_allow_html=True)
             
-            # Display top K results in a column - only if we have results
-            if st.session_state.search_results:
-                for i, video in enumerate(st.session_state.search_results[:top_k]):
-                    is_selected = (current_selection == i)
+            # Display top K results in a column
+            for i, video in enumerate(st.session_state.search_results[:top_k]):
+                is_selected = (current_selection == i)
+                
+                # Create clickable video card
+                video_path = video.get('video_path', '')
+                
+                # Try to extract real thumbnail first
+                thumbnail_content = None
+                try:
+                    from pathlib import Path
+                    full_path = Path(video_path)
                     
-                    # Create clickable video card
-                    video_path = video.get('video_path', '')
-                    
-                    # Try to extract real thumbnail first
-                    thumbnail_content = None
-                    try:
-                        from pathlib import Path
-                        full_path = Path(video_path)
-                        
-                        if full_path.exists():
-                            visualizer = VideoResultsVisualizer()
-                            thumbnail = visualizer.extract_thumbnail(full_path)
-                            if thumbnail is not None:
-                                # Convert PIL image to base64 for display
-                                import base64
-                                import io
-                                img_buffer = io.BytesIO()
-                                thumbnail.save(img_buffer, format='JPEG')
-                                img_str = base64.b64encode(img_buffer.getvalue()).decode()
-                                thumbnail_content = f'<img src="data:image/jpeg;base64,{img_str}" style="width: 50px; height: 35px; border-radius: 6px; object-fit: cover;">'
-                    except Exception:
-                        pass
-                    
-                    # Fallback to emoji if no thumbnail
-                    if thumbnail_content is None:
-                        # Get different colors for each result
-                        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
-                        color = colors[i % len(colors)]
-                        thumbnail_content = f'<div style="width: 50px; height: 35px; background: {color}; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-size: 1rem; flex-shrink: 0;">🎬</div>'
-                    
-                    # Create unified card design
-                    card_style = f"""
-                    background: white;
-                    border-radius: 12px;
-                    padding: 0.5rem;
-                    margin-bottom: 0.5rem;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-                    border: 2px solid {"#6366f1" if is_selected else "transparent"};
-                    transition: all 0.3s ease;
-                    cursor: pointer;
-                    """
-                    
-                    # Display non-interactive card (click on visualization to select)
-                    st.markdown(f"""
-                    <div style="{card_style}">
-                        <div style="display: flex; align-items: center; gap: 0.5rem;">
-                            {thumbnail_content}
-                            <div style="flex: 1; display: flex; justify-content: space-between; align-items: center;">
-                                <div style="font-weight: 600; color: #1e293b; font-size: 0.8rem; line-height: 1.2;">
-                                    {video['video_name']}
-                                </div>
-                                <div style="color: #6366f1; font-weight: 600; font-size: 0.8rem; line-height: 1.2;">
-                                    {video['similarity_score']:.3f}
-                                </div>
+                    if full_path.exists():
+                        visualizer = VideoResultsVisualizer()
+                        thumbnail_array = visualizer.extract_thumbnail(full_path)
+                        if thumbnail_array is not None:
+                            # Convert numpy array to PIL image, then to base64 for display
+                            import base64
+                            import io
+                            from PIL import Image
+                            thumbnail = Image.fromarray(thumbnail_array)
+                            img_buffer = io.BytesIO()
+                            thumbnail.save(img_buffer, format='JPEG')
+                            img_str = base64.b64encode(img_buffer.getvalue()).decode()
+                            thumbnail_content = f'<img src="data:image/jpeg;base64,{img_str}" style="width: 80px; height: 45px; border-radius: 6px; object-fit: cover;">'
+                except Exception:
+                    pass
+                
+                # Fallback to emoji if no thumbnail
+                if thumbnail_content is None:
+                    # Get different colors for each result
+                    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
+                    color = colors[i % len(colors)]
+                    thumbnail_content = f'<div style="width: 80px; height: 45px; background: {color}; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-size: 1.1rem; flex-shrink: 0;">🎬</div>'
+                
+                # Create unified card design
+                card_style = f"""
+                background: white;
+                border-radius: 12px;
+                padding: 0.5rem;
+                margin-bottom: 0.5rem;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+                border: 2px solid {"#6366f1" if is_selected else "transparent"};
+                transition: all 0.3s ease;
+                cursor: pointer;
+                """
+                
+                # Display non-interactive card (click on visualization to select)
+                st.markdown(f"""
+                <div style="{card_style}">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        {thumbnail_content}
+                        <div style="flex: 1; display: flex; justify-content: space-between; align-items: center;">
+                            <div style="font-weight: 600; color: #1e293b; font-size: 0.8rem; line-height: 1.2;">
+                                {video['video_name']}
+                            </div>
+                            <div style="color: #6366f1; font-weight: 600; font-size: 0.8rem; line-height: 1.2;">
+                                {video['similarity_score']:.3f}
                             </div>
                         </div>
                     </div>
-                    """, unsafe_allow_html=True)
-            else:
-                st.info("No search results to display")
+                </div>
+                """, unsafe_allow_html=True)
         
         # Results table (collapsed by default)
         with st.expander("📊 Detailed Results Table"):
@@ -1216,9 +1254,6 @@ def main():
                 use_container_width=True,
                 hide_index=True
             )
-    
-
-
 
 if __name__ == "__main__":
     main()
