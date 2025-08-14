@@ -228,11 +228,13 @@ def main():
                 
                 if args.query_video:
                     vis_path = visualizer.visualize_video_search_results(
-                        args.query_video, results[:5]  # Top 5 for visualization
+                        args.query_video, results[:5],  # Top 5 for visualization
+                        show_interactive=True, keep_open=True
                     )
                 else:
                     vis_path = visualizer.visualize_text_search_results(
-                        args.query_text, results[:5]
+                        args.query_text, results[:5], 
+                        show_interactive=True, keep_open=True
                     )
                 
                 logger.info(f"Visualization saved to: {vis_path}")

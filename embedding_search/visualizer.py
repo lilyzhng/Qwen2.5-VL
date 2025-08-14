@@ -61,7 +61,9 @@ class VideoResultsVisualizer:
     
     def visualize_video_search_results(self, query_video_path: Union[str, Path], 
                                      results: List[Dict], 
-                                     save_path: Optional[Union[str, Path]] = None) -> Path:
+                                     save_path: Optional[Union[str, Path]] = None,
+                                     show_interactive: bool = False,
+                                     keep_open: bool = False) -> Path:
         """
         Visualize video-to-video search results.
         
@@ -69,6 +71,8 @@ class VideoResultsVisualizer:
             query_video_path: Path to the query video
             results: List of search results
             save_path: Optional path to save the visualization
+            show_interactive: If True, display the plot interactively
+            keep_open: If True, keep the matplotlib window open (requires manual close)
             
         Returns:
             Path where visualization was saved
@@ -125,14 +129,26 @@ class VideoResultsVisualizer:
             save_path = Path(save_path)
         
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        plt.close()
+        
+        # Handle display options
+        if show_interactive or keep_open:
+            plt.show()
+            if not keep_open:
+                # Show briefly then close automatically
+                plt.pause(3)
+                plt.close()
+            # If keep_open=True, user must manually close the window
+        else:
+            plt.close()
         
         logger.info(f"Visualization saved to {save_path}")
         return save_path
     
     def visualize_text_search_results(self, query_text: str, 
                                     results: List[Dict], 
-                                    save_path: Optional[Union[str, Path]] = None) -> Path:
+                                    save_path: Optional[Union[str, Path]] = None,
+                                    show_interactive: bool = False,
+                                    keep_open: bool = False) -> Path:
         """
         Visualize text-to-video search results.
         
@@ -140,6 +156,8 @@ class VideoResultsVisualizer:
             query_text: Text query used for search
             results: List of search results
             save_path: Optional path to save the visualization
+            show_interactive: If True, display the plot interactively
+            keep_open: If True, keep the matplotlib window open (requires manual close)
             
         Returns:
             Path where visualization was saved
@@ -180,7 +198,17 @@ class VideoResultsVisualizer:
             save_path = Path(save_path)
         
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        plt.close()
+        
+        # Handle display options
+        if show_interactive or keep_open:
+            plt.show()
+            if not keep_open:
+                # Show briefly then close automatically
+                plt.pause(3)
+                plt.close()
+            # If keep_open=True, user must manually close the window
+        else:
+            plt.close()
         
         logger.info(f"Visualization saved to {save_path}")
         return save_path
