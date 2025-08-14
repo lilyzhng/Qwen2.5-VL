@@ -53,8 +53,8 @@ class PerformanceMonitor:
         self.metrics = {
             'cpu_percent': [],
             'memory_mb': [],
-            'gpu_memory_mb': [],
-            'gpu_utilization': [],
+            'gpu_vram_mb': [],
+            'gpu_utilization_percent': [],
             'timestamps': []
         }
         self.monitor_thread = None
@@ -84,21 +84,27 @@ class PerformanceMonitor:
             memory_info = psutil.virtual_memory()
             memory_mb = memory_info.used / (1024 * 1024)
             
-            # GPU monitoring
-            gpu_memory_mb = 0
-            gpu_utilization = 0
+            # GPU monitoring - separate VRAM and utilization
+            gpu_vram_mb = 0
+            gpu_utilization_percent = 0
             
             if torch.cuda.is_available():
                 try:
-                    # PyTorch GPU memory
-                    gpu_memory_mb = torch.cuda.memory_allocated() / (1024 * 1024)
+                    # VRAM usage via PyTorch (more accurate for allocated memory)
+                    gpu_vram_mb = torch.cuda.memory_allocated() / (1024 * 1024)
                     
-                    # GPU utilization via nvidia-ml-py
+                    # GPU utilization percentage via nvidia-ml-py (preferred)
                     if HAS_PYNVML:
                         try:
                             handle = pynvml.nvmlDeviceGetHandleByIndex(0)
                             util = pynvml.nvmlDeviceGetUtilizationRates(handle)
-                            gpu_utilization = util.gpu
+                            gpu_utilization_percent = util.gpu
+                            
+                            # Also get VRAM from NVML for comparison/backup
+                            mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                            nvml_vram_mb = mem_info.used / (1024 * 1024)
+                            # Use the higher value between PyTorch and NVML
+                            gpu_vram_mb = max(gpu_vram_mb, nvml_vram_mb)
                         except Exception as e:
                             logger.debug(f"NVML error: {e}")
                     
@@ -107,8 +113,10 @@ class PerformanceMonitor:
                         try:
                             gpus = GPUtil.getGPUs()
                             if gpus:
-                                gpu_utilization = gpus[0].load * 100
-                                gpu_memory_mb = gpus[0].memoryUsed
+                                gpu_utilization_percent = gpus[0].load * 100
+                                # Use GPUtil VRAM if PyTorch shows 0
+                                if gpu_vram_mb == 0:
+                                    gpu_vram_mb = gpus[0].memoryUsed
                         except Exception as e:
                             logger.debug(f"GPUtil error: {e}")
                             
@@ -118,8 +126,8 @@ class PerformanceMonitor:
             # Store metrics
             self.metrics['cpu_percent'].append(cpu_percent)
             self.metrics['memory_mb'].append(memory_mb)
-            self.metrics['gpu_memory_mb'].append(gpu_memory_mb)
-            self.metrics['gpu_utilization'].append(gpu_utilization)
+            self.metrics['gpu_vram_mb'].append(gpu_vram_mb)
+            self.metrics['gpu_utilization_percent'].append(gpu_utilization_percent)
             self.metrics['timestamps'].append(timestamp)
             
             time.sleep(self.monitor_interval)
@@ -306,7 +314,8 @@ class InferenceBenchmark:
         
         if successful_results:
             inference_times = [r['inference_time_seconds'] for r in successful_results]
-            gpu_memory_peaks = [r.get('gpu_memory_mb_max', 0) for r in successful_results]
+            gpu_vram_peaks = [r.get('gpu_vram_mb_max', 0) for r in successful_results]
+            gpu_util_peaks = [r.get('gpu_utilization_percent_max', 0) for r in successful_results]
             cpu_peaks = [r.get('cpu_percent_max', 0) for r in successful_results]
             ram_peaks = [r.get('memory_mb_max', 0) for r in successful_results]
             
@@ -318,8 +327,10 @@ class InferenceBenchmark:
                 'min_inference_time_seconds': np.min(inference_times),
                 'max_inference_time_seconds': np.max(inference_times),
                 'std_inference_time_seconds': np.std(inference_times),
-                'avg_gpu_memory_mb': np.mean(gpu_memory_peaks),
-                'max_gpu_memory_mb': np.max(gpu_memory_peaks),
+                'avg_gpu_vram_mb': np.mean(gpu_vram_peaks),
+                'max_gpu_vram_mb': np.max(gpu_vram_peaks),
+                'avg_gpu_utilization_percent': np.mean(gpu_util_peaks),
+                'max_gpu_utilization_percent': np.max(gpu_util_peaks),
                 'avg_cpu_utilization_percent': np.mean(cpu_peaks),
                 'max_cpu_utilization_percent': np.max(cpu_peaks),
                 'avg_ram_usage_mb': np.mean(ram_peaks),
@@ -388,9 +399,13 @@ class InferenceBenchmark:
             print(f"   Range: {summary['min_inference_time_seconds']:.3f}s - {summary['max_inference_time_seconds']:.3f}s")
             print(f"   Std Dev: {summary['std_inference_time_seconds']:.3f}s")
             
-            print(f"\n🎮 GPU UTILIZATION:")
-            print(f"   Peak VRAM: {summary['max_gpu_memory_mb']:.1f} MB")
-            print(f"   Avg VRAM: {summary['avg_gpu_memory_mb']:.1f} MB")
+            print(f"\n🎮 GPU VRAM USAGE:")
+            print(f"   Peak VRAM: {summary['max_gpu_vram_mb']:.1f} MB ({summary['max_gpu_vram_mb']/1024:.2f} GB)")
+            print(f"   Avg VRAM: {summary['avg_gpu_vram_mb']:.1f} MB ({summary['avg_gpu_vram_mb']/1024:.2f} GB)")
+            
+            print(f"\n⚡ GPU UTILIZATION:")
+            print(f"   Peak Usage: {summary['max_gpu_utilization_percent']:.1f}%")
+            print(f"   Avg Usage: {summary['avg_gpu_utilization_percent']:.1f}%")
             
             print(f"\n💻 CPU UTILIZATION:")
             print(f"   Peak Usage: {summary['max_cpu_utilization_percent']:.1f}%")
@@ -413,7 +428,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="Benchmark NVIDIA Cosmos Embed inference performance")
     parser.add_argument('--video-dir', '-d', type=str, 
-                       default='/Users/lilyzhang/Desktop/Qwen2.5-VL/nvidia_cosmos/videos/video_database',
+                       default='/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/videos/video_database',
                        help='Directory containing video files')
     parser.add_argument('--max-videos', '-n', type=int, default=10,
                        help='Maximum number of videos to benchmark')
