@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 import argparse
 
-from video_search_v2 import VideoSearchEngine
+from video_search import VideoSearchEngine
 from config import VideoRetrievalConfig
 
 logging.basicConfig(level=logging.INFO)
@@ -74,7 +74,7 @@ def main():
     old_db_path = Path(args.old_db)
     if not old_db_path.exists():
         logger.error(f"Old database not found: {old_db_path}")
-        logger.info("If you haven't built a database yet, use the new main_v2.py directly")
+        logger.info("If you haven't built a database yet, use the new main.py directly")
         return 1
     
     try:
@@ -90,8 +90,8 @@ def main():
         print()
         print("To use the improved system:")
         print("  1. Review the new features in IMPROVEMENTS.md")
-        print("  2. Use main_v2.py instead of main.py")
-        print("  3. Example: python main_v2.py search --query-text 'car approaching cyclist'")
+        print("  2. Use the updated main.py")
+        print("  3. Example: python main.py search --query-text 'car approaching cyclist'")
         print()
         print("The old database file is preserved and can be deleted if migration was successful.")
         

@@ -11,7 +11,7 @@ import logging
 from typing import List, Dict
 import matplotlib.pyplot as plt
 
-from video_search_v2 import VideoSearchEngine
+from video_search import VideoSearchEngine
 from video_search_optimized import OptimizedVideoSearchEngine
 from config import VideoRetrievalConfig
 
