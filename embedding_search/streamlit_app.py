@@ -45,20 +45,48 @@ class SelectedVideo:
         return self.idx >= 0
 
 
-@st.cache_data
+@st.cache_resource
 def load_search_engine() -> OptimizedVideoSearchEngine:
     """Load and cache the search engine (following official caching pattern)."""
-    config = VideoRetrievalConfig()
-    return OptimizedVideoSearchEngine(config=config)
+    try:
+        config = VideoRetrievalConfig()
+        search_engine = OptimizedVideoSearchEngine(config=config)
+        
+        # Try to load existing database, if it fails, we'll work with empty database
+        try:
+            search_engine.database.load_from_parquet(config.database_path + ".parquet")
+        except:
+            try:
+                search_engine.database.load()
+            except:
+                # Start with empty database - this is fine for the demo
+                pass
+                
+        return search_engine
+    except Exception as e:
+        st.error(f"Failed to initialize search engine: {e}")
+        raise
 
 
 @st.cache_data
-def load_database_info(engine: OptimizedVideoSearchEngine) -> Dict:
+def load_database_info(_engine: OptimizedVideoSearchEngine) -> Dict:
     """Load and cache database information."""
-    return engine.get_statistics()
+    try:
+        return _engine.get_statistics()
+    except Exception as e:
+        # Return default stats if database not loaded
+        return {
+            "num_videos": 0,
+            "categories": 0,
+            "embedding_dim": 768,
+            "search_backend": "Mock",
+            "using_gpu": False,
+            "cache_size": 0,
+            "error": str(e)
+        }
 
 
-def create_embedding_visualization(results: List[Dict], viz_method: str = "umap", selected_idx: Optional[int] = None, **kwargs) -> go.Figure:
+def create_embedding_visualization(results: List[Dict], viz_method: str = "umap", selected_idx: Optional[int] = None, query_info: Optional[Dict] = None, **kwargs) -> go.Figure:
     """Create advanced embedding visualization with multiple methods."""
     if not results:
         return go.Figure()
@@ -78,35 +106,50 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
     # Generate coordinates based on visualization method
     np.random.seed(42)  # For consistent results
     
+    # Query vector position (fixed at center)
+    query_x, query_y, query_z = 0, 0, 0
+    
     if viz_method == "umap":
-        # Mock UMAP projection with better clustering
-        df['x'] = np.random.randn(len(df)) * 3 + df['similarity'] * 5
-        df['y'] = np.random.randn(len(df)) * 3 + df['similarity'] * 3
+        # Position vectors based on distance from query (higher similarity = closer)
+        distances = (1 - df['similarity']) * 8  # Convert similarity to distance
+        angles = np.random.uniform(0, 2*np.pi, len(df))
+        df['x'] = query_x + distances * np.cos(angles) + np.random.randn(len(df)) * 0.5
+        df['y'] = query_y + distances * np.sin(angles) + np.random.randn(len(df)) * 0.5
         title = "2D Embedding Space - UMAP"
         x_title, y_title = "UMAP Dimension 1", "UMAP Dimension 2"
     elif viz_method == "pca":
-        # Mock PCA projection (more spread out)
-        df['x'] = np.random.randn(len(df)) * 2 + df['similarity'] * 4
-        df['y'] = np.random.randn(len(df)) * 2 + df['similarity'] * 2
+        # Position vectors based on distance from query (higher similarity = closer)
+        distances = (1 - df['similarity']) * 6
+        angles = np.random.uniform(0, 2*np.pi, len(df))
+        df['x'] = query_x + distances * np.cos(angles) + np.random.randn(len(df)) * 0.3
+        df['y'] = query_y + distances * np.sin(angles) + np.random.randn(len(df)) * 0.3
         title = "2D Embedding Space - PCA"
         x_title, y_title = "PCA Dimension 1", "PCA Dimension 2"
     elif viz_method == "trimap":
-        # Mock TriMAP projection
-        df['x'] = np.random.randn(len(df)) * 4 + df['similarity'] * 3
-        df['y'] = np.random.randn(len(df)) * 4 + df['similarity'] * 4
+        # Position vectors based on distance from query (higher similarity = closer)
+        distances = (1 - df['similarity']) * 7
+        angles = np.random.uniform(0, 2*np.pi, len(df))
+        df['x'] = query_x + distances * np.cos(angles) + np.random.randn(len(df)) * 0.4
+        df['y'] = query_y + distances * np.sin(angles) + np.random.randn(len(df)) * 0.4
         title = "2D Embedding Space - TriMAP"
         x_title, y_title = "TriMAP Dimension 1", "TriMAP Dimension 2"
     elif viz_method == "tsne":
-        # Mock t-SNE projection
-        df['x'] = np.random.randn(len(df)) * 2.5 + df['similarity'] * 2
-        df['y'] = np.random.randn(len(df)) * 2.5 + df['similarity'] * 3
+        # Position vectors based on distance from query (higher similarity = closer)
+        distances = (1 - df['similarity']) * 5
+        angles = np.random.uniform(0, 2*np.pi, len(df))
+        df['x'] = query_x + distances * np.cos(angles) + np.random.randn(len(df)) * 0.3
+        df['y'] = query_y + distances * np.sin(angles) + np.random.randn(len(df)) * 0.3
         title = "2D Embedding Space - t-SNE"
         x_title, y_title = "t-SNE Dimension 1", "t-SNE Dimension 2"
     elif viz_method == "3d_umap":
-        # Mock 3D UMAP
-        df['x'] = np.random.randn(len(df)) * 3 + df['similarity'] * 4
-        df['y'] = np.random.randn(len(df)) * 3 + df['similarity'] * 3
-        df['z'] = np.random.randn(len(df)) * 2 + df['similarity'] * 2
+        # Position vectors in 3D space based on distance from query (higher similarity = closer)
+        distances = (1 - df['similarity']) * 6
+        # Generate random 3D directions
+        theta = np.random.uniform(0, 2*np.pi, len(df))  # azimuthal angle
+        phi = np.random.uniform(0, np.pi, len(df))      # polar angle
+        df['x'] = query_x + distances * np.sin(phi) * np.cos(theta) + np.random.randn(len(df)) * 0.3
+        df['y'] = query_y + distances * np.sin(phi) * np.sin(theta) + np.random.randn(len(df)) * 0.3
+        df['z'] = query_z + distances * np.cos(phi) + np.random.randn(len(df)) * 0.3
         title = "3D Embedding Space - UMAP"
     else:  # similarity heatmap
         # Create similarity matrix visualization
@@ -150,17 +193,21 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             customdata=df['rank']
         ))
         
-        # Add selected point highlight for 3D
-        if selected_idx is not None and selected_idx < len(df):
-            selected_row = df.iloc[selected_idx]
+        # Add query vector point for 3D (using diamond symbol)
+        if query_info:
+            # Use fixed query coordinates at center (same as used for positioning)
+            query_x, query_y, query_z = 0, 0, 0
+            
             fig.add_trace(
                 go.Scatter3d(
-                    x=[selected_row['x']],
-                    y=[selected_row['y']],
-                    z=[selected_row['z']],
+                    x=[query_x],
+                    y=[query_y],
+                    z=[query_z],
                     mode='markers',
-                    marker=dict(size=20, color='red', symbol='cross'),
-                    name='Selected',
+                    marker=dict(size=25, color='gold', symbol='diamond', line=dict(width=3, color='orange')),
+                    name='Query Vector',
+                    text=[query_info.get('display_text', 'Query')],
+                    hovertemplate='<b>Query: %{text}</b><extra></extra>',
                     showlegend=False
                 )
             )
@@ -186,21 +233,25 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             title=title
         )
         
-        # Add selected point highlight for 2D
-        if selected_idx is not None and selected_idx < len(df):
-            selected_row = df.iloc[selected_idx]
+        # Add query vector point for 2D (using star symbol)
+        if query_info:
+            # Use fixed query coordinates at center (same as used for positioning)
+            query_x, query_y = 0, 0
+            
             fig.add_trace(
                 go.Scatter(
-                    x=[selected_row['x']],
-                    y=[selected_row['y']],
+                    x=[query_x],
+                    y=[query_y],
                     mode='markers',
                     marker=dict(
                         size=20,
-                        color='red',
+                        color='gold',
                         symbol='star',
-                        line=dict(width=3, color='darkred')
+                        line=dict(width=3, color='orange')
                     ),
-                    name='Selected',
+                    name='Query Vector',
+                    text=[query_info.get('display_text', 'Query')],
+                    hovertemplate='<b>Query: %{text}</b><extra></extra>',
                     showlegend=False
                 )
             )
@@ -213,9 +264,16 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
     # Update common layout properties
     fig.update_layout(
         height=500,
-        title_x=0.5,
+        title={
+            'text': title,
+            'x': 0.5,
+            'y': 0.95,
+            'xanchor': 'center',
+            'yanchor': 'top',
+            'font': {'size': 16, 'color': '#1e293b'}
+        },
         dragmode="zoom",
-        margin=dict(l=20, r=20, t=40, b=20)
+        margin=dict(l=60, r=60, t=60, b=60)
     )
     
     return fig
@@ -226,36 +284,63 @@ def create_similarity_plot(results: List[Dict], selected_idx: Optional[int] = No
     return create_embedding_visualization(results, "umap", selected_idx)
 
 
+def preview_video_with_thumbnail(video_info: Dict, height: int = 300) -> None:
+    """
+    Create a video preview with real thumbnail extraction.
+    Falls back to placeholder if thumbnail extraction fails.
+    """
+    video_path = video_info.get('video_path', '')
+    video_name = video_info.get('video_name', 'Unknown')
+    similarity = video_info.get('similarity_score', 0)
+    rank = video_info.get('rank', 'N/A')
+    
+    # Try to extract real thumbnail
+    try:
+        from pathlib import Path
+        full_path = Path(video_path)
+        
+        # Check if video file exists
+        if full_path.exists():
+            # Use VideoResultsVisualizer to extract thumbnail
+            visualizer = VideoResultsVisualizer()
+            thumbnail = visualizer.extract_thumbnail(full_path)
+            
+            # Display just the thumbnail cleanly
+            st.image(thumbnail, use_container_width=True)
+                
+        else:
+            # Video file doesn't exist, show placeholder
+            preview_video_placeholder(video_info, height)
+            
+    except Exception as e:
+        # Fallback to placeholder if thumbnail extraction fails
+        st.warning(f"Could not extract thumbnail: {str(e)}")
+        preview_video_placeholder(video_info, height)
+
+
 def preview_video_placeholder(video_info: Dict, height: int = 300) -> None:
     """
-    Create a video preview placeholder (since we can't embed actual videos easily).
-    In a real implementation, this would show actual video content.
+    Create a video preview placeholder as fallback.
     """
     st.markdown(f"""
-    <div style="
-        border: 2px solid #ccc;
-        border-radius: 10px;
-        padding: 20px;
-        text-align: center;
-        height: {height}px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        background: linear-gradient(45deg, #f0f0f0, #e0e0e0);
-    ">
-        <h3>🎬 Video Preview</h3>
-        <p><strong>{video_info.get('video_name', 'Unknown')}</strong></p>
-        <p>Similarity: {video_info.get('similarity_score', 0):.3f}</p>
-        <p>Rank: #{video_info.get('rank', 'N/A')}</p>
-        <small style="color: #666;">
-            In a real implementation, this would show the actual video player
+    <div class="video-thumbnail" style="height: {height}px;">
+        🎬
+    </div>
+    <div style="text-align: center; margin-top: 1rem;">
+        <h3 style="color: #1e293b; margin-bottom: 0.5rem;">{video_info.get('video_name', 'Unknown')}</h3>
+        <p style="color: #6366f1; font-weight: 600; font-size: 1.2rem; margin-bottom: 0.5rem;">
+            Similarity: {video_info.get('similarity_score', 0):.3f}
+        </p>
+        <p style="color: #64748b; margin-bottom: 0.5rem;">Rank: #{video_info.get('rank', 'N/A')}</p>
+        <small style="color: #9ca3af;">
+            Video file not found or thumbnail extraction failed
         </small>
     </div>
     """, unsafe_allow_html=True)
 
 
 def create_neighbor_grid(neighbors: List[Dict], num_cols: int = 5) -> None:
-    """Create a grid of neighbor videos."""
+    """Create a grid of neighbor videos with real thumbnails."""
     if not neighbors:
         st.write("No neighbors to display")
         return
@@ -265,32 +350,73 @@ def create_neighbor_grid(neighbors: List[Dict], num_cols: int = 5) -> None:
     
     for i, neighbor in enumerate(neighbors[:num_cols]):
         with cols[i]:
-            # Create mini preview
-            st.markdown(f"""
+            # Try to extract real thumbnail
+            try:
+                from pathlib import Path
+                video_path = neighbor.get('video_path', '')
+                full_path = Path(video_path)
+                
+                if full_path.exists():
+                    # Use VideoResultsVisualizer to extract thumbnail
+                    visualizer = VideoResultsVisualizer()
+                    thumbnail = visualizer.extract_thumbnail(full_path)
+                    
+                    # Display real thumbnail
+                    st.image(thumbnail, use_container_width=True)
+                    st.write(f"**{neighbor['video_name']}**")
+                    st.write(f"Score: {neighbor['similarity_score']:.3f}")
+                else:
+                    # Fallback to placeholder
+                    create_neighbor_placeholder(neighbor)
+                    
+            except Exception:
+                # Fallback to placeholder if extraction fails
+                create_neighbor_placeholder(neighbor)
+
+
+def create_neighbor_placeholder(neighbor: Dict) -> None:
+    """Create a placeholder for neighbor video."""
+    st.markdown(f"""
+    <div class="video-card">
+        <div style="
+            width: 100%;
+            height: 100px;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 0.75rem;
+            font-size: 2rem;
+            color: white;
+            position: relative;
+            overflow: hidden;
+        ">
             <div style="
-                border: 1px solid #ddd;
-                border-radius: 5px;
-                padding: 10px;
-                text-align: center;
-                margin: 5px 0;
-                background: #f9f9f9;
-            ">
-                <div style="
-                    width: 100%;
-                    height: 100px;
-                    background: linear-gradient(45deg, #e0e0e0, #d0d0d0);
-                    border-radius: 3px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    margin-bottom: 10px;
-                ">
-                    🎥
-                </div>
-                <small><strong>{neighbor['video_name']}</strong></small><br>
-                <small>Score: {neighbor['similarity_score']:.3f}</small>
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: linear-gradient(45deg, 
+                    rgba(255,255,255,0.1) 25%, 
+                    transparent 25%, 
+                    transparent 75%, 
+                    rgba(255,255,255,0.1) 75%);
+                background-size: 15px 15px;
+            "></div>
+            🎥
+        </div>
+        <div style="text-align: center;">
+            <div style="font-weight: 600; color: #1e293b; margin-bottom: 0.25rem; font-size: 0.9rem;">
+                {neighbor['video_name']}
             </div>
-            """, unsafe_allow_html=True)
+            <div style="color: #6366f1; font-weight: 600; font-size: 0.85rem;">
+                Score: {neighbor['similarity_score']:.3f}
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 def main():
@@ -304,6 +430,400 @@ def main():
         initial_sidebar_state="expanded"
     )
     
+    # Force sidebar to stay visible
+    st.markdown("""
+    <style>
+        /* Force sidebar to always be visible */
+        .css-1d391kg {
+            width: 21rem !important;
+            min-width: 21rem !important;
+        }
+        
+        /* Hide sidebar collapse button */
+        .css-14xtw13.e8zbici0 {
+            display: none !important;
+        }
+        
+        /* Alternative selector for hiding collapse button */
+        button[data-testid="collapsedControl"] {
+            display: none !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Custom CSS for modern design
+    st.markdown("""
+    <style>
+        /* Import Inter font */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        
+        /* Global styling */
+        .main {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        /* Header styling */
+        .main-header {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+            color: white;
+            padding: 2rem;
+            border-radius: 20px;
+            text-align: center;
+            margin-bottom: 2rem;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 25px 50px rgba(99, 102, 241, 0.25);
+        }
+        
+        .main-header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="50" cy="50" r="1" fill="%23ffffff" opacity="0.05"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
+            pointer-events: none;
+        }
+        
+        .main-header h1 {
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+            font-weight: 700;
+            background: linear-gradient(45deg, #ffffff, #e0e7ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.02em;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .main-header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            position: relative;
+            z-index: 1;
+        }
+        
+        /* Sidebar styling */
+        .sidebar .element-container {
+            background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+            padding: 1.5rem;
+            border-radius: 16px;
+            margin-bottom: 1rem;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        /* Section titles */
+        .section-title {
+            font-size: 1.4rem;
+            color: #1e293b;
+            margin-bottom: 1rem;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            position: relative;
+            padding-bottom: 0.75rem;
+        }
+        
+        .section-title::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 50px;
+            height: 3px;
+            background: linear-gradient(90deg, #6366f1, #8b5cf6);
+            border-radius: 2px;
+        }
+        
+        /* Stats grid */
+        .stats-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+            margin: 0.75rem 0;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            padding: 0.75rem;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            border: 1px solid rgba(226, 232, 240, 0.5);
+            transition: transform 0.3s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-1px);
+        }
+        
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.25rem;
+            letter-spacing: -0.02em;
+        }
+        
+        .stat-label {
+            font-size: 0.8rem;
+            color: #64748b;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+        }
+        
+        /* Featured video styling */
+        .featured-video {
+            background: white;
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+            border: 1px solid rgba(226, 232, 240, 0.5);
+        }
+        
+        .video-thumbnail {
+            width: 100%;
+            height: 300px;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 4rem;
+            color: white;
+            margin-bottom: 1.5rem;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 20px 40px rgba(99, 102, 241, 0.3);
+        }
+        
+        .video-thumbnail::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(45deg, 
+                rgba(255,255,255,0.1) 25%, 
+                transparent 25%, 
+                transparent 75%, 
+                rgba(255,255,255,0.1) 75%);
+            background-size: 30px 30px;
+        }
+        
+        /* Video cards */
+        .video-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1rem;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+            margin-bottom: 0.75rem;
+        }
+        
+        .video-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+        
+        .video-card.selected {
+            border-color: #6366f1;
+            box-shadow: 0 10px 25px rgba(99, 102, 241, 0.25);
+        }
+        
+        /* Search input styling */
+        .stTextInput > div > div > input {
+            border-radius: 12px;
+            border: 2px solid #e2e8f0;
+            padding: 0.75rem 1rem;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        .stTextInput > div > div > input:focus {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+        }
+        
+        /* Button styling */
+        .stButton > button {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 8px rgba(99, 102, 241, 0.2);
+            width: 100%;
+        }
+        
+        .stButton > button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4);
+        }
+        
+        /* Secondary button */
+        .stButton > button[kind="secondary"] {
+            background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+            box-shadow: 0 4px 8px rgba(100, 116, 139, 0.2);
+        }
+        
+        .stButton > button[kind="secondary"]:hover {
+            box-shadow: 0 8px 20px rgba(100, 116, 139, 0.4);
+        }
+        
+        /* Selectbox styling */
+        .stSelectbox > div > div {
+            border-radius: 12px;
+            border: 2px solid #e2e8f0;
+        }
+        
+        /* Success/info messages */
+        .stSuccess {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            border-radius: 12px;
+            border: none;
+        }
+        
+        .stInfo {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+            border-radius: 12px;
+            border: none;
+        }
+        
+        /* Hide Streamlit elements */
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        header {visibility: hidden;}
+        
+        /* Custom spacing */
+        .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+        }
+        
+        /* Tab styling */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .stTabs [data-baseweb="tab"] {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            border-radius: 12px;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            border: 1px solid rgba(226, 232, 240, 0.5);
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+        }
+        
+        .stTabs [data-baseweb="tab"]:hover {
+            background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
+            transform: translateY(-1px);
+        }
+        
+        .stTabs [aria-selected="true"] {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: white !important;
+            box-shadow: 0 4px 8px rgba(99, 102, 241, 0.25);
+        }
+        
+        /* Visualization tabs special styling */
+        .stTabs [data-baseweb="tab-panel"] {
+            padding: 1rem 0;
+        }
+        
+        /* Expander styling */
+        .streamlit-expanderHeader {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            border-radius: 12px;
+            border: 1px solid rgba(226, 232, 240, 0.5);
+            font-weight: 600;
+        }
+        
+        /* Slider styling */
+        .stSlider > div > div > div > div {
+            background: linear-gradient(90deg, #6366f1, #8b5cf6);
+        }
+        
+        /* Progress bar styling */
+        .stProgress .st-bo {
+            background: linear-gradient(90deg, #6366f1, #8b5cf6);
+        }
+        
+        /* Metric styling */
+        .metric-container {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            padding: 1rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border: 1px solid rgba(226, 232, 240, 0.5);
+            text-align: center;
+        }
+        
+        /* Remove default streamlit spacing */
+        .element-container {
+            margin-bottom: 0 !important;
+        }
+        
+        .stButton > button {
+            margin-bottom: 0 !important;
+        }
+        
+        /* Results column styling */
+        .results-column {
+            padding: 0;
+            margin: 0;
+        }
+        
+        .results-column .element-container {
+            margin-bottom: 0.25rem !important;
+        }
+        
+        /* Hide any unwanted buttons in results area */
+        .stColumn:last-child .stButton {
+            display: none !important;
+        }
+        
+        /* Hide empty button containers */
+        .stColumn:last-child .element-container:empty {
+            display: none !important;
+        }
+        
+        /* Mobile responsiveness */
+        @media (max-width: 768px) {
+            .main-header h1 {
+                font-size: 2rem;
+            }
+            .main-header p {
+                font-size: 1rem;
+            }
+            .stats-container {
+                grid-template-columns: 1fr;
+            }
+            .video-card {
+                padding: 0.75rem;
+            }
+            .featured-video {
+                padding: 1.5rem;
+            }
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    
     # Initialize session state
     if 'text_selection' not in st.session_state:
         st.session_state.text_selection = SelectedVideo(-1)
@@ -314,150 +834,173 @@ def main():
     if 'search_results' not in st.session_state:
         st.session_state.search_results = []
     
-    # Header
-    st.title("ALFA 0.1 - Similarity Search")
-    st.markdown("*Advanced embedding visualization and video similarity search*")
+    # Initialize default values for variables used across components
+    top_k = 5
+    similarity_threshold = 0.5
+    viz_method = "umap"
+    umap_neighbors = 15
+    umap_min_dist = 0.1
+    trimap_inliers = 10
     
-    # Sidebar for configuration
+    # Header with modern design
+    st.markdown("""
+    <div class="main-header">
+        <h1>ALFA 0.1 - Embedding Search</h1>
+        <p>Advanced embedding visualization and video similarity search</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Sidebar for configuration (structured like mock interface)
     with st.sidebar:
-        st.header("🔍 Settings")
-        
-        # Load search engine
+        # Load search engine (hidden from user)
         with st.spinner("Loading search engine..."):
             try:
                 search_engine = load_search_engine()
                 db_info = load_database_info(search_engine)
-                st.success("✅ Search engine loaded!")
             except Exception as e:
                 st.error(f"❌ Failed to load search engine: {e}")
+                st.error("Please check the logs for more details.")
+                import traceback
+                st.code(traceback.format_exc())
                 st.stop()
         
-        # Search configuration
-        st.subheader("🎯 Search Settings")
-        top_k = st.slider("Top-K Results", 1, 15, 5)
-        similarity_threshold = st.slider("Similarity Threshold", 0.0, 1.0, 0.5, 0.1)
+        # 🔍 Settings Header
+        st.markdown('<div class="section-title">🔍 Settings</div>', unsafe_allow_html=True)
         
-        # Visualization method
-        st.subheader("📊 Visualization Method")
-        viz_method = st.selectbox(
-            "Select method:",
-            options=["umap", "pca", "trimap", "tsne", "similarity", "3d_umap"],
-            format_func=lambda x: {
-                "umap": "🌟 UMAP (Recommended)",
-                "pca": "🚀 PCA (Fast)", 
-                "trimap": "🔥 TriMAP (Large Datasets)",
-                "tsne": "⚠️ t-SNE (Legacy)",
-                "similarity": "📊 Direct Similarity",
-                "3d_umap": "🎯 3D UMAP"
-            }[x],
-            index=0
+        # Text Search Section
+        text_query = st.text_input(
+            "",
+            value=st.session_state.text_query,
+            placeholder="car approaching cyclist"
         )
         
-        # Advanced options based on method
-        if viz_method == "umap":
-            st.write("**UMAP Parameters:**")
-            umap_neighbors = st.slider("Neighbors", 5, 50, 15)
-            umap_min_dist = st.slider("Min Distance", 0.01, 1.0, 0.1, 0.01)
-        elif viz_method == "trimap":
-            st.write("**TriMAP Parameters:**")
-            trimap_inliers = st.slider("Triplet Inliers", 5, 20, 10)
-        
-        # Database info
-        st.subheader("📊 Database Stats")
-        st.metric("Total Videos", db_info.get('num_videos', 25))
-        st.metric("Categories", db_info.get('categories', 7))
-        st.metric("Embedding Dim", db_info.get('embedding_dim', 768))
-        st.metric("Backend", db_info.get('search_backend', 'Mock'))
-        
-        # Export options
-        st.subheader("💾 Export")
-        if st.button("Export Results"):
-            if st.session_state.search_results:
-                # Create export data
-                export_data = {
-                    'query': st.session_state.text_query,
-                    'results': st.session_state.search_results,
-                    'timestamp': datetime.now().isoformat()
-                }
-                
-                # Convert to JSON for download
-                import json
-                json_str = json.dumps(export_data, indent=2)
-                
-                st.download_button(
-                    label="Download JSON",
-                    data=json_str,
-                    file_name=f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                    mime="application/json"
-                )
-            else:
-                st.warning("No results to export")
-    
-    # Main layout
-    col1, col2 = st.columns([1, 1])
-    
-    # Left column: Embedding visualization
-    with col1:
-        st.header("📊 Embedding Visualization")
-        
-        # Search methods
-        search_tab1, search_tab2 = st.tabs(["📝 Text Search", "🎥 Video Search"])
-        
-        with search_tab1:
-            # Text search
-            text_query = st.text_input(
-                "Enter your search query:",
-                value=st.session_state.text_query,
-                placeholder="e.g., 'car approaching cyclist'"
-            )
-            
-            if st.button("🔍 Search by Text", type="primary"):
-                if text_query:
-                    with st.spinner("Searching..."):
-                        try:
-                            results = search_engine.search_by_text(text_query, top_k=top_k)
-                            st.session_state.search_results = results
-                            st.session_state.text_query = text_query
-                            st.session_state.text_selection = SelectedVideo(0)
-                            st.success(f"Found {len(results)} results!")
-                        except NoResultsError:
-                            st.warning("No results found above similarity threshold")
-                        except Exception as e:
-                            st.error(f"Search failed: {e}")
-                else:
-                    st.warning("Please enter a search query")
-        
-        with search_tab2:
-            # Video search
-            uploaded_file = st.file_uploader(
-                "Upload a video for similarity search",
-                type=['mp4', 'avi', 'mov'],
-                help="Upload a video to find similar videos in the database"
-            )
-            
-            if uploaded_file and st.button("🎥 Search by Video"):
-                # Save uploaded file temporarily
-                temp_path = Path(f"/tmp/{uploaded_file.name}")
-                with open(temp_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-                
-                with st.spinner("Processing video..."):
+        if st.button("🔍 Search by Text", type="primary", use_container_width=True):
+            if text_query:
+                with st.spinner("Searching..."):
                     try:
-                        results = search_engine.search_by_video(temp_path, top_k=top_k)
+                        results = search_engine.search_by_text(text_query, top_k=top_k)
                         st.session_state.search_results = results
-                        st.session_state.text_query = f"Video: {uploaded_file.name}"
-                        st.session_state.click_selection = SelectedVideo(0)
-                        st.success(f"Found {len(results)} similar videos!")
+                        st.session_state.text_query = text_query
+                        st.session_state.text_selection = SelectedVideo(0)
+                        st.success(f"Found {len(results)} results!")
+                    except NoResultsError:
+                        st.warning("No results found above similarity threshold")
                     except Exception as e:
-                        st.error(f"Video search failed: {e}")
-                    finally:
-                        # Clean up
-                        if temp_path.exists():
-                            temp_path.unlink()
+                        st.error(f"Search failed: {e}")
+            else:
+                st.warning("Please enter a search query")
         
-        # Results visualization
+        # Video Search Section
+        try:
+            from pathlib import Path
+            video_dir = Path("/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/videos/user_input")
+            
+            if video_dir.exists():
+                video_files = list(video_dir.glob("*.mp4")) + list(video_dir.glob("*.avi")) + list(video_dir.glob("*.mov"))
+                video_files = sorted(video_files)
+                
+                if video_files:
+                    video_options = [f.name for f in video_files]
+                    
+                    selected_video = st.selectbox(
+                        "",
+                        video_options,
+                        help="Select a video file"
+                    )
+                    
+                    if st.button("🎥 Search by Video", use_container_width=True):
+                        with st.spinner("Searching for similar videos..."):
+                            try:
+                                video_path = video_dir / selected_video
+                                results = search_engine.search_by_video(video_path, top_k=top_k)
+                                st.session_state.search_results = results
+                                st.session_state.text_query = f"Similar to: {selected_video}"
+                                st.session_state.click_selection = SelectedVideo(0)
+                                st.success(f"Found {len(results)} similar videos!")
+                            except Exception as e:
+                                st.error(f"Video search failed: {e}")
+                else:
+                    st.info("No video files found")
+            else:
+                st.warning("Video directory not found")
+        except Exception as e:
+            st.error(f"Error: {e}")
+        
+        # Top-K Results
+        # st.markdown("**Filtering:**")
+        top_k = st.slider("Top-K Results", 1, 15, top_k)
+        
+        # Similarity Threshold
+        similarity_threshold = st.slider("Similarity Threshold", 0.0, 1.0, similarity_threshold, 0.1)
+        
+        # Visualization Method
+        # st.markdown("**Visualization:**")
+        viz_method = st.selectbox(
+            "",
+            options=["umap", "pca", "trimap", "tsne", "similarity", "3d_umap"],
+            format_func=lambda x: {
+                "umap": "UMAP (Recommended)",
+                "pca": "PCA (Fast)", 
+                "trimap": "TriMAP (Large Datasets)",
+                "tsne": "t-SNE (Legacy)",
+                "similarity": "Direct Similarity",
+                "3d_umap": "3D UMAP"
+            }[x],
+            index=0,
+            label_visibility="collapsed"
+        )
+        
+        # Advanced options based on method (minimal)
+        if viz_method == "umap":
+            umap_neighbors = st.slider("Neighbors", 5, 50, umap_neighbors)
+            umap_min_dist = st.slider("Min Distance", 0.01, 1.0, umap_min_dist, 0.01)
+        elif viz_method == "trimap":
+            trimap_inliers = st.slider("Triplet Inliers", 5, 20, trimap_inliers)
+        
+        # Database Stats Section
+        st.markdown('<div class="section-title">Stats</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="stats-container">
+            <div class="stat-card">
+                <div class="stat-value">{db_info.get('num_videos', 25)}</div>
+                <div class="stat-label">Total Videos</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{db_info.get('categories', 7)}</div>
+                <div class="stat-label">Categories</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{db_info.get('embedding_dim', 768)}</div>
+                <div class="stat-label">Embedding Dim</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{db_info.get('search_backend', 'Mock')}</div>
+                <div class="stat-label">FAISS Backend</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Main content area: Full width visualization (like mock interface)
+    st.markdown('<div class="section-title">Embedding Visualization</div>', unsafe_allow_html=True)
+    
+    # Visualization view tabs (2D, 3D, Heatmap)
+    viz_tab1, viz_tab2, viz_tab3 = st.tabs(["2D View", "3D View", "Heatmap"])
+    
+    with viz_tab1:
         if st.session_state.search_results:
-            st.subheader("📊 Search Results")
+            # Add legend for visualization elements
+            st.markdown("""
+            <div style="display: flex; gap: 1rem; margin-bottom: 1rem; justify-content: center;">
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <div style="width: 12px; height: 12px; border-radius: 50%; background: #ff6b6b;"></div>
+                    <span style="font-size: 0.85rem; color: #64748b;">Videos</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <div style="width: 12px; height: 12px; background: #ffd700; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);"></div>
+                    <span style="font-size: 0.85rem; color: #64748b;">Query Vector</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
             
             # Interactive plot
             selected_idx = None
@@ -466,11 +1009,15 @@ def main():
             elif st.session_state.click_selection.is_valid():
                 selected_idx = st.session_state.click_selection.idx
             
-            # Create visualization with selected method
+            # Create 2D visualization with query info
+            query_info = {
+                'display_text': st.session_state.text_query if st.session_state.text_query else "No query"
+            }
             fig = create_embedding_visualization(
                 st.session_state.search_results, 
                 viz_method, 
                 selected_idx,
+                query_info=query_info,
                 **({
                     'neighbors': umap_neighbors,
                     'min_dist': umap_min_dist
@@ -491,10 +1038,65 @@ def main():
                 if clicked_idx != st.session_state.click_selection.idx:
                     st.session_state.click_selection = SelectedVideo(clicked_idx)
                     st.rerun()
+        else:
+            st.info("👆 Use the search interface in the sidebar to find videos and visualize them here!")
     
-    # Right column: Top K Results  
-    with col2:
-        st.header("📊 Top K Results")
+    with viz_tab2:
+        if st.session_state.search_results:
+            # Add legend for visualization elements
+            st.markdown("""
+            <div style="display: flex; gap: 1rem; margin-bottom: 1rem; justify-content: center;">
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <div style="width: 12px; height: 12px; border-radius: 50%; background: #ff6b6b;"></div>
+                    <span style="font-size: 0.85rem; color: #64748b;">Videos</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <div style="width: 12px; height: 12px; background: #ffd700; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);"></div>
+                    <span style="font-size: 0.85rem; color: #64748b;">Query Vector</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Interactive 3D plot
+            selected_idx = None
+            if st.session_state.text_selection.is_valid():
+                selected_idx = st.session_state.text_selection.idx
+            elif st.session_state.click_selection.is_valid():
+                selected_idx = st.session_state.click_selection.idx
+            
+            # Create 3D visualization with query info
+            query_info = {
+                'display_text': st.session_state.text_query if st.session_state.text_query else "No query"
+            }
+            fig = create_embedding_visualization(
+                st.session_state.search_results, 
+                "3d_umap", 
+                selected_idx,
+                query_info=query_info
+            )
+            
+            # Display 3D plot
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("👆 Use the search interface in the sidebar to find videos and visualize them here!")
+    
+    with viz_tab3:
+        if st.session_state.search_results:
+            # Create heatmap visualization
+            fig = create_embedding_visualization(
+                st.session_state.search_results, 
+                "similarity", 
+                None
+            )
+            
+            # Display heatmap
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("👆 Use the search interface in the sidebar to find videos and visualize them here!")
+    
+    # Bottom section: Top K Results (like mock interface)
+    if st.session_state.search_results:
+        st.markdown('<div class="section-title">Top K Results</div>', unsafe_allow_html=True)
         
         # Determine which video to show
         current_selection = None
@@ -504,87 +1106,100 @@ def main():
         if current_selection is None and st.session_state.click_selection.is_valid():
             current_selection = st.session_state.click_selection.idx
         
-        if st.session_state.search_results:
-            # Featured video (top result)
+        # Layout: Large featured video + Column of top K results
+        featured_col, results_col = st.columns([2, 1])
+        
+        with featured_col:
+            # Featured video (top result or selected)
             featured_video = st.session_state.search_results[0]
-            
-            # Use current selection or default to first result
-            display_video = featured_video
             if current_selection is not None and current_selection < len(st.session_state.search_results):
-                display_video = st.session_state.search_results[current_selection]
+                featured_video = st.session_state.search_results[current_selection]
             
-            # Featured video display
-            st.subheader("🏆 Featured Video")
+            # Large featured video display
+            st.markdown('<div class="featured-video">', unsafe_allow_html=True)
+            preview_video_with_thumbnail(featured_video, height=300)
             
-            # Main video preview
-            preview_video_placeholder(display_video, height=250)
-            
-            # Featured video details
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.metric("Rank", display_video['rank'])
-                st.metric("Similarity", f"{display_video['similarity_score']:.3f}")
-            with col_b:
-                st.write(f"**File:** {display_video['video_name']}")
-                st.write(f"**Category:** {getattr(display_video, 'category', 'Unknown')}")
-            
-            # Top K results list
-            st.subheader(f"🎯 Top {min(top_k, len(st.session_state.search_results))} Results")
-            
-            # Display top K results in a compact list
-            for i, video in enumerate(st.session_state.search_results[:top_k]):
-                is_selected = (current_selection == i)
-                
-                # Create a container for each video result
-                with st.container():
-                    cols = st.columns([1, 3, 1])
-                    
-                    with cols[0]:
-                        # Video thumbnail placeholder
-                        st.markdown(f"""
-                        <div style="
-                            width: 60px; 
-                            height: 40px; 
-                            background: linear-gradient(45deg, #6366f1, #8b5cf6); 
-                            border-radius: 8px; 
-                            display: flex; 
-                            align-items: center; 
-                            justify-content: center; 
-                            color: white; 
-                            font-size: 16px;
-                            {'border: 2px solid #3498db;' if is_selected else ''}
-                        ">🎬</div>
-                        """, unsafe_allow_html=True)
-                    
-                    with cols[1]:
-                        # Video info
-                        st.write(f"**{video['video_name']}**")
-                        st.write(f"Score: {video['similarity_score']:.3f}")
-                    
-                    with cols[2]:
-                        # Rank
-                        st.write(f"#{video['rank']}")
-                    
-                    # Make it clickable (in real implementation)
-                    if st.button(f"Select", key=f"select_{i}", help=f"Select {video['video_name']}"):
-                        st.session_state.click_selection = SelectedVideo(i)
-                        st.rerun()
-                    
-                    # Add separator
-                    if i < min(top_k, len(st.session_state.search_results)) - 1:
-                        st.divider()
-        else:
-            st.info("👆 Use the search interface to find videos, then click on a result to preview it here!")
-    
-    # Bottom section: Neighbor videos
-    if st.session_state.search_results:
-        st.header("🎬 Similar Videos")
+            # Featured video info - clean and simple
+            st.markdown(f"""
+            <div style="text-align: center; margin-top: 1rem;">
+                <h3 style="color: #1e293b; margin-bottom: 0.5rem;">{featured_video['video_name']}</h3>
+                <p style="color: #6366f1; font-weight: 600; font-size: 1.4rem;">
+                    Score: {featured_video['similarity_score']:.3f}
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
         
-        # Show top results as neighbors
-        neighbors = st.session_state.search_results[:5]
-        create_neighbor_grid(neighbors, num_cols=5)
+        with results_col:
+            st.markdown(f'<div style="font-size: 1rem; font-weight: 600; color: #1e293b; margin-bottom: 1rem; text-align: center;">Top {min(top_k, len(st.session_state.search_results))} Results</div>', unsafe_allow_html=True)
+            
+            # Display top K results in a column - only if we have results
+            if st.session_state.search_results:
+                for i, video in enumerate(st.session_state.search_results[:top_k]):
+                    is_selected = (current_selection == i)
+                    
+                    # Create clickable video card
+                    video_path = video.get('video_path', '')
+                    
+                    # Try to extract real thumbnail first
+                    thumbnail_content = None
+                    try:
+                        from pathlib import Path
+                        full_path = Path(video_path)
+                        
+                        if full_path.exists():
+                            visualizer = VideoResultsVisualizer()
+                            thumbnail = visualizer.extract_thumbnail(full_path)
+                            if thumbnail is not None:
+                                # Convert PIL image to base64 for display
+                                import base64
+                                import io
+                                img_buffer = io.BytesIO()
+                                thumbnail.save(img_buffer, format='JPEG')
+                                img_str = base64.b64encode(img_buffer.getvalue()).decode()
+                                thumbnail_content = f'<img src="data:image/jpeg;base64,{img_str}" style="width: 50px; height: 35px; border-radius: 6px; object-fit: cover;">'
+                    except Exception:
+                        pass
+                    
+                    # Fallback to emoji if no thumbnail
+                    if thumbnail_content is None:
+                        # Get different colors for each result
+                        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
+                        color = colors[i % len(colors)]
+                        thumbnail_content = f'<div style="width: 50px; height: 35px; background: {color}; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-size: 1rem; flex-shrink: 0;">🎬</div>'
+                    
+                    # Create unified card design
+                    card_style = f"""
+                    background: white;
+                    border-radius: 12px;
+                    padding: 0.5rem;
+                    margin-bottom: 0.5rem;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+                    border: 2px solid {"#6366f1" if is_selected else "transparent"};
+                    transition: all 0.3s ease;
+                    cursor: pointer;
+                    """
+                    
+                    # Display non-interactive card (click on visualization to select)
+                    st.markdown(f"""
+                    <div style="{card_style}">
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            {thumbnail_content}
+                            <div style="flex: 1; display: flex; justify-content: space-between; align-items: center;">
+                                <div style="font-weight: 600; color: #1e293b; font-size: 0.8rem; line-height: 1.2;">
+                                    {video['video_name']}
+                                </div>
+                                <div style="color: #6366f1; font-weight: 600; font-size: 0.8rem; line-height: 1.2;">
+                                    {video['similarity_score']:.3f}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.info("No search results to display")
         
-        # Results table
+        # Results table (collapsed by default)
         with st.expander("📊 Detailed Results Table"):
             results_df = pd.DataFrame([
                 {
@@ -602,13 +1217,7 @@ def main():
                 hide_index=True
             )
     
-    # Footer
-    st.markdown("---")
-    st.markdown(
-        "🚀 Powered by **NVIDIA Cosmos-Embed1** | "
-        "🔧 Built with **Streamlit** | "
-        "⚡ Optimized with **FAISS**"
-    )
+
 
 
 if __name__ == "__main__":
