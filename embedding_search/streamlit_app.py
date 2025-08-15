@@ -165,12 +165,25 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             x=[f"Video {i+1}" for i in range(n)],
             y=[f"Video {i+1}" for i in range(n)],
             colorscale='Viridis',
-            colorbar=dict(title="Cosine Similarity")
+            colorbar=dict(
+                title="Similarity",
+                title_side="right",
+                x=1.01,
+                len=0.6,
+                thickness=10,
+                title_font=dict(size=10),
+                tickfont=dict(size=9)
+            )
         ))
         fig.update_layout(
-            title="Video Similarity Matrix - Direct Cosine Similarities",
-            height=500,
-            title_x=0.5
+            title="Video Similarity Matrix",
+            height=400,
+            width=None,  # Let it be responsive to container width
+            title_x=0.5,
+            title_font=dict(size=14),
+            margin=dict(l=40, r=80, t=50, b=40),  # Tighter margins
+            xaxis=dict(tickfont=dict(size=10)),
+            yaxis=dict(tickfont=dict(size=10))
         )
         return fig
     
@@ -186,7 +199,15 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                 color=df['similarity'],
                 colorscale='Viridis',
                 showscale=True,
-                colorbar=dict(title="Similarity Score")
+                colorbar=dict(
+                    title="Similarity",
+                    title_side="right",
+                    x=1.01,
+                    len=0.6,
+                    thickness=10,
+                    title_font=dict(size=10),
+                    tickfont=dict(size=9)
+                )
             ),
             text=df['video_name'],
             hovertemplate='<b>%{text}</b><br>Rank: %{customdata[0]}<br>Similarity: %{customdata[1]:.3f}<br>Click to view<extra></extra>',
@@ -235,11 +256,17 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             )
         
         fig.update_layout(
+            height=400,  # More compact height
             scene=dict(
                 xaxis_title="UMAP Dimension 1",
-                yaxis_title="UMAP Dimension 2",
-                zaxis_title="UMAP Dimension 3"
-            )
+                yaxis_title="UMAP Dimension 2", 
+                zaxis_title="UMAP Dimension 3",
+                camera=dict(
+                    eye=dict(x=1.5, y=1.5, z=1.5)  # Better default view
+                ),
+                aspectmode='cube'  # Maintain aspect ratio
+            ),
+            margin=dict(l=40, r=80, t=50, b=40)  # Tighter margins like heatmap
         )
     else:
         # 2D scatter plot with enhanced interactivity
@@ -307,7 +334,16 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
         
         fig.update_layout(
             xaxis_title=x_title,
-            yaxis_title=y_title
+            yaxis_title=y_title,
+            coloraxis_colorbar=dict(
+                title="Similarity",
+                title_side="right",
+                x=1.01,
+                len=0.6,
+                thickness=10,
+                title_font=dict(size=10),
+                tickfont=dict(size=9)
+            )
         )
     
     # Update common layout properties
@@ -959,6 +995,8 @@ def main():
         st.session_state.text_query = ""
     if 'search_results' not in st.session_state:
         st.session_state.search_results = []
+    if 'force_update' not in st.session_state:
+        st.session_state.force_update = False
     
     # Initialize default values for variables used across components
     top_k = 3
@@ -1105,6 +1143,21 @@ def main():
             </div>
         </div>
         """, unsafe_allow_html=True)
+        
+        # Add debug info to monitor selection states
+        with st.expander("🔧 Debug Info"):
+            current_selection = max(
+                st.session_state.text_selection.idx if st.session_state.text_selection.is_valid() else -1,
+                st.session_state.click_selection.idx if st.session_state.click_selection.is_valid() else -1
+            )
+            if current_selection == -1:
+                current_selection = 0
+                
+            st.write(f"**Text selection:** {st.session_state.text_selection.idx} (timestamp: {st.session_state.text_selection.timestamp})")
+            st.write(f"**Click selection:** {st.session_state.click_selection.idx} (timestamp: {st.session_state.click_selection.timestamp})")
+            st.write(f"**Force update:** {st.session_state.get('force_update', False)}")
+            st.write(f"**Current selection:** {current_selection}")
+            st.write(f"**Search results count:** {len(st.session_state.search_results) if st.session_state.search_results else 0}")
     
     # Main content area: Full width visualization (like mock interface)
     st.markdown('<div class="section-title">Embedding Visualization</div>', unsafe_allow_html=True)
@@ -1128,9 +1181,16 @@ def main():
             </div>
             """, unsafe_allow_html=True)
             
-            # Interactive plot
+            # Interactive plot - use explicit timestamp comparison
             selected_idx = None
-            if st.session_state.text_selection.is_valid():
+            # Always use the most recent selection
+            if st.session_state.text_selection.is_valid() and st.session_state.click_selection.is_valid():
+                # Compare timestamps to get the most recent
+                if st.session_state.text_selection.timestamp > st.session_state.click_selection.timestamp:
+                    selected_idx = st.session_state.text_selection.idx
+                else:
+                    selected_idx = st.session_state.click_selection.idx
+            elif st.session_state.text_selection.is_valid():
                 selected_idx = st.session_state.text_selection.idx
             elif st.session_state.click_selection.is_valid():
                 selected_idx = st.session_state.click_selection.idx
@@ -1155,7 +1215,8 @@ def main():
                 fig, 
                 use_container_width=True,
                 on_select="rerun",
-                selection_mode="points"
+                selection_mode="points",
+                key=f"plot_2d_{selected_idx}"
             )
             
             # Handle plot clicks
@@ -1192,9 +1253,16 @@ def main():
             </div>
             """, unsafe_allow_html=True)
             
-            # Interactive 3D plot
+            # Interactive 3D plot - use explicit timestamp comparison
             selected_idx = None
-            if st.session_state.text_selection.is_valid():
+            # Always use the most recent selection
+            if st.session_state.text_selection.is_valid() and st.session_state.click_selection.is_valid():
+                # Compare timestamps to get the most recent
+                if st.session_state.text_selection.timestamp > st.session_state.click_selection.timestamp:
+                    selected_idx = st.session_state.text_selection.idx
+                else:
+                    selected_idx = st.session_state.click_selection.idx
+            elif st.session_state.text_selection.is_valid():
                 selected_idx = st.session_state.text_selection.idx
             elif st.session_state.click_selection.is_valid():
                 selected_idx = st.session_state.click_selection.idx
@@ -1215,7 +1283,8 @@ def main():
                 fig, 
                 use_container_width=True,
                 on_select="rerun",
-                selection_mode="points"
+                selection_mode="points",
+                key=f"plot_3d_{selected_idx}"
             )
             
             # Handle 3D plot clicks
@@ -1246,21 +1315,25 @@ def main():
             )
             
             # Display heatmap
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key=f"heatmap_{len(st.session_state.search_results)}")
         else:
             st.info("👆 Use the search interface in the sidebar to find videos and visualize them here!")
+    
+    # Reset force_update flag after visualization updates
+    if st.session_state.get('force_update', False):
+        st.session_state.force_update = False
     
     # Bottom section: Top K Results (like mock interface)
     if st.session_state.search_results:
         st.markdown('<div class="section-title">Top K Results</div>', unsafe_allow_html=True)
         
-        # Determine which video to show
-        current_selection = None
-        if st.session_state.text_selection.is_valid():
-            if st.session_state.text_selection.timestamp > st.session_state.click_selection.timestamp:
-                current_selection = st.session_state.text_selection.idx
-        if current_selection is None and st.session_state.click_selection.is_valid():
-            current_selection = st.session_state.click_selection.idx
+        # Determine which video to show - use simpler max approach
+        current_selection = max(
+            st.session_state.text_selection.idx if st.session_state.text_selection.is_valid() else -1,
+            st.session_state.click_selection.idx if st.session_state.click_selection.is_valid() else -1
+        )
+        if current_selection == -1:
+            current_selection = 0
         
         # Layout: Large featured video + Column of top K results
         featured_col, results_col = st.columns([2, 1])
@@ -1286,7 +1359,7 @@ def main():
             st.markdown('</div>', unsafe_allow_html=True)
         
         with results_col:
-            st.markdown(f'<div style="font-size: 1rem; font-weight: 600; color: #1e293b; margin-bottom: 1rem; text-align: center;">Top {min(top_k, len(st.session_state.search_results))} Results</div>', unsafe_allow_html=True)
+            # Results column without redundant header
             
             # Display top K results in a column with clickable functionality
             for i, video in enumerate(st.session_state.search_results[:top_k]):
@@ -1312,12 +1385,11 @@ def main():
                             visualizer = VideoResultsVisualizer()
                             thumbnail_array = visualizer.extract_thumbnail(full_path)
                             if thumbnail_array is not None:
-                                # Create clickable thumbnail using image with button styling
+                                # Convert thumbnail to base64 for embedding in button
                                 import base64
                                 import io
                                 from PIL import Image
                                 
-                                # Convert thumbnail to base64 for HTML embedding
                                 if isinstance(thumbnail_array, np.ndarray):
                                     thumbnail_pil = Image.fromarray(thumbnail_array)
                                 else:
@@ -1327,85 +1399,133 @@ def main():
                                 thumbnail_pil.save(img_buffer, format='JPEG')
                                 img_str = base64.b64encode(img_buffer.getvalue()).decode()
                                 
-                                # Create clickable HTML image with button behavior
-                                selection_border = "border: 3px solid #ff6b6b;" if is_selected else "border: 2px solid #e2e8f0;"
-                                hover_effect = "transform: scale(1.05);" if not is_selected else ""
+                                # Create button with thumbnail image inside
+                                button_style = "primary" if is_selected else "secondary"
+                                border_color = "#ff6b6b" if is_selected else "#e2e8f0"
                                 
-                                # Use button with image content for true clickability
-                                if st.button(
-                                    f"🖼️",
-                                    key=f"thumb_click_{i}",
-                                    help=f"Click thumbnail to view {video['video_name']}",
-                                    use_container_width=True
-                                ):
-                                    st.session_state.text_selection = SelectedVideo(i)
-                                    st.session_state.click_selection = SelectedVideo(i)  # Also update click selection for embedding highlight
-                                    st.rerun()
+                                # Create a unified clickable thumbnail button
+                                # Use a single button that contains the image and acts as the thumbnail
+                                button_key = f"thumb_click_{i}"
                                 
-                                # Display thumbnail with click styling
+                                # Custom CSS for the clickable thumbnail
                                 st.markdown(f"""
-                                <div style="cursor: pointer; {selection_border} border-radius: 8px; overflow: hidden; width: 80px; transition: all 0.3s ease; {hover_effect}">
+                                <style>
+                                .clickable-thumb-{i} {{
+                                    border: 2px solid {border_color};
+                                    border-radius: 8px;
+                                    overflow: hidden;
+                                    width: 80px;
+                                    height: 45px;
+                                    cursor: pointer;
+                                    transition: all 0.3s ease;
+                                    margin-bottom: 0.2rem;
+                                    display: block;
+                                }}
+                                .clickable-thumb-{i}:hover {{
+                                    transform: scale(1.05);
+                                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                                    border-color: #6366f1;
+                                }}
+                                </style>
+                                """, unsafe_allow_html=True)
+                                
+                                # Display the thumbnail with click styling
+                                st.markdown(f"""
+                                <div style="margin-bottom: 0.2rem;">
                                     <img src="data:image/jpeg;base64,{img_str}" 
-                                         style="width: 80px; height: 45px; object-fit: cover; display: block;">
+                                         class="clickable-thumb-{i}"
+                                         style="width: 80px; height: 45px; object-fit: cover;">
                                 </div>
                                 """, unsafe_allow_html=True)
+                                
+                                # Clickable button that handles the actual click
+                                if st.button(
+                                    f"Select Video {i+1}",
+                                    key=f"thumb_btn_real_{i}",
+                                    help=f"Click to view {video['video_name']}",
+                                    use_container_width=True,
+                                    type=button_style
+                                ):
+                                    # Update both selection states
+                                    st.session_state.text_selection = SelectedVideo(i)
+                                    st.session_state.click_selection = SelectedVideo(i)
+                                    st.session_state.force_update = True
+                                    st.rerun()
                             else:
                                 # Clickable colored box fallback
                                 colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
                                 color = colors[i % len(colors)]
                                 selection_border = "border: 3px solid #ff6b6b;" if is_selected else "border: 2px solid #e2e8f0;"
+                                button_style = "primary" if is_selected else "secondary"
                                 
+                                # Display colored box with consistent styling
+                                st.markdown(f"""
+                                <div style="width: 80px; height: 45px; background: {color}; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 1rem; {selection_border} transition: all 0.3s ease; margin-bottom: 0.2rem; cursor: pointer;">🎬</div>
+                                """, unsafe_allow_html=True)
+                                
+                                # Add clickable button below
                                 if st.button(
-                                    f"🎬",
-                                    key=f"thumb_click_{i}",
+                                    f"Select Video {i+1}",
+                                    key=f"thumb_btn_box_{i}",
                                     help=f"Click to view {video['video_name']}",
-                                    use_container_width=True
+                                    use_container_width=True,
+                                    type=button_style
                                 ):
+                                    # Update both selection states
                                     st.session_state.text_selection = SelectedVideo(i)
                                     st.session_state.click_selection = SelectedVideo(i)
+                                    st.session_state.force_update = True
                                     st.rerun()
-                                
-                                st.markdown(f"""
-                                <div style="width: 80px; height: 45px; background: {color}; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-size: 1rem; cursor: pointer; {selection_border} transition: all 0.3s ease;">🎬</div>
-                                """, unsafe_allow_html=True)
                         else:
                             # Fallback for missing files
                             colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
                             color = colors[i % len(colors)]
                             selection_border = "border: 3px solid #ff6b6b;" if is_selected else "border: 2px solid #e2e8f0;"
+                            button_style = "primary" if is_selected else "secondary"
                             
+                            # Display colored box
+                            st.markdown(f"""
+                            <div style="width: 80px; height: 45px; background: {color}; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 1rem; {selection_border} transition: all 0.3s ease; margin-bottom: 0.2rem; cursor: pointer;">🎬</div>
+                            """, unsafe_allow_html=True)
+                            
+                            # Add clickable button below
                             if st.button(
-                                f"🎬",
-                                key=f"thumb_click_{i}",
+                                f"Select Video {i+1}",
+                                key=f"thumb_btn_fallback_{i}",
                                 help=f"Click to view {video['video_name']}",
-                                use_container_width=True
+                                use_container_width=True,
+                                type=button_style
                             ):
+                                # Update both selection states
                                 st.session_state.text_selection = SelectedVideo(i)
                                 st.session_state.click_selection = SelectedVideo(i)
+                                st.session_state.force_update = True
                                 st.rerun()
-                            
-                            st.markdown(f"""
-                            <div style="width: 80px; height: 45px; background: {color}; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-size: 1rem; cursor: pointer; {selection_border} transition: all 0.3s ease;">🎬</div>
-                            """, unsafe_allow_html=True)
                     except Exception:
                         # Exception fallback
                         colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
                         color = colors[i % len(colors)]
                         selection_border = "border: 3px solid #ff6b6b;" if is_selected else "border: 2px solid #e2e8f0;"
+                        button_style = "primary" if is_selected else "secondary"
                         
+                        # Display colored box
+                        st.markdown(f"""
+                        <div style="width: 80px; height: 45px; background: {color}; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 1rem; {selection_border} transition: all 0.3s ease; margin-bottom: 0.2rem; cursor: pointer;">🎬</div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Add clickable button below
                         if st.button(
-                            f"🎬",
-                            key=f"thumb_click_{i}",
+                            f"Select Video {i+1}",
+                            key=f"thumb_btn_exception_{i}",
                             help=f"Click to view {video['video_name']}",
-                            use_container_width=True
+                            use_container_width=True,
+                            type=button_style
                         ):
+                            # Update both selection states
                             st.session_state.text_selection = SelectedVideo(i)
                             st.session_state.click_selection = SelectedVideo(i)
+                            st.session_state.force_update = True
                             st.rerun()
-                        
-                        st.markdown(f"""
-                        <div style="width: 80px; height: 45px; background: {color}; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-size: 1rem; cursor: pointer; {selection_border} transition: all 0.3s ease;">🎬</div>
-                        """, unsafe_allow_html=True)
                 
                 with col2:
                     # Video name as clickable button
@@ -1421,27 +1541,28 @@ def main():
                     ):
                         st.session_state.text_selection = SelectedVideo(i)
                         st.session_state.click_selection = SelectedVideo(i)  # Also update click selection for embedding highlight
+                        st.session_state.force_update = True
                         st.rerun()
                     
                     # Show filename, score and rank
                     score_color = "#6366f1" if not is_selected else "#ff6b6b"
                     
                     st.markdown(f"""
-                    <div style="margin-top: 8px;">
-                        <div style="color: #1e293b; font-weight: 600; font-size: 0.8rem; margin-bottom: 4px;">
+                    <div style="margin-top: 4px;">
+                        <div style="color: #1e293b; font-weight: 600; font-size: 0.8rem; margin-bottom: 2px;">
                             {video['video_name']}
                         </div>
                         <div style="color: {score_color}; font-weight: 600; font-size: 0.75rem;">
                             Score: {video['similarity_score']:.3f} {'✓ Selected' if is_selected else ''}
                         </div>
-                        <div style="color: #64748b; font-size: 0.7rem; margin-top: 2px;">
+                        <div style="color: #64748b; font-size: 0.7rem; margin-top: 1px;">
                             Rank #{video.get('rank', i+1)}
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
                 
                 # Add separator
-                st.markdown("<hr style='margin: 15px 0; border: none; border-top: 1px solid #e2e8f0;'>", unsafe_allow_html=True)
+                st.markdown("<hr style='margin: 8px 0; border: none; border-top: 1px solid #e2e8f0;'>", unsafe_allow_html=True)
         
         # Results table (collapsed by default)
         with st.expander("📊 Detailed Results Table"):
