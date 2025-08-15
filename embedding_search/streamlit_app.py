@@ -86,22 +86,74 @@ def load_database_info(_engine: OptimizedVideoSearchEngine) -> Dict:
         }
 
 
-def create_embedding_visualization(results: List[Dict], viz_method: str = "umap", selected_idx: Optional[int] = None, query_info: Optional[Dict] = None, top_k: Optional[int] = None, **kwargs) -> go.Figure:
+def get_all_videos_from_database(search_engine) -> List[Dict]:
+    """Get all videos from the database for visualization."""
+    try:
+        if hasattr(search_engine, 'database') and hasattr(search_engine.database, 'metadata'):
+            all_videos = []
+            for i, metadata in enumerate(search_engine.database.metadata):
+                video_info = {
+                    'video_name': metadata.get('video_name', f"Video {i+1}"),
+                    'video_path': metadata.get('video_path', ''),
+                    'similarity_score': 0.1,  # Default low similarity
+                    'rank': i + 1000,  # High rank for non-search results
+                    'metadata': metadata
+                }
+                all_videos.append(video_info)
+            return all_videos
+    except Exception as e:
+        logger.warning(f"Could not get all videos from database: {e}")
+    return []
+
+
+def create_embedding_visualization(results: List[Dict], viz_method: str = "umap", selected_idx: Optional[int] = None, query_info: Optional[Dict] = None, top_k: Optional[int] = None, all_videos: Optional[List[Dict]] = None, **kwargs) -> go.Figure:
     """Create advanced embedding visualization with multiple methods."""
     if not results:
         return go.Figure()
     
-    # Create DataFrame for plotting
-    df = pd.DataFrame([
-        {
-            'video_name': r['video_name'],
-            'similarity': r['similarity_score'],
-            'rank': r['rank'],
-            'category': getattr(r, 'category', 'unknown'),
-            'idx': i
-        }
-        for i, r in enumerate(results)
-    ])
+    # Use all videos from database if provided, otherwise use just search results
+    if all_videos and len(all_videos) > len(results):
+        # Create DataFrame with all videos
+        df_all = pd.DataFrame([
+            {
+                'video_name': r.get('video_name', f"Video {i+1}"),
+                'similarity': 0.1,  # Default low similarity for non-search results
+                'rank': i + len(results) + 1,  # Rank after search results
+                'category': getattr(r, 'category', 'unknown'),
+                'idx': i + len(results),
+                'is_search_result': False
+            }
+            for i, r in enumerate(all_videos[len(results):])  # Videos not in search results
+        ])
+        
+        # Create DataFrame for search results
+        df_search = pd.DataFrame([
+            {
+                'video_name': r['video_name'],
+                'similarity': r['similarity_score'],
+                'rank': r['rank'],
+                'category': getattr(r, 'category', 'unknown'),
+                'idx': i,
+                'is_search_result': True
+            }
+            for i, r in enumerate(results)
+        ])
+        
+        # Combine all videos with search results on top
+        df = pd.concat([df_search, df_all], ignore_index=True)
+    else:
+        # Create DataFrame for plotting (original behavior)
+        df = pd.DataFrame([
+            {
+                'video_name': r['video_name'],
+                'similarity': r['similarity_score'],
+                'rank': r['rank'],
+                'category': getattr(r, 'category', 'unknown'),
+                'idx': i,
+                'is_search_result': True
+            }
+            for i, r in enumerate(results)
+        ])
     
     # Generate coordinates based on visualization method
     np.random.seed(42)  # For consistent results
@@ -193,35 +245,97 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
     
     # Create 2D or 3D scatter plot
     if viz_method == "3d_umap":
-        fig = go.Figure(data=go.Scatter3d(
-            x=df['x'],
-            y=df['y'], 
-            z=df['z'],
-            mode='markers',
-            marker=dict(
-                size=df['similarity'] * 15 + 5,
-                color=df['similarity'],
-                colorscale='Viridis',
-                showscale=True,
-                colorbar=dict(
-                    title="Similarity",
-                    title_side="right",
-                    x=1.01,
-                    len=0.6,
-                    thickness=10,
-                    title_font=dict(size=10),
-                    tickfont=dict(size=9),
-                    outlinewidth=0
-                )
-            ),
-            text=df['video_name'],
-            hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<extra></extra>',
-            customdata=df[['rank', 'similarity']].values
-        ))
+        # Split data into search results and other videos
+        if 'is_search_result' in df.columns:
+            df_search = df[df['is_search_result'] == True]
+            df_other = df[df['is_search_result'] == False]
+            
+            # Create traces for non-search-result videos (grayed out)
+            traces = []
+            if len(df_other) > 0:
+                traces.append(go.Scatter3d(
+                    x=df_other['x'],
+                    y=df_other['y'], 
+                    z=df_other['z'],
+                    mode='markers',
+                    marker=dict(
+                        size=8,  # Smaller size for non-results
+                        color='lightgray',
+                        opacity=0.3
+                    ),
+                    text=df_other['video_name'],
+                    hovertemplate='<b>%{text}</b><br>Database Video<extra></extra>',
+                    name='Database Videos',
+                    showlegend=False
+                ))
+            
+            # Create trace for search results (colorful)
+            if len(df_search) > 0:
+                traces.append(go.Scatter3d(
+                    x=df_search['x'],
+                    y=df_search['y'], 
+                    z=df_search['z'],
+                    mode='markers',
+                    marker=dict(
+                        size=df_search['similarity'] * 15 + 10,
+                        color=df_search['similarity'],
+                        colorscale='Viridis',
+                        showscale=True,
+                        colorbar=dict(
+                            title="Similarity",
+                            title_side="right",
+                            x=1.01,
+                            len=0.6,
+                            thickness=10,
+                            title_font=dict(size=10),
+                            tickfont=dict(size=9),
+                            outlinewidth=0
+                        )
+                    ),
+                    text=df_search['video_name'],
+                    hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<extra></extra>',
+                    customdata=df_search[['rank', 'similarity']].values,
+                    name='Search Results',
+                    showlegend=False
+                ))
+            
+            fig = go.Figure(data=traces)
+        else:
+            # Original behavior for backward compatibility
+            fig = go.Figure(data=go.Scatter3d(
+                x=df['x'],
+                y=df['y'], 
+                z=df['z'],
+                mode='markers',
+                marker=dict(
+                    size=df['similarity'] * 15 + 5,
+                    color=df['similarity'],
+                    colorscale='Viridis',
+                    showscale=True,
+                    colorbar=dict(
+                        title="Similarity",
+                        title_side="right",
+                        x=1.01,
+                        len=0.6,
+                        thickness=10,
+                        title_font=dict(size=10),
+                        tickfont=dict(size=9),
+                        outlinewidth=0
+                    )
+                ),
+                text=df['video_name'],
+                hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<extra></extra>',
+                customdata=df[['rank', 'similarity']].values
+            ))
         
         # Add green/red circle highlights for top K results (3D)
         if top_k is not None and top_k > 0:
-            top_k_points = df.head(top_k)  # Get top K results
+            # Get top K search results only
+            if 'is_search_result' in df.columns:
+                search_results = df[df['is_search_result'] == True]
+                top_k_points = search_results.head(top_k)
+            else:
+                top_k_points = df.head(top_k)  # Get top K results
             
             # Create colors array - red for selected, green for others
             circle_colors = []
@@ -319,28 +433,87 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
         )
     else:
         # 2D scatter plot with enhanced interactivity
-        fig = px.scatter(
-            df,
-            x='x',
-            y='y',
-            size='similarity',
-            color='similarity',
-            hover_name='video_name',
-            hover_data=['rank', 'similarity'],
-            color_continuous_scale='Viridis',
-            title=title
-        )
-        
-        # Enhance hover template for better information display
-        fig.update_traces(
-            hovertemplate='<b>%{hovertext}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<extra></extra>',
-            hovertext=df['video_name'],
-            customdata=df[['rank', 'similarity']].values
-        )
+        if 'is_search_result' in df.columns:
+            df_search = df[df['is_search_result'] == True]
+            df_other = df[df['is_search_result'] == False]
+            
+            # Create figure with traces
+            fig = go.Figure()
+            
+            # Add non-search-result videos (grayed out)
+            if len(df_other) > 0:
+                fig.add_trace(go.Scatter(
+                    x=df_other['x'],
+                    y=df_other['y'],
+                    mode='markers',
+                    marker=dict(
+                        size=8,  # Smaller size for non-results
+                        color='lightgray',
+                        opacity=0.3
+                    ),
+                    text=df_other['video_name'],
+                    hovertemplate='<b>%{text}</b><br>Database Video<extra></extra>',
+                    name='Database Videos',
+                    showlegend=False
+                ))
+            
+            # Add search results (colorful)
+            if len(df_search) > 0:
+                fig.add_trace(go.Scatter(
+                    x=df_search['x'],
+                    y=df_search['y'],
+                    mode='markers',
+                    marker=dict(
+                        size=df_search['similarity'] * 15 + 10,
+                        color=df_search['similarity'],
+                        colorscale='Viridis',
+                        showscale=True,
+                        colorbar=dict(
+                            title="Similarity",
+                            title_side="right",
+                            x=1.01,
+                            len=0.6,
+                            thickness=10,
+                            title_font=dict(size=10),
+                            tickfont=dict(size=9),
+                            outlinewidth=0
+                        )
+                    ),
+                    text=df_search['video_name'],
+                    hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<extra></extra>',
+                    customdata=df_search[['rank', 'similarity']].values,
+                    name='Search Results',
+                    showlegend=False
+                ))
+        else:
+            # Original behavior for backward compatibility
+            fig = px.scatter(
+                df,
+                x='x',
+                y='y',
+                size='similarity',
+                color='similarity',
+                hover_name='video_name',
+                hover_data=['rank', 'similarity'],
+                color_continuous_scale='Viridis',
+                title=title
+            )
+            
+            # Enhance hover template for better information display
+            fig.update_traces(
+                hovertemplate='<b>%{hovertext}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<extra></extra>',
+                hovertext=df['video_name'],
+                customdata=df[['rank', 'similarity']].values
+            )
         
         # Add green/red circle highlights for top K results (2D)
         if top_k is not None and top_k > 0:
-            top_k_points = df.head(top_k)  # Get top K results
+            # Get top K search results only
+            if 'is_search_result' in df.columns:
+                search_results = df[df['is_search_result'] == True]
+                top_k_points = search_results.head(top_k)
+            else:
+                top_k_points = df.head(top_k)  # Get top K results
             
             # Create colors array - red for selected, green for others
             circle_colors = []
@@ -1209,21 +1382,6 @@ def main():
         </div>
         """, unsafe_allow_html=True)
         
-        # Add debug info to monitor selection states
-        with st.expander("🔧 Debug Info"):
-            current_selection = max(
-                st.session_state.text_selection.idx if st.session_state.text_selection.is_valid() else -1,
-                st.session_state.click_selection.idx if st.session_state.click_selection.is_valid() else -1
-            )
-            if current_selection == -1:
-                current_selection = 0
-                
-            st.write(f"**Text selection:** {st.session_state.text_selection.idx} (timestamp: {st.session_state.text_selection.timestamp})")
-            st.write(f"**Click selection:** {st.session_state.click_selection.idx} (timestamp: {st.session_state.click_selection.timestamp})")
-            st.write(f"**Force update:** {st.session_state.get('force_update', False)}")
-            st.write(f"**Current selection:** {current_selection}")
-            st.write(f"**Search results count:** {len(st.session_state.search_results) if st.session_state.search_results else 0}")
-    
     # Main content area: Full width visualization (like mock interface)
     st.markdown('<div class="section-title">Embedding Visualization</div>', unsafe_allow_html=True)
     
@@ -1275,10 +1433,6 @@ def main():
                     <div style="width: 12px; height: 12px; background: #ffd700; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);"></div>
                     <span style="font-size: 0.85rem; color: #64748b;">Query Vector</span>
                 </div>
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 1px; background: rgba(128,128,128,0.8); border: 1px dashed rgba(128,128,128,0.8);"></div>
-                    <span style="font-size: 0.85rem; color: #64748b;">Origin Axes</span>
-                </div>
             </div>
             """, unsafe_allow_html=True)
             
@@ -1300,12 +1454,15 @@ def main():
             query_info = {
                 'display_text': st.session_state.text_query if st.session_state.text_query else "No query"
             }
+            # Get all videos from database for comprehensive visualization
+            all_videos = get_all_videos_from_database(search_engine)
             fig = create_embedding_visualization(
                 st.session_state.search_results, 
                 viz_method, 
                 selected_idx,
                 query_info=query_info,
                 top_k=top_k,
+                all_videos=all_videos,
                 **({
                     'neighbors': umap_neighbors,
                     'min_dist': umap_min_dist
@@ -1360,10 +1517,6 @@ def main():
                     <div style="width: 12px; height: 12px; background: #ffd700; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);"></div>
                     <span style="font-size: 0.85rem; color: #64748b;">Query Vector</span>
                 </div>
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 1px; background: rgba(128,128,128,0.8); border: 1px dashed rgba(128,128,128,0.8);"></div>
-                    <span style="font-size: 0.85rem; color: #64748b;">Origin Axes</span>
-                </div>
             </div>
             """, unsafe_allow_html=True)
             
@@ -1385,12 +1538,15 @@ def main():
             query_info = {
                 'display_text': st.session_state.text_query if st.session_state.text_query else "No query"
             }
+            # Get all videos from database for comprehensive visualization
+            all_videos = get_all_videos_from_database(search_engine)
             fig = create_embedding_visualization(
                 st.session_state.search_results, 
                 "3d_umap", 
                 selected_idx,
                 query_info=query_info,
-                top_k=top_k
+                top_k=top_k,
+                all_videos=all_videos
             )
             
             # Display 3D plot with click handling
@@ -1422,7 +1578,7 @@ def main():
     
     with viz_tab3:
         if st.session_state.search_results:
-            # Create heatmap visualization
+            # Create heatmap visualization (heatmap only shows search results, not all videos)
             fig = create_embedding_visualization(
                 st.session_state.search_results, 
                 "similarity", 
@@ -1474,7 +1630,7 @@ def main():
             st.markdown('</div>', unsafe_allow_html=True)
         
         with results_col:
-            with st.container(height=400):
+            with st.container(height=405):
                 # Display top K results in the scrollable container
                 for i, video in enumerate(st.session_state.search_results[:top_k]):
                     is_selected = (current_selection == i)
