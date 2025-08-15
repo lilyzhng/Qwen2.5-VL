@@ -1449,204 +1449,112 @@ def main():
         with results_col:
             # Results column without redundant header
             
-            # Display top K results in a column with clickable functionality
-            for i, video in enumerate(st.session_state.search_results[:top_k]):
-                is_selected = (current_selection == i)
-                
-                # Create clickable video card
-                video_path = video.get('video_path', '')
-                
-
-                
-
-                
-                # Create clickable card with thumbnail and info
-                col1, col2 = st.columns([1, 3])
-                
-                with col1:
-                    # Display directly clickable thumbnail
-                    try:
-                        from pathlib import Path
-                        full_path = Path(video_path)
-                        
-                        if full_path.exists():
-                            visualizer = VideoResultsVisualizer()
-                            thumbnail_array = visualizer.extract_thumbnail(full_path)
-                            if thumbnail_array is not None:
-                                # Convert thumbnail to base64 for embedding in button
-                                import base64
-                                import io
-                                from PIL import Image
-                                
-                                if isinstance(thumbnail_array, np.ndarray):
-                                    thumbnail_pil = Image.fromarray(thumbnail_array)
-                                else:
-                                    thumbnail_pil = thumbnail_array
-                                
-                                img_buffer = io.BytesIO()
-                                thumbnail_pil.save(img_buffer, format='JPEG')
-                                img_str = base64.b64encode(img_buffer.getvalue()).decode()
-                                
-                                # Create button with thumbnail image inside
-                                button_style = "primary" if is_selected else "secondary"
-                                border_color = "#ff6b6b" if is_selected else "#e2e8f0"
-                                
-                                # Custom CSS for the clickable thumbnail
-                                st.markdown(f"""
-                                <style>
-                                .clickable-thumb-{i} {{
-                                    border: 2px solid {border_color};
-                                    border-radius: 8px;
-                                    overflow: hidden;
-                                    width: 80px;
-                                    height: 45px;
-                                    cursor: pointer;
-                                    transition: all 0.3s ease;
-                                    margin-bottom: 0.2rem;
-                                    display: block;
-                                }}
-                                .clickable-thumb-{i}:hover {{
-                                    transform: scale(1.05);
-                                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-                                    border-color: #6366f1;
-                                }}
-                                </style>
-                                """, unsafe_allow_html=True)
-                                
-                                # Display the thumbnail with click styling
-                                st.markdown(f"""
-                                <div style="margin-bottom: 0.2rem;">
-                                    <img src="data:image/jpeg;base64,{img_str}" 
-                                         class="clickable-thumb-{i}"
-                                         style="width: 80px; height: 45px; object-fit: cover;">
-                                </div>
-                                """, unsafe_allow_html=True)
-                                
-                                # Clickable button that handles the actual click
-                                if st.button(
-                                    f"Select Video {i+1}",
-                                    key=f"thumb_btn_real_{i}",
-                                    help=f"Click to view {video['video_name']}",
-                                    use_container_width=True,
-                                    type=button_style
-                                ):
-                                    # Update both selection states
-                                    st.session_state.text_selection = SelectedVideo(i)
-                                    st.session_state.click_selection = SelectedVideo(i)
-                                    st.session_state.force_update = True
-                                    st.rerun()
-                            else:
-                                # Clickable colored box fallback
-                                colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
-                                color = colors[i % len(colors)]
-                                selection_border = "border: 3px solid #ff6b6b;" if is_selected else "border: 2px solid #e2e8f0;"
-                                button_style = "primary" if is_selected else "secondary"
-                                
-                                # Display colored box with consistent styling
-                                st.markdown(f"""
-                                <div style="width: 80px; height: 45px; background: {color}; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 1rem; {selection_border} transition: all 0.3s ease; margin-bottom: 0.2rem; cursor: pointer;">🎬</div>
-                                """, unsafe_allow_html=True)
-                                
-                                # Add clickable button below
-                                if st.button(
-                                    f"Select Video {i+1}",
-                                    key=f"thumb_btn_box_{i}",
-                                    help=f"Click to view {video['video_name']}",
-                                    use_container_width=True,
-                                    type=button_style
-                                ):
-                                    # Update both selection states
-                                    st.session_state.text_selection = SelectedVideo(i)
-                                    st.session_state.click_selection = SelectedVideo(i)
-                                    st.session_state.force_update = True
-                                    st.rerun()
-                        else:
-                            # Fallback for missing files
-                            colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
-                            color = colors[i % len(colors)]
-                            selection_border = "border: 3px solid #ff6b6b;" if is_selected else "border: 2px solid #e2e8f0;"
-                            button_style = "primary" if is_selected else "secondary"
-                            
-                            # Display colored box
-                            st.markdown(f"""
-                            <div style="width: 80px; height: 45px; background: {color}; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 1rem; {selection_border} transition: all 0.3s ease; margin-bottom: 0.2rem; cursor: pointer;">🎬</div>
-                            """, unsafe_allow_html=True)
-                            
-                            # Add clickable button below
-                            if st.button(
-                                f"Select Video {i+1}",
-                                key=f"thumb_btn_fallback_{i}",
-                                help=f"Click to view {video['video_name']}",
-                                use_container_width=True,
-                                type=button_style
-                            ):
-                                # Update both selection states
-                                st.session_state.text_selection = SelectedVideo(i)
-                                st.session_state.click_selection = SelectedVideo(i)
-                                st.session_state.force_update = True
-                                st.rerun()
-                    except Exception:
-                        # Exception fallback
-                        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
-                        color = colors[i % len(colors)]
-                        selection_border = "border: 3px solid #ff6b6b;" if is_selected else "border: 2px solid #e2e8f0;"
-                        button_style = "primary" if is_selected else "secondary"
-                        
-                        # Display colored box
-                        st.markdown(f"""
-                        <div style="width: 80px; height: 45px; background: {color}; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 1rem; {selection_border} transition: all 0.3s ease; margin-bottom: 0.2rem; cursor: pointer;">🎬</div>
-                        """, unsafe_allow_html=True)
-                        
-                        # Add clickable button below
-                        if st.button(
-                            f"Select Video {i+1}",
-                            key=f"thumb_btn_exception_{i}",
-                            help=f"Click to view {video['video_name']}",
-                            use_container_width=True,
-                            type=button_style
-                        ):
-                            # Update both selection states
-                            st.session_state.text_selection = SelectedVideo(i)
-                            st.session_state.click_selection = SelectedVideo(i)
-                            st.session_state.force_update = True
-                            st.rerun()
-                
-                with col2:
-                    # Video name as clickable button
-                    button_text = f"📺 {video['video_name'][:25]}{'...' if len(video['video_name']) > 25 else ''}"
-                    if is_selected:
-                        button_text = f"🎯 {video['video_name'][:25]}{'...' if len(video['video_name']) > 25 else ''}"
-                    
-                    if st.button(
-                        button_text,
-                        key=f"name_button_{i}",
-                        help=f"Click to view {video['video_name']} (Score: {video['similarity_score']:.3f})",
-                        use_container_width=True
-                    ):
-                        st.session_state.text_selection = SelectedVideo(i)
-                        st.session_state.click_selection = SelectedVideo(i)  # Also update click selection for embedding highlight
-                        st.session_state.force_update = True
-                        st.rerun()
-                    
-                    # Show filename, score and rank
-                    score_color = "#6366f1" if not is_selected else "#ff6b6b"
-                    
-                    st.markdown(f"""
-                    <div style="margin-top: 4px;">
-                        <div style="color: #1e293b; font-weight: 600; font-size: 0.8rem; margin-bottom: 2px;">
-                                {video['video_name']}
-                            </div>
-                        <div style="color: {score_color}; font-weight: 600; font-size: 0.75rem;">
-                            Score: {video['similarity_score']:.3f} {'✓ Selected' if is_selected else ''}
-                            </div>
-                        <div style="color: #64748b; font-size: 0.7rem; margin-top: 1px;">
-                            Rank #{video.get('rank', i+1)}
-                    </div>
+            # Show scroll hint if more than 3 results
+            if len(st.session_state.search_results) > 3:
+                st.markdown(f"""
+                <div style="text-align: center; color: #6366f1; font-size: 0.85rem; padding: 8px; background: rgba(99, 102, 241, 0.1); border-radius: 4px; margin-bottom: 10px;">
+                    ↓ Scroll to see more results
                 </div>
                 """, unsafe_allow_html=True)
-                
-                # Add separator
-                st.markdown("<hr style='margin: 8px 0; border: none; border-top: 1px solid #e2e8f0;'>", unsafe_allow_html=True)
+            
+            # Create scrollable container using Streamlit's native height parameter
+            # Each thumbnail row is approximately 100px (thumbnail + text + spacing)
+            # Show 3 items = 300px + some padding
+            with st.container(height=320):
+                # Display top K results in the scrollable container
+                for i, video in enumerate(st.session_state.search_results[:top_k]):
+                    is_selected = (current_selection == i)
+                    
+                    # Create video card
+                    video_path = video.get('video_path', '')
+                    
+                    # Create layout with thumbnail and info
+                    col1, col2 = st.columns([1, 2])
+                    
+                    with col1:
+                        # Display thumbnail without button
+                        try:
+                            from pathlib import Path
+                            full_path = Path(video_path)
+                            
+                            if full_path.exists():
+                                visualizer = VideoResultsVisualizer()
+                                thumbnail_array = visualizer.extract_thumbnail(full_path)
+                                if thumbnail_array is not None:
+                                    # Display thumbnail using st.image
+                                    border_style = "3px solid #ff6b6b" if is_selected else "1px solid #e2e8f0"
+                                    st.markdown(f"""
+                                    <style>
+                                    .thumbnail-{i} {{
+                                        border: {border_style};
+                                        border-radius: 8px;
+                                        overflow: hidden;
+                                    }}
+                                    </style>
+                                    """, unsafe_allow_html=True)
+                                    
+                                    # Use st.image for simple display
+                                    st.image(thumbnail_array, use_container_width=True, output_format="JPEG")
+                                else:
+                                    # Colored box fallback
+                                    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
+                                    color = colors[i % len(colors)]
+                                    border_style = "3px solid #ff6b6b" if is_selected else "1px solid #e2e8f0"
+                                    
+                                    # Display colored placeholder
+                                    st.markdown(f"""
+                                    <div style="width: 100%; height: 60px; background: {color}; border: {border_style}; border-radius: 8px; 
+                                         display: flex; align-items: center; justify-content: center; color: white; font-size: 1.5rem;">
+                                        🎬
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                            else:
+                                # Fallback for missing files
+                                colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
+                                color = colors[i % len(colors)]
+                                border_style = "3px solid #ff6b6b" if is_selected else "1px solid #e2e8f0"
+                                
+                                # Display colored placeholder
+                                st.markdown(f"""
+                                <div style="width: 100%; height: 60px; background: {color}; border: {border_style}; border-radius: 8px; 
+                                     display: flex; align-items: center; justify-content: center; color: white; font-size: 1.5rem;">
+                                    🎬
+                                </div>
+                                """, unsafe_allow_html=True)
+                        except Exception:
+                            # Exception fallback
+                            colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
+                            color = colors[i % len(colors)]
+                            border_style = "3px solid #ff6b6b" if is_selected else "1px solid #e2e8f0"
+                            
+                            # Display colored placeholder
+                            st.markdown(f"""
+                            <div style="width: 100%; height: 60px; background: {color}; border: {border_style}; border-radius: 8px; 
+                                 display: flex; align-items: center; justify-content: center; color: white; font-size: 1.5rem;">
+                                🎬
+                            </div>
+                            """, unsafe_allow_html=True)
+                    
+                    with col2:
+                        # Show video information
+                        score_color = "#ff6b6b" if is_selected else "#6366f1"
+                        
+                        st.markdown(f"""
+                        <div style="padding: 4px;">
+                            <div style="color: #1e293b; font-weight: 600; font-size: 0.9rem; margin-bottom: 4px;">
+                                {video['video_name']}
+                            </div>
+                            <div style="color: {score_color}; font-weight: 600; font-size: 0.8rem;">
+                                Score: {video['similarity_score']:.3f} {'✓' if is_selected else ''}
+                            </div>
+                            <div style="color: #64748b; font-size: 0.75rem; margin-top: 2px;">
+                                Rank #{video.get('rank', i+1)}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    # Add separator
+                    st.markdown("<hr style='margin: 8px 0; border: none; border-top: 1px solid #e2e8f0;'>", unsafe_allow_html=True)
         
         # Results table (collapsed by default)
         with st.expander("📊 Detailed Results Table"):
