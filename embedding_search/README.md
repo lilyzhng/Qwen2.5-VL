@@ -62,6 +62,8 @@ pip install -r requirements.txt
 
 ### 2. Build Database
 ```bash
+python main.py build --video-csv /path/to/video_metadata.csv
+
 python main.py build --video-dir videos/video_database/
 ```
 

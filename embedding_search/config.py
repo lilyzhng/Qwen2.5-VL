@@ -33,8 +33,9 @@ class VideoRetrievalConfig:
     similarity_threshold: float = 0.0
     
     # Paths
-    video_database_dir: str = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/videos/video_database"
+    video_dir: str = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/videos/video_database"
     user_input_dir: str = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/videos/user_input"
+    video_csv: Optional[str] = None  # Path to CSV file containing video file paths
     
     # Performance
     enable_caching: bool = True
@@ -83,10 +84,14 @@ class VideoRetrievalConfig:
             raise ValueError("similarity_threshold must be between 0 and 1")
         
         # Check if paths exist
-        for path_attr in ['video_database_dir', 'user_input_dir']:
+        for path_attr in ['video_dir', 'user_input_dir']:
             path = getattr(self, path_attr)
             if path and not Path(path).exists():
                 print(f"Warning: {path_attr} does not exist: {path}")
+        
+        # Check video_csv if provided
+        if self.video_csv and not Path(self.video_csv).exists():
+            print(f"Warning: video_csv does not exist: {self.video_csv}")
 
 
 # Default configuration instance

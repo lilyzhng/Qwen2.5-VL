@@ -19,8 +19,9 @@ default_top_k: 5              # Default number of results to return
 similarity_threshold: 0.0     # Minimum similarity score (0-1)
 
 # Paths
-video_database_dir: "/Users/lilyzhang/Desktop/Qwen2.5-VL/nvidia_cosmos/videos/video_database"
+video_dir: "/Users/lilyzhang/Desktop/Qwen2.5-VL/nvidia_cosmos/videos/video_database"
 user_input_dir: "/Users/lilyzhang/Desktop/Qwen2.5-VL/nvidia_cosmos/videos/user_input"
+video_csv: null  # Optional path to CSV file with video paths (if provided, loads from df.sensor_video_file.drop_duplicates())
 
 # Performance
 enable_caching: true

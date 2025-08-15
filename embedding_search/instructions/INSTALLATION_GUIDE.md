@@ -151,7 +151,7 @@ class VideoRetrievalConfig:
     resolution: Tuple[int, int] = (448, 448)
     
     # Database paths
-    video_database_dir: str = "/path/to/video/database"
+    video_dir: str = "/path/to/video/database"
     user_input_dir: str = "/path/to/user/input"
 ```
 

@@ -69,6 +69,11 @@ def main():
         help='Directory containing video files'
     )
     build_parser.add_argument(
+        '--video-csv',
+        type=str,
+        help='Path to CSV file containing video file paths (column: sensor_video_file)'
+    )
+    build_parser.add_argument(
         '--force-rebuild', '-f',
         action='store_true',
         help='Force rebuild database from scratch'
@@ -187,7 +192,9 @@ def main():
     
     # Override config with command line arguments
     if hasattr(args, 'video_dir') and args.video_dir:
-        config.video_database_dir = args.video_dir
+        config.video_dir = args.video_dir
+    if hasattr(args, 'video_csv') and args.video_csv:
+        config.video_csv = args.video_csv
     if hasattr(args, 'query_dir') and args.query_dir:
         config.user_input_dir = args.query_dir
     if hasattr(args, 'batch_size') and args.batch_size:
@@ -219,7 +226,7 @@ def main():
         
         if args.command == 'build':
             logger.info("Building video embeddings database...")
-            search_engine.build_database(config.video_database_dir, args.force_rebuild)
+            search_engine.build_database(config.video_dir, args.force_rebuild)
             
             # Show database info
             info = search_engine.get_database_info()
@@ -362,7 +369,7 @@ def main():
             db_info = search_engine.get_database_info()
             if db_info['num_videos'] == 0:
                 logger.info("Building database first...")
-                search_engine.build_database(config.video_database_dir)
+                search_engine.build_database(config.video_dir)
             
             # Use the sample input video
             query_video = Path(config.user_input_dir) / 'car2cyclist_2.mp4'

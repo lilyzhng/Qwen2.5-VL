@@ -100,7 +100,7 @@ Use YAML or JSON configuration files:
 model_name: "nvidia/Cosmos-Embed1-448p"
 batch_size: 8
 similarity_threshold: 0.5
-video_database_dir: "/path/to/videos"
+video_dir: "/path/to/videos"
 ```
 
 ### 4. Safe Serialization

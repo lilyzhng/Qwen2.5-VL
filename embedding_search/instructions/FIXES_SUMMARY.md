@@ -18,7 +18,7 @@ model_name: str = "/Users/lilyzhang/Desktop/Qwen2.5-VL/cookbooks/nvidia_cosmos_e
 
 **Fix**: Updated paths to point to the correct directories:
 ```python
-video_database_dir: str = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/videos/video_database"
+video_dir: str = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/videos/video_database"
 user_input_dir: str = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/videos/user_input"
 ```
 

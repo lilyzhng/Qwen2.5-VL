@@ -5,6 +5,7 @@ Reference: https://huggingface.co/spaces/nvidia/Cosmos-Embed1/blob/main/src/stre
 
 import numpy as np
 import torch
+import pandas as pd
 from pathlib import Path
 from typing import List, Dict, Union, Optional, Tuple, Any
 import logging
@@ -83,6 +84,54 @@ class OptimizedVideoSearchEngine:
         
         logger.info(f"OptimizedVideoSearchEngine initialized (GPU FAISS: {use_gpu_faiss})")
     
+    def _get_video_files(self, video_directory: Union[str, Path]) -> List[Path]:
+        """
+        Get video files either from CSV file or directory scanning.
+        
+        Args:
+            video_directory: Directory containing video files (used as fallback)
+            
+        Returns:
+            List of video file paths
+        """
+        video_files = []
+        
+        # Try to load from CSV first if configured
+        if self.config.video_csv and Path(self.config.video_csv).exists():
+            try:
+                logger.info(f"Loading video files from CSV: {self.config.video_csv}")
+                df = pd.read_csv(self.config.video_csv)
+                
+                if 'sensor_video_file' not in df.columns:
+                    logger.warning(f"Column 'sensor_video_file' not found in CSV. Available columns: {list(df.columns)}")
+                    logger.info("Falling back to directory scanning")
+                else:
+                    # Get unique video file paths from CSV
+                    video_paths = df['sensor_video_file'].drop_duplicates().tolist()
+                    video_files = [Path(path) for path in video_paths if Path(path).exists()]
+                    
+                    if video_files:
+                        logger.info(f"Loaded {len(video_files)} video files from CSV")
+                        return video_files
+                    else:
+                        logger.warning("No valid video files found in CSV, falling back to directory scanning")
+                        
+            except Exception as e:
+                logger.warning(f"Error reading CSV file: {e}")
+                logger.info("Falling back to directory scanning")
+        
+        # Fallback to directory scanning
+        video_dir = Path(video_directory)
+        if not video_dir.exists():
+            raise ValueError(f"Video directory not found: {video_dir}")
+            
+        logger.info(f"Scanning directory for video files: {video_dir}")
+        for ext in self.config.supported_formats:
+            video_files.extend(video_dir.glob(f"*{ext}"))
+            video_files.extend(video_dir.glob(f"*{ext.upper()}"))
+        
+        return video_files
+
     @time_it
     def build_database(self, video_directory: Union[str, Path], 
                       force_rebuild: bool = False,
@@ -95,10 +144,6 @@ class OptimizedVideoSearchEngine:
             force_rebuild: If True, rebuild from scratch
             save_format: Format to save database ("parquet" recommended)
         """
-        video_dir = Path(video_directory)
-        if not video_dir.exists():
-            raise ValueError(f"Video directory not found: {video_dir}")
-        
         # Try to load existing database
         if not force_rebuild:
             try:
@@ -113,14 +158,11 @@ class OptimizedVideoSearchEngine:
             except Exception as e:
                 logger.info(f"Could not load existing database: {e}")
         
-        # Get video files
-        video_files = []
-        for ext in self.config.supported_formats:
-            video_files.extend(video_dir.glob(f"*{ext}"))
-            video_files.extend(video_dir.glob(f"*{ext.upper()}"))
+        # Get video files using the new helper method
+        video_files = self._get_video_files(video_directory)
         
         if not video_files:
-            logger.warning(f"No video files found in {video_dir}")
+            logger.warning(f"No video files found")
             return
         
         logger.info(f"Found {len(video_files)} video files")
