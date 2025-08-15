@@ -182,6 +182,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             title_x=0.5,
             title_font=dict(size=14),
             margin=dict(l=40, r=80, t=50, b=40),  # Tighter margins
+            plot_bgcolor='#f8fafc',  # Match tip section background
             xaxis=dict(tickfont=dict(size=10)),
             yaxis=dict(tickfont=dict(size=10))
         )
@@ -266,12 +267,45 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                 )
             )
         
+        # Add cross coordinates at origin (x=0, y=0, z=0) for 3D
+        # X-axis line
+        fig.add_trace(
+            go.Scatter3d(
+                x=[-10, 10], y=[0, 0], z=[0, 0],
+                mode='lines',
+                line=dict(color='rgba(128,128,128,0.5)', width=2, dash='dash'),
+                showlegend=False,
+                hoverinfo='skip'
+            )
+        )
+        # Y-axis line
+        fig.add_trace(
+            go.Scatter3d(
+                x=[0, 0], y=[-10, 10], z=[0, 0],
+                mode='lines',
+                line=dict(color='rgba(128,128,128,0.5)', width=2, dash='dash'),
+                showlegend=False,
+                hoverinfo='skip'
+            )
+        )
+        # Z-axis line
+        fig.add_trace(
+            go.Scatter3d(
+                x=[0, 0], y=[0, 0], z=[-10, 10],
+                mode='lines',
+                line=dict(color='rgba(128,128,128,0.5)', width=2, dash='dash'),
+                showlegend=False,
+                hoverinfo='skip'
+                )
+            )
+        
         fig.update_layout(
             height=400,  # More compact height
             scene=dict(
                 xaxis_title="UMAP Dimension 1",
                 yaxis_title="UMAP Dimension 2",
                 zaxis_title="UMAP Dimension 3",
+                bgcolor='#f8fafc',  # Match tip section background
                 camera=dict(
                     eye=dict(x=1.5, y=1.5, z=1.5)  # Better default view
                 ),
@@ -355,9 +389,14 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                 )
             )
         
+        # Add cross coordinates at origin (x=0, y=0)
+        fig.add_hline(y=0, line_dash="dash", line_color="rgba(128,128,128,0.5)", line_width=1)
+        fig.add_vline(x=0, line_dash="dash", line_color="rgba(128,128,128,0.5)", line_width=1)
+        
         fig.update_layout(
             xaxis_title=x_title,
             yaxis_title=y_title,
+            plot_bgcolor='#f8fafc',  # Match tip section background
             coloraxis_colorbar=dict(
                 title="Similarity",
                 title_side="right",
@@ -1209,6 +1248,10 @@ def main():
                     <div style="width: 12px; height: 12px; background: #ffd700; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);"></div>
                     <span style="font-size: 0.85rem; color: #64748b;">Query Vector</span>
                 </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <div style="width: 12px; height: 1px; background: rgba(128,128,128,0.8); border: 1px dashed rgba(128,128,128,0.8);"></div>
+                    <span style="font-size: 0.85rem; color: #64748b;">Origin Axes</span>
+                </div>
             </div>
             """, unsafe_allow_html=True)
             
@@ -1289,6 +1332,10 @@ def main():
                 <div style="display: flex; align-items: center; gap: 0.5rem;">
                     <div style="width: 12px; height: 12px; background: #ffd700; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);"></div>
                     <span style="font-size: 0.85rem; color: #64748b;">Query Vector</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <div style="width: 12px; height: 1px; background: rgba(128,128,128,0.8); border: 1px dashed rgba(128,128,128,0.8);"></div>
+                    <span style="font-size: 0.85rem; color: #64748b;">Origin Axes</span>
                 </div>
             </div>
             """, unsafe_allow_html=True)
