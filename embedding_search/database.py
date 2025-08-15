@@ -242,6 +242,55 @@ class SafeVideoDatabase(DatabaseBackend):
         
         return results
     
+    def get_embedding_by_filename(self, filename: str) -> Optional[Tuple[np.ndarray, Dict]]:
+        """
+        Get pre-computed embedding by video filename.
+        
+        Args:
+            filename: Video filename (e.g., "car2cyclist_2.mp4")
+            
+        Returns:
+            Tuple of (embedding, metadata) if found, None otherwise
+        """
+        for i, meta in enumerate(self.metadata):
+            if Path(meta['video_path']).name == filename:
+                if i < len(self.embeddings):
+                    return self.embeddings[i], meta
+        return None
+    
+    def get_embedding_by_path(self, video_path: Union[str, Path]) -> Optional[Tuple[np.ndarray, Dict]]:
+        """
+        Get pre-computed embedding by full video path.
+        
+        Args:
+            video_path: Full path to video file
+            
+        Returns:
+            Tuple of (embedding, metadata) if found, None otherwise
+        """
+        video_path_str = str(video_path)
+        for i, meta in enumerate(self.metadata):
+            if meta['video_path'] == video_path_str:
+                if i < len(self.embeddings):
+                    return self.embeddings[i], meta
+        return None
+    
+    def list_available_videos(self) -> List[Dict[str, str]]:
+        """
+        Get list of all available videos with their filenames and paths.
+        
+        Returns:
+            List of dictionaries with 'filename', 'path', and 'added_at' keys
+        """
+        videos = []
+        for meta in self.metadata:
+            videos.append({
+                'filename': Path(meta['video_path']).name,
+                'path': meta['video_path'],
+                'added_at': meta.get('added_at', 'unknown')
+            })
+        return videos
+
     def get_statistics(self) -> Dict[str, Any]:
         """Get comprehensive statistics about the database."""
         if not self.embeddings:

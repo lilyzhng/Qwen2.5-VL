@@ -4,6 +4,10 @@ ALFA 0.1 - Similarity Search Interface
 Advanced embedding visualization and video similarity search.
 """
 
+import os
+# Fix OpenMP library conflict issue  
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -1002,22 +1006,31 @@ def main():
             box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
         }
         
-        /* Button styling */
-        .stButton > button {
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-            color: white;
-            border: none;
-            border-radius: 12px;
-            padding: 0.75rem 1.5rem;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 8px rgba(99, 102, 241, 0.2);
-            width: 100%;
+        /* Button styling - Force purple for all buttons */
+        .stButton > button,
+        div[data-testid="stButton"] > button,
+        .stButton button,
+        button[data-baseweb="button"] {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 12px !important;
+            padding: 0.75rem 1.5rem !important;
+            font-weight: 600 !important;
+            transition: all 0.3s ease !important;
+            box-shadow: 0 4px 8px rgba(99, 102, 241, 0.2) !important;
+            width: 100% !important;
+            height: auto !important;
+            min-height: 2.5rem !important;
         }
         
-        .stButton > button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4);
+        .stButton > button:hover,
+        div[data-testid="stButton"] > button:hover,
+        .stButton button:hover,
+        button[data-baseweb="button"]:hover {
+            transform: translateY(-2px) !important;
+            box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4) !important;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
         }
         
         /* Secondary button */
@@ -1269,6 +1282,58 @@ def main():
         # 🔍 Settings Header
         st.markdown('<div class="section-title">🔍 Settings</div>', unsafe_allow_html=True)
         
+        # Video Search Section
+        try:
+            from pathlib import Path
+            video_dir = Path("/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/videos/user_input")
+            
+            # Get available query videos (includes pre-computed ones)
+            try:
+                available_videos = search_engine.get_query_videos_list()
+                if not available_videos and video_dir.exists():
+                    # Fall back to file system if no pre-computed videos
+                    video_files = list(video_dir.glob("*.mp4")) + list(video_dir.glob("*.avi")) + list(video_dir.glob("*.mov"))
+                    available_videos = [f.name for f in sorted(video_files)]
+            except:
+                available_videos = []
+                if video_dir.exists():
+                    video_files = list(video_dir.glob("*.mp4")) + list(video_dir.glob("*.avi")) + list(video_dir.glob("*.mov"))
+                    available_videos = [f.name for f in sorted(video_files)]
+            
+            if available_videos:
+                selected_video = st.selectbox(
+                    "",
+                    available_videos,
+                    help="Select a video file (⚡ = pre-computed embedding)"
+                )
+                
+                if st.button("🎥 Search by Video", use_container_width=True, help="Smart search: uses pre-computed embeddings when available, falls back to real-time processing"):
+                    with st.spinner("Searching for similar videos..."):
+                        try:
+                            # First try pre-computed embeddings (fast path)
+                            results = search_engine.search_by_filename(selected_video, top_k=top_k)
+                            st.session_state.search_results = results
+                            st.session_state.text_query = f"Similar to: {selected_video}"
+                            st.session_state.click_selection = SelectedVideo(0)
+                            
+                            # Check if we used pre-computed embedding or fallback
+                            try:
+                                # Quick check if the video was in cache
+                                cached_embedding = search_engine.query_manager.get_query_embedding(selected_video)
+                                if cached_embedding is not None:
+                                    st.success(f"Found {len(results)} similar videos! ⚡ (Used pre-computed embedding)")
+                                else:
+                                    st.success(f"Found {len(results)} similar videos! (Processed in real-time)")
+                            except:
+                                st.success(f"Found {len(results)} similar videos!")
+                                
+                        except Exception as e:
+                            st.error(f"Video search failed: {e}")
+            else:
+                st.info("No video files found. Use CLI to build query database: `python main.py build-query`")
+        except Exception as e:
+            st.error(f"Error: {e}")
+        
         # Text Search Section
         text_query = st.text_input(
             "",
@@ -1276,7 +1341,7 @@ def main():
             placeholder="car approaching cyclist"
         )
         
-        if st.button("🔍 Search by Text", type="primary", use_container_width=True):
+        if st.button("🔍 Search by Text", use_container_width=True):
             if text_query:
                 with st.spinner("Searching..."):
                     try:
@@ -1291,42 +1356,6 @@ def main():
                         st.error(f"Search failed: {e}")
             else:
                 st.warning("Please enter a search query")
-        
-        # Video Search Section
-        try:
-            from pathlib import Path
-            video_dir = Path("/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/videos/user_input")
-            
-            if video_dir.exists():
-                video_files = list(video_dir.glob("*.mp4")) + list(video_dir.glob("*.avi")) + list(video_dir.glob("*.mov"))
-                video_files = sorted(video_files)
-                
-                if video_files:
-                    video_options = [f.name for f in video_files]
-                    
-                    selected_video = st.selectbox(
-                        "",
-                        video_options,
-                        help="Select a video file"
-                    )
-                    
-                    if st.button("🎥 Search by Video", use_container_width=True):
-                        with st.spinner("Searching for similar videos..."):
-                            try:
-                                video_path = video_dir / selected_video
-                                results = search_engine.search_by_video(video_path, top_k=top_k)
-                                st.session_state.search_results = results
-                                st.session_state.text_query = f"Similar to: {selected_video}"
-                                st.session_state.click_selection = SelectedVideo(0)
-                                st.success(f"Found {len(results)} similar videos!")
-                            except Exception as e:
-                                st.error(f"Video search failed: {e}")
-                else:
-                    st.info("No video files found")
-            else:
-                st.warning("Video directory not found")
-        except Exception as e:
-            st.error(f"Error: {e}")
         
         # Top-K Results
         # st.markdown("**Filtering:**")
@@ -1360,15 +1389,15 @@ def main():
             trimap_inliers = st.slider("Triplet Inliers", 3, 20, trimap_inliers)
         
         # Database Stats Section
-        st.markdown('<div class="section-title">Stats</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">📊 Database Stats</div>', unsafe_allow_html=True)
         st.markdown(f"""
         <div class="stats-container">
             <div class="stat-card">
-                <div class="stat-value">{db_info.get('num_videos', 25)}</div>
-                <div class="stat-label">Total Videos</div>
+                <div class="stat-value">{db_info.get('num_videos', 0)}</div>
+                <div class="stat-label">Database Videos</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value">{db_info.get('categories', 7)}</div>
+                <div class="stat-value">{db_info.get('categories', 0)}</div>
                 <div class="stat-label">Categories</div>
             </div>
             <div class="stat-card">
@@ -1376,8 +1405,8 @@ def main():
                 <div class="stat-label">Embedding Dim</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value">{db_info.get('search_backend', 'Mock')}</div>
-                <div class="stat-label">FAISS Backend</div>
+                <div class="stat-value">{db_info.get('search_backend', 'FAISS')}</div>
+                <div class="stat-label">Search Backend</div>
             </div>
         </div>
         """, unsafe_allow_html=True)

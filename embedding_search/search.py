@@ -19,6 +19,7 @@ from optimizations import (
 )
 from config import VideoRetrievalConfig
 from exceptions import VideoNotFoundError, SearchError, NoResultsError
+from query_cache import QueryDatabaseManager
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,9 @@ class OptimizedVideoSearchEngine:
         self.embedding_cache = OptimizedEmbeddingCache(
             cache_size=self.config.cache_size if hasattr(self.config, 'cache_size') else 1000
         )
+        
+        # Initialize query database manager for pre-computed query embeddings
+        self.query_manager = QueryDatabaseManager(self.config)
         
         # Model caching (singleton pattern from official implementation)
         self._model_cache = {}
@@ -147,6 +151,68 @@ class OptimizedVideoSearchEngine:
                 logger.info(f"Database updated with {len(embeddings_data)} videos")
         else:
             logger.info("All videos already in database")
+    
+    @time_it
+    def build_query_database(self, query_video_directory: Union[str, Path] = None,
+                           force_rebuild: bool = False) -> Dict[str, Any]:
+        """
+        Build database for query videos with pre-computed embeddings.
+        
+        Args:
+            query_video_directory: Directory containing query videos (uses config default if None)
+            force_rebuild: If True, rebuild from scratch
+            
+        Returns:
+            Build statistics
+        """
+        query_dir = Path(query_video_directory) if query_video_directory else Path(self.config.user_input_dir)
+        
+        if not query_dir.exists():
+            logger.warning(f"Query video directory not found: {query_dir}")
+            return {"processed": 0, "cached": 0, "errors": 1}
+        
+        logger.info(f"Building query database from: {query_dir}")
+        return self.query_manager.build_query_database(query_dir, force_rebuild)
+    
+    def search_by_filename(self, filename: str, top_k: Optional[int] = None) -> List[Dict]:
+        """
+        Search using pre-computed query video embedding by filename.
+        
+        Args:
+            filename: Query video filename (e.g., "car2cyclist_2.mp4")
+            top_k: Number of results
+            
+        Returns:
+            Search results
+        """
+        top_k = top_k or self.config.default_top_k
+        
+        try:
+            # Try to get pre-computed embedding
+            query_embedding = self.query_manager.get_query_embedding(filename)
+            
+            if query_embedding is not None:
+                logger.info(f"Using pre-computed embedding for: {filename}")
+                try:
+                    return self._search_by_embedding(query_embedding, top_k)
+                except Exception as e:
+                    logger.error(f"Error during pre-computed search: {e}")
+                    logger.info("Falling back to real-time computation...")
+                    # Continue to fallback below
+            else:
+                logger.warning(f"No pre-computed embedding found for {filename}")
+        except Exception as e:
+            logger.error(f"Error accessing query cache: {e}")
+        
+        # Fall back to real-time computation
+        logger.info(f"Falling back to real-time processing for: {filename}")
+        
+        # Try to find the file in user input directory
+        query_path = Path(self.config.user_input_dir) / filename
+        if not query_path.exists():
+            raise VideoNotFoundError(f"Query video not found: {filename}")
+        
+        return self.search_by_video(query_path, top_k)
     
     def _extract_embeddings_optimized(self, video_paths: List[Path]) -> List[Dict[str, Any]]:
         """
@@ -375,6 +441,10 @@ class OptimizedVideoSearchEngine:
             self.database._clear_cache()
         logger.info("Caches cleared")
     
+    def get_query_videos_list(self) -> List[str]:
+        """Get list of available query video filenames."""
+        return self.query_manager.list_available_query_videos()
+    
     def get_statistics(self) -> Dict[str, Any]:
         """Get comprehensive statistics."""
         stats = self.database.get_statistics()
@@ -386,6 +456,10 @@ class OptimizedVideoSearchEngine:
             "using_gpu": torch.cuda.is_available() and self.config.device == "cuda",
             "search_backend": "FAISS" if self.database.use_faiss else "NumPy"
         })
+        
+        # Add query database statistics
+        query_stats = self.query_manager.get_statistics()
+        stats["query_database"] = query_stats
         
         return stats
 

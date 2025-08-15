@@ -1,0 +1,16 @@
+{
+  "version": "2.0",
+  "created_at": "2025-08-14T23:49:44.687625",
+  "num_videos": 1,
+  "embedding_dim": 768,
+  "videos": [
+    {
+      "video_path": "videos/user_input/car2cyclist_2.mp4",
+      "video_name": "car2cyclist_2.mp4",
+      "embedding_dim": 768,
+      "num_frames": 8,
+      "added_at": "2025-08-14T23:49:44.687181",
+      "checksum": "837b85bba9dd81c3bd11ce7a6dd539279fae9d83089091c27de8e81940e0be18"
+    }
+  ]
+}
