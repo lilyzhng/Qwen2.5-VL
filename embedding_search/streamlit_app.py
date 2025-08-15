@@ -14,6 +14,8 @@ import torch
 from datetime import datetime
 from typing import Optional, List, Dict, Tuple
 import logging
+import textwrap
+import streamlit.components.v1 as components
 
 # Import our components
 from search import OptimizedVideoSearchEngine
@@ -1221,6 +1223,32 @@ def main():
             .featured-video {
                 padding: 1.5rem;
             }
+            
+            /* Stack columns vertically on mobile */
+            .stColumn {
+                width: 100% !important;
+                flex: none !important;
+            }
+        }
+        
+        /* Tablet responsiveness */
+        @media (max-width: 1024px) and (min-width: 769px) {
+            /* Adjust column ratios for tablets */
+            .stColumn:first-child {
+                flex: 2 !important;
+            }
+            .stColumn:last-child {
+                flex: 1.5 !important;
+            }
+        }
+        
+        /* Better spacing for side-by-side layout */
+        .viz-container {
+            margin-right: 1rem;
+        }
+        
+        .preview-container {
+            margin-left: 0.5rem;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -1382,59 +1410,146 @@ def main():
         </div>
         """, unsafe_allow_html=True)
         
-    # Main content area: Full width visualization (like mock interface)
-    st.markdown('<div class="section-title">Embedding Visualization</div>', unsafe_allow_html=True)
-    
-    # Shared legend function for all visualization tabs
-    def render_visualization_legend(top_k):
-        """Render consistent legend for all visualization tabs"""
-        st.markdown(f"""
-        <div style="display: flex; gap: 1rem; margin-bottom: 1rem; justify-content: center;">
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <div style="width: 12px; height: 12px; border-radius: 50%; background: #6f42c1;"></div>
-                <span style="font-size: 0.85rem; color: #64748b;">Videos</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #00FF00;"></div>
-                <span style="font-size: 0.85rem; color: #64748b;">Top {top_k} Results</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #FF0000;"></div>
-                <span style="font-size: 0.85rem; color: #64748b;">Selected</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <div style="width: 12px; height: 12px; background: #ffd700; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);"></div>
-                <span style="font-size: 0.85rem; color: #64748b;">Query Vector</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Visualization view tabs (2D, 3D, Heatmap)
-    viz_tab1, viz_tab2, viz_tab3 = st.tabs(["2D View", "3D View", "Heatmap"])
+    # Main content area: Split layout for better navigation
+    if st.session_state.search_results:
+        st.markdown('<div class="section-title">Search Results & Visualization</div>', unsafe_allow_html=True)
+        
+        # Create two-column layout: left for visualization, right for video preview
+        viz_col, preview_col = st.columns([3, 2])
+        
+        with viz_col:
+            st.markdown('<div class="viz-container">', unsafe_allow_html=True)
+            st.markdown("**Embedding Visualization**")
+            
+            # Shared legend function for all visualization tabs
+            def render_visualization_legend(top_k):
+                """Render consistent legend for all visualization tabs"""
+                st.markdown(f"""
+                <div style="display: flex; gap: 1rem; margin-bottom: 1rem; justify-content: center;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <div style="width: 12px; height: 12px; border-radius: 50%; background: #6f42c1;"></div>
+                        <span style="font-size: 0.85rem; color: #64748b;">Videos</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #00FF00;"></div>
+                        <span style="font-size: 0.85rem; color: #64748b;">Top {top_k} Results</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #FF0000;"></div>
+                        <span style="font-size: 0.85rem; color: #64748b;">Selected</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <div style="width: 12px; height: 12px; background: #ffd700; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);"></div>
+                        <span style="font-size: 0.85rem; color: #64748b;">Query Vector</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Visualization view tabs (2D, 3D, Heatmap)
+            viz_tab1, viz_tab2, viz_tab3 = st.tabs(["2D View", "3D View", "Heatmap"])
+            st.markdown('</div>', unsafe_allow_html=True)  # Close viz-container
+        
+        with preview_col:
+            st.markdown('<div class="preview-container">', unsafe_allow_html=True)
+            st.markdown("**Top K Results**")
+            
+            # Determine which video to show - use simpler max approach
+            current_selection = max(
+                st.session_state.text_selection.idx if st.session_state.text_selection.is_valid() else -1,
+                st.session_state.click_selection.idx if st.session_state.click_selection.is_valid() else -1
+            )
+            if current_selection == -1:
+                current_selection = 0
+            
+            # Featured video (top result or selected)
+            featured_video = st.session_state.search_results[0]
+            if current_selection is not None and current_selection < len(st.session_state.search_results):
+                featured_video = st.session_state.search_results[current_selection]
+            
+            # Display top 3 results as visual cards
+            for i, video in enumerate(st.session_state.search_results[:3]):
+                is_selected = (current_selection == i)
+                
+                # Create visual card with thumbnail
+                video_path = video.get('video_path', '')
+                
+                # Get thumbnail data
+                thumbnail_data = None
+                try:
+                    from pathlib import Path
+                    full_path = Path(video_path)
+                    if full_path.exists():
+                        visualizer = VideoResultsVisualizer()
+                        thumbnail_array = visualizer.extract_thumbnail(full_path)
+                        if thumbnail_array is not None:
+                            import base64
+                            import io
+                            from PIL import Image
+                            
+                            if isinstance(thumbnail_array, np.ndarray):
+                                thumbnail_pil = Image.fromarray(thumbnail_array)
+                            else:
+                                thumbnail_pil = thumbnail_array
+                            
+                            img_buffer = io.BytesIO()
+                            thumbnail_pil.save(img_buffer, format='JPEG')
+                            thumbnail_data = base64.b64encode(img_buffer.getvalue()).decode()
+                except Exception:
+                    pass
+                
+                # Card styling
+                border_style = "3px solid #ff6b6b" if is_selected else "1px solid #e2e8f0"
+                shadow_style = "0 8px 25px rgba(255, 107, 107, 0.3)" if is_selected else "0 4px 12px rgba(0,0,0,0.1)"
+                bg_style = "#fff5f5" if is_selected else "#ffffff"
+                
+                if thumbnail_data:
+                    # Real thumbnail card with embedded selection indicator
+                    card_html = textwrap.dedent(f"""
+                    <div style="position: relative; margin-bottom: 0; border-radius: 8px; overflow: hidden; border: {border_style}; background: {bg_style};">
+                        <img src="data:image/jpeg;base64,{thumbnail_data}" style="width: 100%; height: 120px; object-fit: cover; display: block;">
+                        {f'<div style=\"position: absolute; top: 6px; right: 6px; background: rgba(255, 255, 255, 0.9); color: #ff4444; width: 16px; height: 16px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: bold; border: 1px solid #ff4444;\">●</div>' if is_selected else ''}
+                        <div style="padding: 8px 10px; background: {bg_style};">
+                            <div style="color: #1e293b; font-weight: 600; font-size: 0.8rem; margin-bottom: 4px; line-height: 1.1;">{video['video_name']}</div>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="color: #6366f1; font-weight: 600; font-size: 0.7rem;">{video['similarity_score']:.3f}</span>
+                                <span style="color: #64748b; font-size: 0.65rem; background: #f1f5f9; padding: 1px 4px; border-radius: 4px;">#{video.get('rank', i+1)}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="height: 10px;"></div>
+                    """)
+                    components.html(card_html, height=185, scrolling=False)
+                else:
+                    # Fallback card with colored placeholder and embedded selection indicator
+                    colors = ['#6366f1', '#8b5cf6', '#a855f7']
+                    color = colors[i % len(colors)]
+                    
+                    card_html = textwrap.dedent(f"""
+                    <div style="position: relative; margin-bottom: 0; border-radius: 8px; overflow: hidden; border: {border_style}; background: {bg_style};">
+                        <div style="width: 100%; height: 92px; background: linear-gradient(135deg, {color} 0%, {color}cc 100%); display: flex; align-items: center; justify-content: center; color: white; font-size: 1.8rem;">🎬</div>
+                        {f'<div style=\"position: absolute; top: 6px; right: 6px; background: rgba(255, 255, 255, 0.9); color: #ff4444; width: 16px; height: 16px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: bold; border: 1px solid #ff4444;\">●</div>' if is_selected else ''}
+                        <div style="padding: 8px 10px; background: {bg_style};">
+                            <div style="color: #1e293b; font-weight: 600; font-size: 0.8rem; margin-bottom: 4px; line-height: 1.1;">{video['video_name']}</div>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="color: #6366f1; font-weight: 600; font-size: 0.7rem;">{video['similarity_score']:.3f}</span>
+                                <span style="color: #64748b; font-size: 0.65rem; background: #f1f5f9; padding: 1px 4px; border-radius: 4px;">#{video.get('rank', i+1)}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="height: 10px;"></div>
+                    """)
+                    components.html(card_html, height=160, scrolling=False)
+            st.markdown('</div>', unsafe_allow_html=True)  # Close preview-container
+    else:
+        st.markdown('<div class="section-title">Embedding Visualization</div>', unsafe_allow_html=True)
+        
+        # Placeholder tabs when no results
+        viz_tab1, viz_tab2, viz_tab3 = st.tabs(["2D View", "3D View", "Heatmap"])
     
     with viz_tab1:
         if st.session_state.search_results:
             # Add legend for visualization elements
-            st.markdown(f"""
-            <div style="display: flex; gap: 1rem; margin-bottom: 1rem; justify-content: center;">
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 12px; border-radius: 50%; background: #6f42c1;"></div>
-                    <span style="font-size: 0.85rem; color: #64748b;">Videos</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #00FF00;"></div>
-                    <span style="font-size: 0.85rem; color: #64748b;">Top {top_k} Results</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #FF0000;"></div>
-                    <span style="font-size: 0.85rem; color: #64748b;">Selected</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 12px; background: #ffd700; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);"></div>
-                    <span style="font-size: 0.85rem; color: #64748b;">Query Vector</span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_visualization_legend(top_k)
             
             # Interactive plot - use explicit timestamp comparison
             selected_idx = None
@@ -1487,9 +1602,9 @@ def main():
             
             # Add click instructions
             st.markdown("""
-            <div style="text-align: center; margin-top: 1rem; padding: 1rem; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 12px; border: 1px solid rgba(226, 232, 240, 0.5);">
-                <p style="margin: 0; color: #64748b; font-size: 0.9rem;">
-                    💡 <strong>Tip:</strong> Click on any point in the visualization to view that video in the primary view below
+            <div style="text-align: center; margin-top: 1rem; padding: 0.75rem; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 8px; border: 1px solid rgba(226, 232, 240, 0.5);">
+                <p style="margin: 0; color: #64748b; font-size: 0.85rem;">
+                    💡 <strong>Tip:</strong> Click on any point to preview that video on the right →
                 </p>
             </div>
             """, unsafe_allow_html=True)
@@ -1499,26 +1614,7 @@ def main():
     with viz_tab2:
         if st.session_state.search_results:
             # Add legend for visualization elements
-            st.markdown(f"""
-            <div style="display: flex; gap: 1rem; margin-bottom: 1rem; justify-content: center;">
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 12px; border-radius: 50%; background: #6f42c1;"></div>
-                    <span style="font-size: 0.85rem; color: #64748b;">Videos</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #00FF00;"></div>
-                    <span style="font-size: 0.85rem; color: #64748b;">Top {top_k} Results</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #FF0000;"></div>
-                    <span style="font-size: 0.85rem; color: #64748b;">Selected</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 12px; background: #ffd700; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);"></div>
-                    <span style="font-size: 0.85rem; color: #64748b;">Query Vector</span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_visualization_legend(top_k)
             
             # Interactive 3D plot - use explicit timestamp comparison
             selected_idx = None
@@ -1567,9 +1663,9 @@ def main():
             
             # Add click instructions for 3D view
             st.markdown("""
-            <div style="text-align: center; margin-top: 1rem; padding: 1rem; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 12px; border: 1px solid rgba(226, 232, 240, 0.5);">
-                <p style="margin: 0; color: #64748b; font-size: 0.9rem;">
-                    💡 <strong>Tip:</strong> Click on any point in the 3D visualization to view that video in the primary view below
+            <div style="text-align: center; margin-top: 1rem; padding: 0.75rem; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 8px; border: 1px solid rgba(226, 232, 240, 0.5);">
+                <p style="margin: 0; color: #64748b; font-size: 0.85rem;">
+                    💡 <strong>Tip:</strong> Click on any point to preview that video on the right →
                 </p>
             </div>
             """, unsafe_allow_html=True)
@@ -1594,132 +1690,9 @@ def main():
     if st.session_state.get('force_update', False):
         st.session_state.force_update = False
     
-    # Bottom section: Top K Results (like mock interface)
+    # Optional: Add detailed results table at the bottom for advanced users
     if st.session_state.search_results:
-        st.markdown('<div class="section-title">Top K Results</div>', unsafe_allow_html=True)
-        
-        # Determine which video to show - use simpler max approach
-        current_selection = max(
-            st.session_state.text_selection.idx if st.session_state.text_selection.is_valid() else -1,
-            st.session_state.click_selection.idx if st.session_state.click_selection.is_valid() else -1
-        )
-        if current_selection == -1:
-            current_selection = 0
-        
-        # Layout: Large featured video + Column of top K results
-        featured_col, results_col = st.columns([2, 1])
-        
-        with featured_col:
-            # Featured video (top result or selected)
-            featured_video = st.session_state.search_results[0]
-            if current_selection is not None and current_selection < len(st.session_state.search_results):
-                featured_video = st.session_state.search_results[current_selection]
-            
-            # Large featured video display
-            # st.markdown('<div class="featured-video">', unsafe_allow_html=True)
-            preview_video_with_thumbnail(featured_video, height=300)
-            
-            # Featured video info - clean and simple
-            st.markdown(f"""
-            <div style="text-align: center; margin-top: 1rem;">
-                <h3 style="color: #1e293b; margin-bottom: 0.5rem; font-size: 1.4rem;">
-                    {featured_video['video_name']} <span style="color: #6366f1; margin-left: 20px;">Score: {featured_video['similarity_score']:.3f}</span>
-                </h3>
-            </div>
-            """, unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        with results_col:
-            with st.container(height=405):
-                # Display top K results in the scrollable container
-                for i, video in enumerate(st.session_state.search_results[:top_k]):
-                    is_selected = (current_selection == i)
-                    
-                    # Create video card
-                    video_path = video.get('video_path', '')
-                    
-                    # Create compact row layout with 16:9 aspect ratio thumbnail
-                    # Get thumbnail data first
-                    thumbnail_data = None
-                    try:
-                        from pathlib import Path
-                        full_path = Path(video_path)
-                        if full_path.exists():
-                            visualizer = VideoResultsVisualizer()
-                            thumbnail_array = visualizer.extract_thumbnail(full_path)
-                            if thumbnail_array is not None:
-                                import base64
-                                import io
-                                from PIL import Image
-                                
-                                if isinstance(thumbnail_array, np.ndarray):
-                                    thumbnail_pil = Image.fromarray(thumbnail_array)
-                                else:
-                                    thumbnail_pil = thumbnail_array
-                                
-                                img_buffer = io.BytesIO()
-                                thumbnail_pil.save(img_buffer, format='JPEG')
-                                thumbnail_data = base64.b64encode(img_buffer.getvalue()).decode()
-                    except Exception:
-                        pass
-                    
-                    # Create compact row with proper styling
-                    border_style = "2px solid #ff6b6b" if is_selected else "1px solid #e2e8f0"
-                    score_color = "#ff6b6b" if is_selected else "#6366f1"
-                    
-                    if thumbnail_data:
-                        # Real thumbnail with 16:9 aspect ratio (80x45px)
-                        st.markdown(f"""
-                        <div style="display: flex; align-items: center; gap: 10px; padding: 4px 0; margin-bottom: 2px;">
-                            <div style="flex-shrink: 0;">
-                                <img src="data:image/jpeg;base64,{thumbnail_data}" 
-                                     style="width: 80px; height: 45px; object-fit: cover; border: {border_style}; border-radius: 4px;">
-                            </div>
-                            <div style="flex: 1; min-width: 0; padding-left: 4px;">
-                                <div style="color: #1e293b; font-weight: 600; font-size: 0.75rem; line-height: 1.0; margin-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                    {video['video_name']}
-                                </div>
-                                <div style="color: {score_color}; font-weight: 600; font-size: 0.65rem; line-height: 1.0; margin-bottom: 1px;">
-                                    Score: {video['similarity_score']:.3f} {'✓' if is_selected else ''}
-                                </div>
-                                <div style="color: #64748b; font-size: 0.6rem; line-height: 1.0;">
-                                    Rank #{video.get('rank', i+1)}
-                                </div>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        # Fallback with colored box (16:9 aspect ratio)
-                        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
-                        color = colors[i % len(colors)]
-                        
-                        st.markdown(f"""
-                        <div style="display: flex; align-items: center; gap: 10px; padding: 4px 0; margin-bottom: 2px;">
-                            <div style="flex-shrink: 0;">
-                                <div style="width: 80px; height: 45px; background: {color}; border: {border_style}; border-radius: 4px; 
-                                     display: flex; align-items: center; justify-content: center; color: white; font-size: 1.0rem;">
-                                    🎬
-                                </div>
-                            </div>
-                            <div style="flex: 1; min-width: 0; padding-left: 4px;">
-                                <div style="color: #1e293b; font-weight: 600; font-size: 0.75rem; line-height: 1.0; margin-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                    {video['video_name']}
-                                </div>
-                                <div style="color: {score_color}; font-weight: 600; font-size: 0.65rem; line-height: 1.0; margin-bottom: 1px;">
-                                    Score: {video['similarity_score']:.3f} {'✓' if is_selected else ''}
-                                </div>
-                                <div style="color: #64748b; font-size: 0.6rem; line-height: 1.0;">
-                                    Rank #{video.get('rank', i+1)}
-                                </div>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    # Add compact separator
-                    st.markdown("<hr style='margin: 4px 0; border: none; border-top: 1px solid #e2e8f0;'>", unsafe_allow_html=True)
-        
-        # Results table (collapsed by default)
-        with st.expander("📊 Detailed Results Table"):
+        with st.expander("📊 Detailed Results Table", expanded=False):
             results_df = pd.DataFrame([
                 {
                     'Rank': r['rank'],
