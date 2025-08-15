@@ -235,15 +235,28 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
         ))
         fig.update_layout(
             title="Video Similarity Matrix",
-            height=500,
+            height=350,
             width=None,  # Let it be responsive to container width
             title_x=0.5,
             title_font=dict(size=14),
-            margin=dict(l=40, r=80, t=50, b=40),  # Tighter margins
+            margin=dict(l=200, r=40, t=50, b=40),  # Extra left margin for legend
             plot_bgcolor='#f8fafc',  # Match tip section background
             xaxis=dict(tickfont=dict(size=10)),
             yaxis=dict(tickfont=dict(size=10)),
-            showlegend=False  # Remove "trace 0" legend
+            showlegend=True,  # Enable legend for plot
+            legend=dict(
+                orientation="v",
+                x=-0.13,
+                y=1,
+                xanchor="right",
+                yanchor="top",
+                bgcolor="rgba(255,255,255,0.9)",
+                bordercolor="rgba(0,0,0,0.1)",
+                borderwidth=1,
+                font=dict(size=10),
+                itemsizing="constant",
+                itemwidth=30
+            )
         )
         return fig
     
@@ -269,8 +282,8 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                     ),
                     text=df_other['video_name'],
                     hovertemplate='<b>%{text}</b><br>Database Video<extra></extra>',
-                    name='Database Videos',
-                    showlegend=False
+                    name='Videos',
+                    showlegend=True
                 ))
             
             # Create trace for search results (colorful)
@@ -300,7 +313,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                     hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<extra></extra>',
                     customdata=df_search[['rank', 'similarity']].values,
                     name='Search Results',
-                    showlegend=False
+                    showlegend=True
                 ))
             
             fig = go.Figure(data=traces)
@@ -361,7 +374,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                         line=dict(width=6, color=circle_colors)  # Thicker circles with dynamic colors
                     ),
                     name=f'Top {top_k} Results',
-                    showlegend=False,
+                    showlegend=True,
                     hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<br>Top Result<extra></extra>',
                     text=top_k_points['video_name'],
                     customdata=top_k_points[['rank', 'similarity']].values
@@ -382,10 +395,10 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                     z=[query_z],
                     mode='markers',
                     marker=dict(size=25, color='gold', symbol='diamond', line=dict(width=3, color='orange')),
-                    name='Query Vector',
+                    name='Query',
                     text=[query_info.get('display_text', 'Query')],
                     hovertemplate='<b>Query: %{text}</b><extra></extra>',
-                    showlegend=False
+                    showlegend=True
                 )
             )
         
@@ -422,7 +435,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             )
         
         fig.update_layout(
-            height=500,  # Consistent height with other plots
+            height=350,  # Consistent height with other plots
             scene=dict(
                 xaxis_title="UMAP Dimension 1",
                 yaxis_title="UMAP Dimension 2",
@@ -433,7 +446,21 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                 ),
                 aspectmode='cube'  # Maintain aspect ratio
             ),
-            margin=dict(l=40, r=80, t=50, b=40)  # Tighter margins like heatmap
+            showlegend=True,
+            legend=dict(
+                orientation="v",
+                x=-0.13,
+                y=1,
+                xanchor="right",
+                yanchor="top",
+                bgcolor="rgba(255,255,255,0.9)",
+                bordercolor="rgba(0,0,0,0.1)",
+                borderwidth=1,
+                font=dict(size=10),
+                itemsizing="constant",
+                itemwidth=30
+            ),
+            margin=dict(l=200, r=40, t=50, b=40)  # Extra left margin for legend
         )
     else:
         # 2D scatter plot with enhanced interactivity
@@ -457,8 +484,8 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                     ),
                     text=df_other['video_name'],
                     hovertemplate='<b>%{text}</b><br>Database Video<extra></extra>',
-                    name='Database Videos',
-                    showlegend=False
+                    name='Videos',
+                    showlegend=True
                 ))
             
             # Add search results (colorful)
@@ -487,7 +514,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                     hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<extra></extra>',
                     customdata=df_search[['rank', 'similarity']].values,
                     name='Search Results',
-                    showlegend=False
+                    showlegend=True
                 ))
         else:
             # Original behavior for backward compatibility
@@ -538,7 +565,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                         line=dict(width=3, color=circle_colors)  # Dynamic colors based on selection
                     ),
                     name=f'Top {top_k} Results',
-                    showlegend=False,
+                    showlegend=True,
                     hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<br>Top Result<extra></extra>',
                     text=top_k_points['video_name'],
                     customdata=top_k_points[['rank', 'similarity']].values
@@ -563,10 +590,10 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                         symbol='star',
                         line=dict(width=3, color='orange')
                     ),
-                    name='Query Vector',
+                    name='Query',
                     text=[query_info.get('display_text', 'Query')],
                     hovertemplate='<b>Query: %{text}</b><extra></extra>',
-                    showlegend=False
+                    showlegend=True
                 )
             )
         
@@ -591,7 +618,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
     
     # Update common layout properties
     fig.update_layout(
-        height=500,
+        height=350,
         title={
             'text': title,
             'x': 0.5,
@@ -601,7 +628,21 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             'font': {'size': 16, 'color': '#1e293b'}
         },
         dragmode="zoom",
-        margin=dict(l=60, r=60, t=60, b=60)
+        showlegend=True,
+        legend=dict(
+            orientation="v",
+            x=-0.13,
+            y=1,
+            xanchor="right",
+            yanchor="top",
+            bgcolor="rgba(255,255,255,0.9)",
+            bordercolor="rgba(0,0,0,0.1)",
+            borderwidth=1,
+            font=dict(size=10),
+            itemsizing="constant",
+            itemwidth=30
+        ),
+        margin=dict(l=200, r=60, t=60, b=60)  # Extra left margin for legend
     )
     
     return fig
@@ -1415,28 +1456,7 @@ def main():
     st.markdown('<div class="section-title">Embedding Visualization</div>', unsafe_allow_html=True)
     
     # Shared legend function for all visualization tabs
-    def render_visualization_legend(top_k):
-        """Render consistent legend for all visualization tabs"""
-        st.markdown(f"""
-        <div style="display: flex; gap: 1rem; margin-bottom: 1rem; justify-content: center;">
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <div style="width: 12px; height: 12px; border-radius: 50%; background: #6f42c1;"></div>
-                <span style="font-size: 0.85rem; color: #64748b;">Videos</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #00FF00;"></div>
-                <span style="font-size: 0.85rem; color: #64748b;">Top {top_k} Results</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #FF0000;"></div>
-                <span style="font-size: 0.85rem; color: #64748b;">Selected</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <div style="width: 12px; height: 12px; background: #ffd700; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);"></div>
-                <span style="font-size: 0.85rem; color: #64748b;">Query Vector</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+
     
     # Visualization view tabs (2D, 3D, Heatmap)
     viz_tab1, viz_tab2, viz_tab3 = st.tabs(["2D View", "3D View", "Heatmap"])
@@ -1444,26 +1464,7 @@ def main():
     with viz_tab1:
         if st.session_state.search_results:
             # Add legend for visualization elements
-            st.markdown(f"""
-            <div style="display: flex; gap: 1rem; margin-bottom: 1rem; justify-content: center;">
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 12px; border-radius: 50%; background: #6f42c1;"></div>
-                    <span style="font-size: 0.85rem; color: #64748b;">Videos</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #00FF00;"></div>
-                    <span style="font-size: 0.85rem; color: #64748b;">Top {top_k} Results</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #FF0000;"></div>
-                    <span style="font-size: 0.85rem; color: #64748b;">Selected</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 12px; background: #ffd700; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);"></div>
-                    <span style="font-size: 0.85rem; color: #64748b;">Query Vector</span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+
             
             # Interactive plot - use explicit timestamp comparison
             selected_idx = None
@@ -1515,39 +1516,20 @@ def main():
                     st.rerun()
             
             # Add click instructions
-            st.markdown("""
-            <div style="text-align: center; margin-top: 1rem; padding: 1rem; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 12px; border: 1px solid rgba(226, 232, 240, 0.5);">
-                <p style="margin: 0; color: #64748b; font-size: 0.9rem;">
-                    💡 <strong>Tip:</strong> Click on any point in the visualization to view that video in the primary view below
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
+            # st.markdown("""
+            # <div style="text-align: center; margin-top: 1rem; padding: 1rem; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 12px; border: 1px solid rgba(226, 232, 240, 0.5);">
+            #     <p style="margin: 0; color: #64748b; font-size: 0.9rem;">
+            #         💡 <strong>Tip:</strong> Click on any point in the visualization to view that video in the primary view below
+            #     </p>
+            # </div>
+            # """, unsafe_allow_html=True)
         else:
             st.info("👆 Use the search interface in the sidebar to find videos and visualize them here!")
     
     with viz_tab2:
         if st.session_state.search_results:
             # Add legend for visualization elements
-            st.markdown(f"""
-            <div style="display: flex; gap: 1rem; margin-bottom: 1rem; justify-content: center;">
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 12px; border-radius: 50%; background: #6f42c1;"></div>
-                    <span style="font-size: 0.85rem; color: #64748b;">Videos</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #00FF00;"></div>
-                    <span style="font-size: 0.85rem; color: #64748b;">Top {top_k} Results</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #FF0000;"></div>
-                    <span style="font-size: 0.85rem; color: #64748b;">Selected</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 12px; background: #ffd700; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);"></div>
-                    <span style="font-size: 0.85rem; color: #64748b;">Query Vector</span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+
             
             # Interactive 3D plot - use explicit timestamp comparison
             selected_idx = None
@@ -1594,14 +1576,14 @@ def main():
                     st.session_state.click_selection = SelectedVideo(clicked_idx)
                     st.rerun()
             
-            # Add click instructions for 3D view
-            st.markdown("""
-            <div style="text-align: center; margin-top: 1rem; padding: 1rem; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 12px; border: 1px solid rgba(226, 232, 240, 0.5);">
-                <p style="margin: 0; color: #64748b; font-size: 0.9rem;">
-                    💡 <strong>Tip:</strong> Click on any point in the 3D visualization to view that video in the primary view below
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
+            # # Add click instructions for 3D view
+            # st.markdown("""
+            # <div style="text-align: center; margin-top: 1rem; padding: 1rem; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 12px; border: 1px solid rgba(226, 232, 240, 0.5);">
+            #     <p style="margin: 0; color: #64748b; font-size: 0.9rem;">
+            #         💡 <strong>Tip:</strong> Click on any point in the 3D visualization to view that video in the primary view below
+            #     </p>
+            # </div>
+            # """, unsafe_allow_html=True)
         else:
             st.info("👆 Use the search interface in the sidebar to find videos and visualize them here!")
     
