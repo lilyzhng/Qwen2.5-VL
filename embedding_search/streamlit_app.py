@@ -189,9 +189,31 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                 colorbar=dict(title="Similarity Score")
             ),
             text=df['video_name'],
-            hovertemplate='<b>%{text}</b><br>Similarity: %{marker.color:.3f}<br>Rank: %{customdata}<extra></extra>',
-            customdata=df['rank']
+            hovertemplate='<b>%{text}</b><br>Rank: %{customdata[0]}<br>Similarity: %{customdata[1]:.3f}<br>Click to view<extra></extra>',
+            customdata=df[['rank', 'similarity']].values
         ))
+        
+        # Highlight selected point if any (3D)
+        if selected_idx is not None and selected_idx < len(df):
+            selected_point = df.iloc[selected_idx]
+            fig.add_trace(
+                go.Scatter3d(
+                    x=[selected_point['x']],
+                    y=[selected_point['y']],
+                    z=[selected_point['z']],
+                    mode='markers',
+                    marker=dict(
+                        size=selected_point['similarity'] * 15 + 15,  # Larger size
+                        color='#ff6b6b',
+                        symbol='circle-open',
+                        line=dict(width=3, color='#ff6b6b')
+                    ),
+                    name='Selected Video',
+                    showlegend=False,
+                    hovertemplate='<b>%{text}</b><br>Currently Selected<extra></extra>',
+                    text=[selected_point['video_name']]
+                )
+            )
         
         # Add query vector point for 3D (using diamond symbol)
         if query_info:
@@ -220,7 +242,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             )
         )
     else:
-        # 2D scatter plot
+        # 2D scatter plot with enhanced interactivity
         fig = px.scatter(
             df,
             x='x',
@@ -232,6 +254,33 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             color_continuous_scale='Viridis',
             title=title
         )
+        
+        # Enhance hover template for better information display
+        fig.update_traces(
+            hovertemplate='<b>%{hover_name}</b><br>Rank: %{customdata[0]}<br>Similarity: %{customdata[1]:.3f}<br>Click to view<extra></extra>',
+            customdata=df[['rank', 'similarity']].values
+        )
+        
+        # Highlight selected point if any
+        if selected_idx is not None and selected_idx < len(df):
+            selected_point = df.iloc[selected_idx]
+            fig.add_trace(
+                go.Scatter(
+                    x=[selected_point['x']],
+                    y=[selected_point['y']],
+                    mode='markers',
+                    marker=dict(
+                        size=selected_point['similarity'] * 15 + 15,  # Larger size
+                        color='#ff6b6b',
+                        symbol='circle-open',
+                        line=dict(width=3, color='#ff6b6b')
+                    ),
+                    name='Selected Video',
+                    showlegend=False,
+                    hovertemplate='<b>%{text}</b><br>Currently Selected<extra></extra>',
+                    text=[selected_point['video_name']]
+                )
+            )
         
         # Add query vector point for 2D (using star symbol)
         if query_info:
@@ -827,6 +876,43 @@ def main():
             display: none !important;
         }
         
+        /* Style buttons in results column */
+        .stColumn:last-child .stButton > button {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            border: 1px solid rgba(226, 232, 240, 0.5);
+            border-radius: 8px;
+            padding: 0.4rem 0.6rem;
+            font-size: 0.75rem;
+            margin-bottom: 0.5rem;
+            transition: all 0.3s ease;
+            text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .stColumn:last-child .stButton > button:hover {
+            background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        /* Style thumbnail containers */
+        .stColumn:last-child .stImage {
+            margin-bottom: 0.5rem;
+        }
+        
+        /* Add spacing between result items */
+        .stColumn:last-child .element-container {
+            margin-bottom: 0.75rem !important;
+        }
+        
+        /* Make result cards more interactive */
+        .stColumn:last-child .video-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        
         /* Remove bottom margins from main container */
         .main .block-container {
             padding-bottom: 0 !important;
@@ -1078,6 +1164,15 @@ def main():
                 if clicked_idx != st.session_state.click_selection.idx:
                     st.session_state.click_selection = SelectedVideo(clicked_idx)
                     st.rerun()
+            
+            # Add click instructions
+            st.markdown("""
+            <div style="text-align: center; margin-top: 1rem; padding: 1rem; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 12px; border: 1px solid rgba(226, 232, 240, 0.5);">
+                <p style="margin: 0; color: #64748b; font-size: 0.9rem;">
+                    💡 <strong>Tip:</strong> Click on any point in the visualization to view that video in the primary view below
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
         else:
             st.info("👆 Use the search interface in the sidebar to find videos and visualize them here!")
     
@@ -1115,8 +1210,29 @@ def main():
                 query_info=query_info
             )
             
-            # Display 3D plot
-            st.plotly_chart(fig, use_container_width=True)
+            # Display 3D plot with click handling
+            plot_selection_3d = st.plotly_chart(
+                fig, 
+                use_container_width=True,
+                on_select="rerun",
+                selection_mode="points"
+            )
+            
+            # Handle 3D plot clicks
+            if plot_selection_3d and plot_selection_3d.get("selection", {}).get("point_indices"):
+                clicked_idx = plot_selection_3d["selection"]["point_indices"][0]
+                if clicked_idx != st.session_state.click_selection.idx:
+                    st.session_state.click_selection = SelectedVideo(clicked_idx)
+                    st.rerun()
+            
+            # Add click instructions for 3D view
+            st.markdown("""
+            <div style="text-align: center; margin-top: 1rem; padding: 1rem; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 12px; border: 1px solid rgba(226, 232, 240, 0.5);">
+                <p style="margin: 0; color: #64748b; font-size: 0.9rem;">
+                    💡 <strong>Tip:</strong> Click on any point in the 3D visualization to view that video in the primary view below
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
         else:
             st.info("👆 Use the search interface in the sidebar to find videos and visualize them here!")
     
@@ -1172,70 +1288,160 @@ def main():
         with results_col:
             st.markdown(f'<div style="font-size: 1rem; font-weight: 600; color: #1e293b; margin-bottom: 1rem; text-align: center;">Top {min(top_k, len(st.session_state.search_results))} Results</div>', unsafe_allow_html=True)
             
-            # Display top K results in a column
+            # Display top K results in a column with clickable functionality
             for i, video in enumerate(st.session_state.search_results[:top_k]):
                 is_selected = (current_selection == i)
                 
                 # Create clickable video card
                 video_path = video.get('video_path', '')
                 
-                # Try to extract real thumbnail first
-                thumbnail_content = None
-                try:
-                    from pathlib import Path
-                    full_path = Path(video_path)
+
+                
+
+                
+                # Create clickable card with thumbnail and info
+                col1, col2 = st.columns([1, 3])
+                
+                with col1:
+                    # Display directly clickable thumbnail
+                    try:
+                        from pathlib import Path
+                        full_path = Path(video_path)
+                        
+                        if full_path.exists():
+                            visualizer = VideoResultsVisualizer()
+                            thumbnail_array = visualizer.extract_thumbnail(full_path)
+                            if thumbnail_array is not None:
+                                # Create clickable thumbnail using image with button styling
+                                import base64
+                                import io
+                                from PIL import Image
+                                
+                                # Convert thumbnail to base64 for HTML embedding
+                                if isinstance(thumbnail_array, np.ndarray):
+                                    thumbnail_pil = Image.fromarray(thumbnail_array)
+                                else:
+                                    thumbnail_pil = thumbnail_array
+                                
+                                img_buffer = io.BytesIO()
+                                thumbnail_pil.save(img_buffer, format='JPEG')
+                                img_str = base64.b64encode(img_buffer.getvalue()).decode()
+                                
+                                # Create clickable HTML image with button behavior
+                                selection_border = "border: 3px solid #ff6b6b;" if is_selected else "border: 2px solid #e2e8f0;"
+                                hover_effect = "transform: scale(1.05);" if not is_selected else ""
+                                
+                                # Use button with image content for true clickability
+                                if st.button(
+                                    f"🖼️",
+                                    key=f"thumb_click_{i}",
+                                    help=f"Click thumbnail to view {video['video_name']}",
+                                    use_container_width=True
+                                ):
+                                    st.session_state.text_selection = SelectedVideo(i)
+                                    st.session_state.click_selection = SelectedVideo(i)  # Also update click selection for embedding highlight
+                                    st.rerun()
+                                
+                                # Display thumbnail with click styling
+                                st.markdown(f"""
+                                <div style="cursor: pointer; {selection_border} border-radius: 8px; overflow: hidden; width: 80px; transition: all 0.3s ease; {hover_effect}">
+                                    <img src="data:image/jpeg;base64,{img_str}" 
+                                         style="width: 80px; height: 45px; object-fit: cover; display: block;">
+                                </div>
+                                """, unsafe_allow_html=True)
+                            else:
+                                # Clickable colored box fallback
+                                colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
+                                color = colors[i % len(colors)]
+                                selection_border = "border: 3px solid #ff6b6b;" if is_selected else "border: 2px solid #e2e8f0;"
+                                
+                                if st.button(
+                                    f"🎬",
+                                    key=f"thumb_click_{i}",
+                                    help=f"Click to view {video['video_name']}",
+                                    use_container_width=True
+                                ):
+                                    st.session_state.text_selection = SelectedVideo(i)
+                                    st.session_state.click_selection = SelectedVideo(i)
+                                    st.rerun()
+                                
+                                st.markdown(f"""
+                                <div style="width: 80px; height: 45px; background: {color}; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-size: 1rem; cursor: pointer; {selection_border} transition: all 0.3s ease;">🎬</div>
+                                """, unsafe_allow_html=True)
+                        else:
+                            # Fallback for missing files
+                            colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
+                            color = colors[i % len(colors)]
+                            selection_border = "border: 3px solid #ff6b6b;" if is_selected else "border: 2px solid #e2e8f0;"
+                            
+                            if st.button(
+                                f"🎬",
+                                key=f"thumb_click_{i}",
+                                help=f"Click to view {video['video_name']}",
+                                use_container_width=True
+                            ):
+                                st.session_state.text_selection = SelectedVideo(i)
+                                st.session_state.click_selection = SelectedVideo(i)
+                                st.rerun()
+                            
+                            st.markdown(f"""
+                            <div style="width: 80px; height: 45px; background: {color}; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-size: 1rem; cursor: pointer; {selection_border} transition: all 0.3s ease;">🎬</div>
+                            """, unsafe_allow_html=True)
+                    except Exception:
+                        # Exception fallback
+                        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
+                        color = colors[i % len(colors)]
+                        selection_border = "border: 3px solid #ff6b6b;" if is_selected else "border: 2px solid #e2e8f0;"
+                        
+                        if st.button(
+                            f"🎬",
+                            key=f"thumb_click_{i}",
+                            help=f"Click to view {video['video_name']}",
+                            use_container_width=True
+                        ):
+                            st.session_state.text_selection = SelectedVideo(i)
+                            st.session_state.click_selection = SelectedVideo(i)
+                            st.rerun()
+                        
+                        st.markdown(f"""
+                        <div style="width: 80px; height: 45px; background: {color}; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-size: 1rem; cursor: pointer; {selection_border} transition: all 0.3s ease;">🎬</div>
+                        """, unsafe_allow_html=True)
+                
+                with col2:
+                    # Video name as clickable button
+                    button_text = f"📺 {video['video_name'][:25]}{'...' if len(video['video_name']) > 25 else ''}"
+                    if is_selected:
+                        button_text = f"🎯 {video['video_name'][:25]}{'...' if len(video['video_name']) > 25 else ''}"
                     
-                    if full_path.exists():
-                        visualizer = VideoResultsVisualizer()
-                        thumbnail_array = visualizer.extract_thumbnail(full_path)
-                        if thumbnail_array is not None:
-                            # Convert numpy array to PIL image, then to base64 for display
-                            import base64
-                            import io
-                            from PIL import Image
-                            thumbnail = Image.fromarray(thumbnail_array)
-                            img_buffer = io.BytesIO()
-                            thumbnail.save(img_buffer, format='JPEG')
-                            img_str = base64.b64encode(img_buffer.getvalue()).decode()
-                            thumbnail_content = f'<img src="data:image/jpeg;base64,{img_str}" style="width: 80px; height: 45px; border-radius: 6px; object-fit: cover;">'
-                except Exception:
-                    pass
-                
-                # Fallback to emoji if no thumbnail
-                if thumbnail_content is None:
-                    # Get different colors for each result
-                    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
-                    color = colors[i % len(colors)]
-                    thumbnail_content = f'<div style="width: 80px; height: 45px; background: {color}; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-size: 1.1rem; flex-shrink: 0;">🎬</div>'
-                
-                # Create unified card design
-                card_style = f"""
-                background: white;
-                border-radius: 12px;
-                padding: 0.5rem;
-                margin-bottom: 0.5rem;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-                border: 2px solid {"#6366f1" if is_selected else "transparent"};
-                transition: all 0.3s ease;
-                cursor: pointer;
-                """
-                
-                # Display non-interactive card (click on visualization to select)
-                st.markdown(f"""
-                <div style="{card_style}">
-                    <div style="display: flex; align-items: center; gap: 0.5rem;">
-                        {thumbnail_content}
-                        <div style="flex: 1; display: flex; justify-content: space-between; align-items: center;">
-                            <div style="font-weight: 600; color: #1e293b; font-size: 0.8rem; line-height: 1.2;">
-                                {video['video_name']}
-                            </div>
-                            <div style="color: #6366f1; font-weight: 600; font-size: 0.8rem; line-height: 1.2;">
-                                {video['similarity_score']:.3f}
-                            </div>
+                    if st.button(
+                        button_text,
+                        key=f"name_button_{i}",
+                        help=f"Click to view {video['video_name']} (Score: {video['similarity_score']:.3f})",
+                        use_container_width=True
+                    ):
+                        st.session_state.text_selection = SelectedVideo(i)
+                        st.session_state.click_selection = SelectedVideo(i)  # Also update click selection for embedding highlight
+                        st.rerun()
+                    
+                    # Show filename, score and rank
+                    score_color = "#6366f1" if not is_selected else "#ff6b6b"
+                    
+                    st.markdown(f"""
+                    <div style="margin-top: 8px;">
+                        <div style="color: #1e293b; font-weight: 600; font-size: 0.8rem; margin-bottom: 4px;">
+                            {video['video_name']}
+                        </div>
+                        <div style="color: {score_color}; font-weight: 600; font-size: 0.75rem;">
+                            Score: {video['similarity_score']:.3f} {'✓ Selected' if is_selected else ''}
+                        </div>
+                        <div style="color: #64748b; font-size: 0.7rem; margin-top: 2px;">
+                            Rank #{video.get('rank', i+1)}
                         </div>
                     </div>
-                </div>
-                """, unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
+                
+                # Add separator
+                st.markdown("<hr style='margin: 15px 0; border: none; border-top: 1px solid #e2e8f0;'>", unsafe_allow_html=True)
         
         # Results table (collapsed by default)
         with st.expander("📊 Detailed Results Table"):
