@@ -210,7 +210,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                 )
             ),
             text=df['video_name'],
-            hovertemplate='<b>%{text}</b><br>Rank: %{customdata[0]}<br>Similarity: %{customdata[1]:.3f}<br>Click to view<extra></extra>',
+            hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<extra></extra>',
             customdata=df[['rank', 'similarity']].values
         ))
         
@@ -231,8 +231,9 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                     ),
                     name='Selected Video',
                     showlegend=False,
-                    hovertemplate='<b>%{text}</b><br>Currently Selected<extra></extra>',
-                    text=[selected_point['video_name']]
+                    hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<br>Currently Selected<extra></extra>',
+                    text=[selected_point['video_name']],
+                    customdata=[[selected_point['rank'], selected_point['similarity']]]
                 )
             )
         
@@ -284,7 +285,8 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
         
         # Enhance hover template for better information display
         fig.update_traces(
-            hovertemplate='<b>%{hover_name}</b><br>Rank: %{customdata[0]}<br>Similarity: %{customdata[1]:.3f}<br>Click to view<extra></extra>',
+            hovertemplate='<b>%{hovertext}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<extra></extra>',
+            hovertext=df['video_name'],
             customdata=df[['rank', 'similarity']].values
         )
         
@@ -304,8 +306,9 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                     ),
                     name='Selected Video',
                     showlegend=False,
-                    hovertemplate='<b>%{text}</b><br>Currently Selected<extra></extra>',
-                    text=[selected_point['video_name']]
+                    hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<br>Currently Selected<extra></extra>',
+                    text=[selected_point['video_name']],
+                    customdata=[[selected_point['rank'], selected_point['similarity']]]
                 )
             )
         
