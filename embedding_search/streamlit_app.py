@@ -1449,18 +1449,18 @@ def main():
         with results_col:
             # Results column without redundant header
             
-            # Show scroll hint if more than 3 results
-            if len(st.session_state.search_results) > 3:
-                st.markdown(f"""
-                <div style="text-align: center; color: #6366f1; font-size: 0.85rem; padding: 8px; background: rgba(99, 102, 241, 0.1); border-radius: 4px; margin-bottom: 10px;">
-                    ↓ Scroll to see more results
-                </div>
-                """, unsafe_allow_html=True)
+            # # Show scroll hint if more than 3 results
+            # if len(st.session_state.search_results) > 3:
+            #     st.markdown(f"""
+            #     <div style="text-align: center; color: #6366f1; font-size: 0.85rem; padding: 8px; background: rgba(99, 102, 241, 0.1); border-radius: 4px; margin-bottom: 10px;">
+            #         ↓ Scroll to see more results
+            #     </div>
+            #     """, unsafe_allow_html=True)
             
             # Create scrollable container using Streamlit's native height parameter
-            # Each thumbnail row is approximately 100px (thumbnail + text + spacing)
-            # Show 3 items = 300px + some padding
-            with st.container(height=320):
+            # Each thumbnail row should be ~80px (smaller thumbnail + compact text + spacing)
+            # Show 3 items = 240px + padding = 260px total
+            with st.container(height=400):
                 # Display top K results in the scrollable container
                 for i, video in enumerate(st.session_state.search_results[:top_k]):
                     is_selected = (current_selection == i)
@@ -1468,93 +1468,85 @@ def main():
                     # Create video card
                     video_path = video.get('video_path', '')
                     
-                    # Create layout with thumbnail and info
-                    col1, col2 = st.columns([1, 2])
-                    
-                    with col1:
-                        # Display thumbnail without button
-                        try:
-                            from pathlib import Path
-                            full_path = Path(video_path)
-                            
-                            if full_path.exists():
-                                visualizer = VideoResultsVisualizer()
-                                thumbnail_array = visualizer.extract_thumbnail(full_path)
-                                if thumbnail_array is not None:
-                                    # Display thumbnail using st.image
-                                    border_style = "3px solid #ff6b6b" if is_selected else "1px solid #e2e8f0"
-                                    st.markdown(f"""
-                                    <style>
-                                    .thumbnail-{i} {{
-                                        border: {border_style};
-                                        border-radius: 8px;
-                                        overflow: hidden;
-                                    }}
-                                    </style>
-                                    """, unsafe_allow_html=True)
-                                    
-                                    # Use st.image for simple display
-                                    st.image(thumbnail_array, use_container_width=True, output_format="JPEG")
-                                else:
-                                    # Colored box fallback
-                                    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
-                                    color = colors[i % len(colors)]
-                                    border_style = "3px solid #ff6b6b" if is_selected else "1px solid #e2e8f0"
-                                    
-                                    # Display colored placeholder
-                                    st.markdown(f"""
-                                    <div style="width: 100%; height: 60px; background: {color}; border: {border_style}; border-radius: 8px; 
-                                         display: flex; align-items: center; justify-content: center; color: white; font-size: 1.5rem;">
-                                        🎬
-                                    </div>
-                                    """, unsafe_allow_html=True)
-                            else:
-                                # Fallback for missing files
-                                colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
-                                color = colors[i % len(colors)]
-                                border_style = "3px solid #ff6b6b" if is_selected else "1px solid #e2e8f0"
+                    # Create compact row layout with 16:9 aspect ratio thumbnail
+                    # Get thumbnail data first
+                    thumbnail_data = None
+                    try:
+                        from pathlib import Path
+                        full_path = Path(video_path)
+                        if full_path.exists():
+                            visualizer = VideoResultsVisualizer()
+                            thumbnail_array = visualizer.extract_thumbnail(full_path)
+                            if thumbnail_array is not None:
+                                import base64
+                                import io
+                                from PIL import Image
                                 
-                                # Display colored placeholder
-                                st.markdown(f"""
-                                <div style="width: 100%; height: 60px; background: {color}; border: {border_style}; border-radius: 8px; 
-                                     display: flex; align-items: center; justify-content: center; color: white; font-size: 1.5rem;">
-                                    🎬
-                                </div>
-                                """, unsafe_allow_html=True)
-                        except Exception:
-                            # Exception fallback
-                            colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
-                            color = colors[i % len(colors)]
-                            border_style = "3px solid #ff6b6b" if is_selected else "1px solid #e2e8f0"
-                            
-                            # Display colored placeholder
-                            st.markdown(f"""
-                            <div style="width: 100%; height: 60px; background: {color}; border: {border_style}; border-radius: 8px; 
-                                 display: flex; align-items: center; justify-content: center; color: white; font-size: 1.5rem;">
-                                🎬
-                            </div>
-                            """, unsafe_allow_html=True)
+                                if isinstance(thumbnail_array, np.ndarray):
+                                    thumbnail_pil = Image.fromarray(thumbnail_array)
+                                else:
+                                    thumbnail_pil = thumbnail_array
+                                
+                                img_buffer = io.BytesIO()
+                                thumbnail_pil.save(img_buffer, format='JPEG')
+                                thumbnail_data = base64.b64encode(img_buffer.getvalue()).decode()
+                    except Exception:
+                        pass
                     
-                    with col2:
-                        # Show video information
-                        score_color = "#ff6b6b" if is_selected else "#6366f1"
+                    # Create compact row with proper styling
+                    border_style = "2px solid #ff6b6b" if is_selected else "1px solid #e2e8f0"
+                    score_color = "#ff6b6b" if is_selected else "#6366f1"
+                    
+                    if thumbnail_data:
+                        # Real thumbnail with 16:9 aspect ratio (80x45px)
+                        st.markdown(f"""
+                        <div style="display: flex; align-items: center; gap: 10px; padding: 4px 0; margin-bottom: 2px;">
+                            <div style="flex-shrink: 0;">
+                                <img src="data:image/jpeg;base64,{thumbnail_data}" 
+                                     style="width: 80px; height: 45px; object-fit: cover; border: {border_style}; border-radius: 4px;">
+                            </div>
+                            <div style="flex: 1; min-width: 0; padding-left: 4px;">
+                                <div style="color: #1e293b; font-weight: 600; font-size: 0.75rem; line-height: 1.0; margin-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                    {video['video_name']}
+                                </div>
+                                <div style="color: {score_color}; font-weight: 600; font-size: 0.65rem; line-height: 1.0; margin-bottom: 1px;">
+                                    Score: {video['similarity_score']:.3f} {'✓' if is_selected else ''}
+                                </div>
+                                <div style="color: #64748b; font-size: 0.6rem; line-height: 1.0;">
+                                    Rank #{video.get('rank', i+1)}
+                                </div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        # Fallback with colored box (16:9 aspect ratio)
+                        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
+                        color = colors[i % len(colors)]
                         
                         st.markdown(f"""
-                        <div style="padding: 4px;">
-                            <div style="color: #1e293b; font-weight: 600; font-size: 0.9rem; margin-bottom: 4px;">
-                                {video['video_name']}
+                        <div style="display: flex; align-items: center; gap: 10px; padding: 4px 0; margin-bottom: 2px;">
+                            <div style="flex-shrink: 0;">
+                                <div style="width: 80px; height: 45px; background: {color}; border: {border_style}; border-radius: 4px; 
+                                     display: flex; align-items: center; justify-content: center; color: white; font-size: 1.0rem;">
+                                    🎬
+                                </div>
                             </div>
-                            <div style="color: {score_color}; font-weight: 600; font-size: 0.8rem;">
-                                Score: {video['similarity_score']:.3f} {'✓' if is_selected else ''}
-                            </div>
-                            <div style="color: #64748b; font-size: 0.75rem; margin-top: 2px;">
-                                Rank #{video.get('rank', i+1)}
+                            <div style="flex: 1; min-width: 0; padding-left: 4px;">
+                                <div style="color: #1e293b; font-weight: 600; font-size: 0.75rem; line-height: 1.0; margin-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                    {video['video_name']}
+                                </div>
+                                <div style="color: {score_color}; font-weight: 600; font-size: 0.65rem; line-height: 1.0; margin-bottom: 1px;">
+                                    Score: {video['similarity_score']:.3f} {'✓' if is_selected else ''}
+                                </div>
+                                <div style="color: #64748b; font-size: 0.6rem; line-height: 1.0;">
+                                    Rank #{video.get('rank', i+1)}
+                                </div>
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    # Add separator
-                    st.markdown("<hr style='margin: 8px 0; border: none; border-top: 1px solid #e2e8f0;'>", unsafe_allow_html=True)
+                    # Add compact separator
+                    st.markdown("<hr style='margin: 4px 0; border: none; border-top: 1px solid #e2e8f0;'>", unsafe_allow_html=True)
         
         # Results table (collapsed by default)
         with st.expander("📊 Detailed Results Table"):
