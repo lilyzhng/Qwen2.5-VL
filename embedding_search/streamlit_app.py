@@ -86,7 +86,7 @@ def load_database_info(_engine: OptimizedVideoSearchEngine) -> Dict:
         }
 
 
-def create_embedding_visualization(results: List[Dict], viz_method: str = "umap", selected_idx: Optional[int] = None, query_info: Optional[Dict] = None, **kwargs) -> go.Figure:
+def create_embedding_visualization(results: List[Dict], viz_method: str = "umap", selected_idx: Optional[int] = None, query_info: Optional[Dict] = None, top_k: Optional[int] = None, **kwargs) -> go.Figure:
     """Create advanced embedding visualization with multiple methods."""
     if not results:
         return go.Figure()
@@ -214,28 +214,38 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             customdata=df[['rank', 'similarity']].values
         ))
         
-        # Highlight selected point if any (3D)
-        if selected_idx is not None and selected_idx < len(df):
-            selected_point = df.iloc[selected_idx]
+        # Add green/red circle highlights for top K results (3D)
+        if top_k is not None and top_k > 0:
+            top_k_points = df.head(top_k)  # Get top K results
+            
+            # Create colors array - red for selected, green for others
+            circle_colors = []
+            for i, row in top_k_points.iterrows():
+                if selected_idx is not None and i == selected_idx:
+                    circle_colors.append('#FF0000')  # Red for selected
+                else:
+                    circle_colors.append('#00FF00')  # Green for others
+            
             fig.add_trace(
                 go.Scatter3d(
-                    x=[selected_point['x']],
-                    y=[selected_point['y']],
-                    z=[selected_point['z']],
+                    x=top_k_points['x'],
+                    y=top_k_points['y'],
+                    z=top_k_points['z'],
                     mode='markers',
                     marker=dict(
-                        size=selected_point['similarity'] * 15 + 15,  # Larger size
-                        color='#ff6b6b',
-                        symbol='circle-open',
-                        line=dict(width=3, color='#ff6b6b')
+                        size=top_k_points['similarity'] * 15 + 20,  # Slightly larger than base points
+                        color='rgba(0,0,0,0)',  # Transparent fill
+                        line=dict(width=6, color=circle_colors)  # Thicker circles with dynamic colors
                     ),
-                    name='Selected Video',
+                    name=f'Top {top_k} Results',
                     showlegend=False,
-                    hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<br>Currently Selected<extra></extra>',
-                    text=[selected_point['video_name']],
-                    customdata=[[selected_point['rank'], selected_point['similarity']]]
+                    hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<br>Top Result<extra></extra>',
+                    text=top_k_points['video_name'],
+                    customdata=top_k_points[['rank', 'similarity']].values
                 )
             )
+        
+        # Note: Selected point highlighting is now handled by red circles in the top K results above
         
         # Add query vector point for 3D (using diamond symbol)
         if query_info:
@@ -260,7 +270,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             height=400,  # More compact height
             scene=dict(
                 xaxis_title="UMAP Dimension 1",
-                yaxis_title="UMAP Dimension 2", 
+                yaxis_title="UMAP Dimension 2",
                 zaxis_title="UMAP Dimension 3",
                 camera=dict(
                     eye=dict(x=1.5, y=1.5, z=1.5)  # Better default view
@@ -290,27 +300,37 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             customdata=df[['rank', 'similarity']].values
         )
         
-        # Highlight selected point if any
-        if selected_idx is not None and selected_idx < len(df):
-            selected_point = df.iloc[selected_idx]
+        # Add green/red circle highlights for top K results (2D)
+        if top_k is not None and top_k > 0:
+            top_k_points = df.head(top_k)  # Get top K results
+            
+            # Create colors array - red for selected, green for others
+            circle_colors = []
+            for i, row in top_k_points.iterrows():
+                if selected_idx is not None and i == selected_idx:
+                    circle_colors.append('#FF0000')  # Red for selected
+                else:
+                    circle_colors.append('#00FF00')  # Green for others
+            
             fig.add_trace(
                 go.Scatter(
-                    x=[selected_point['x']],
-                    y=[selected_point['y']],
+                    x=top_k_points['x'],
+                    y=top_k_points['y'],
                     mode='markers',
                     marker=dict(
-                        size=selected_point['similarity'] * 15 + 15,  # Larger size
-                        color='#ff6b6b',
-                        symbol='circle-open',
-                        line=dict(width=3, color='#ff6b6b')
+                        size=top_k_points['similarity'] * 15 + 20,  # Slightly larger than base points
+                        color='rgba(0,0,0,0)',  # Transparent fill
+                        line=dict(width=3, color=circle_colors)  # Dynamic colors based on selection
                     ),
-                    name='Selected Video',
+                    name=f'Top {top_k} Results',
                     showlegend=False,
-                    hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<br>Currently Selected<extra></extra>',
-                    text=[selected_point['video_name']],
-                    customdata=[[selected_point['rank'], selected_point['similarity']]]
+                    hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<br>Top Result<extra></extra>',
+                    text=top_k_points['video_name'],
+                    customdata=top_k_points[['rank', 'similarity']].values
                 )
             )
+        
+        # Note: Selected point highlighting is now handled by red circles in the top K results above
         
         # Add query vector point for 2D (using star symbol)
         if query_info:
@@ -1002,7 +1022,7 @@ def main():
         st.session_state.force_update = False
     
     # Initialize default values for variables used across components
-    top_k = 3
+    top_k = 5  # Changed from hardcoded 3 to 5 as default
     similarity_threshold = 0.5
     viz_method = "umap"
     umap_neighbors = 15
@@ -1171,11 +1191,19 @@ def main():
     with viz_tab1:
         if st.session_state.search_results:
             # Add legend for visualization elements
-            st.markdown("""
+            st.markdown(f"""
             <div style="display: flex; gap: 1rem; margin-bottom: 1rem; justify-content: center;">
                 <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 12px; border-radius: 50%; background: #ff6b6b;"></div>
+                    <div style="width: 12px; height: 12px; border-radius: 50%; background: #6f42c1;"></div>
                     <span style="font-size: 0.85rem; color: #64748b;">Videos</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #00FF00;"></div>
+                    <span style="font-size: 0.85rem; color: #64748b;">Top {top_k} Results</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #FF0000;"></div>
+                    <span style="font-size: 0.85rem; color: #64748b;">Selected</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 0.5rem;">
                     <div style="width: 12px; height: 12px; background: #ffd700; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);"></div>
@@ -1207,6 +1235,7 @@ def main():
                 viz_method, 
                 selected_idx,
                 query_info=query_info,
+                top_k=top_k,
                 **({
                     'neighbors': umap_neighbors,
                     'min_dist': umap_min_dist
@@ -1243,11 +1272,19 @@ def main():
     with viz_tab2:
         if st.session_state.search_results:
             # Add legend for visualization elements
-            st.markdown("""
+            st.markdown(f"""
             <div style="display: flex; gap: 1rem; margin-bottom: 1rem; justify-content: center;">
                 <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <div style="width: 12px; height: 12px; border-radius: 50%; background: #ff6b6b;"></div>
+                    <div style="width: 12px; height: 12px; border-radius: 50%; background: #6f42c1;"></div>
                     <span style="font-size: 0.85rem; color: #64748b;">Videos</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #00FF00;"></div>
+                    <span style="font-size: 0.85rem; color: #64748b;">Top {top_k} Results</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #FF0000;"></div>
+                    <span style="font-size: 0.85rem; color: #64748b;">Selected</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 0.5rem;">
                     <div style="width: 12px; height: 12px; background: #ffd700; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);"></div>
@@ -1278,7 +1315,8 @@ def main():
                 st.session_state.search_results, 
                 "3d_umap", 
                 selected_idx,
-                query_info=query_info
+                query_info=query_info,
+                top_k=top_k
             )
             
             # Display 3D plot with click handling
@@ -1405,10 +1443,6 @@ def main():
                                 # Create button with thumbnail image inside
                                 button_style = "primary" if is_selected else "secondary"
                                 border_color = "#ff6b6b" if is_selected else "#e2e8f0"
-                                
-                                # Create a unified clickable thumbnail button
-                                # Use a single button that contains the image and acts as the thumbnail
-                                button_key = f"thumb_click_{i}"
                                 
                                 # Custom CSS for the clickable thumbnail
                                 st.markdown(f"""
@@ -1553,16 +1587,16 @@ def main():
                     st.markdown(f"""
                     <div style="margin-top: 4px;">
                         <div style="color: #1e293b; font-weight: 600; font-size: 0.8rem; margin-bottom: 2px;">
-                            {video['video_name']}
-                        </div>
+                                {video['video_name']}
+                            </div>
                         <div style="color: {score_color}; font-weight: 600; font-size: 0.75rem;">
                             Score: {video['similarity_score']:.3f} {'✓ Selected' if is_selected else ''}
-                        </div>
+                            </div>
                         <div style="color: #64748b; font-size: 0.7rem; margin-top: 1px;">
                             Rank #{video.get('rank', i+1)}
-                        </div>
                     </div>
-                    """, unsafe_allow_html=True)
+                </div>
+                """, unsafe_allow_html=True)
                 
                 # Add separator
                 st.markdown("<hr style='margin: 8px 0; border: none; border-top: 1px solid #e2e8f0;'>", unsafe_allow_html=True)
