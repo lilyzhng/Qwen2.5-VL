@@ -165,6 +165,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             x=[f"Video {i+1}" for i in range(n)],
             y=[f"Video {i+1}" for i in range(n)],
             colorscale='Viridis',
+            showscale=True,
             colorbar=dict(
                 title="Similarity",
                 title_side="right",
@@ -172,19 +173,21 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                 len=0.6,
                 thickness=10,
                 title_font=dict(size=10),
-                tickfont=dict(size=9)
+                tickfont=dict(size=9),
+                outlinewidth=0  # Remove black edge around color bar
             )
         ))
         fig.update_layout(
             title="Video Similarity Matrix",
-            height=400,
+            height=500,
             width=None,  # Let it be responsive to container width
             title_x=0.5,
             title_font=dict(size=14),
             margin=dict(l=40, r=80, t=50, b=40),  # Tighter margins
             plot_bgcolor='#f8fafc',  # Match tip section background
             xaxis=dict(tickfont=dict(size=10)),
-            yaxis=dict(tickfont=dict(size=10))
+            yaxis=dict(tickfont=dict(size=10)),
+            showlegend=False  # Remove "trace 0" legend
         )
         return fig
     
@@ -207,7 +210,8 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                     len=0.6,
                     thickness=10,
                     title_font=dict(size=10),
-                    tickfont=dict(size=9)
+                    tickfont=dict(size=9),
+                    outlinewidth=0
                 )
             ),
             text=df['video_name'],
@@ -300,7 +304,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             )
         
         fig.update_layout(
-            height=400,  # More compact height
+            height=500,  # Consistent height with other plots
             scene=dict(
                 xaxis_title="UMAP Dimension 1",
                 yaxis_title="UMAP Dimension 2",
@@ -1072,7 +1076,6 @@ def main():
     st.markdown("""
     <div class="main-header">
         <h1>ALFA 0.1 - Embedding Search</h1>
-        <p>Advanced embedding visualization and video similarity search</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -1223,6 +1226,30 @@ def main():
     
     # Main content area: Full width visualization (like mock interface)
     st.markdown('<div class="section-title">Embedding Visualization</div>', unsafe_allow_html=True)
+    
+    # Shared legend function for all visualization tabs
+    def render_visualization_legend(top_k):
+        """Render consistent legend for all visualization tabs"""
+        st.markdown(f"""
+        <div style="display: flex; gap: 1rem; margin-bottom: 1rem; justify-content: center;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <div style="width: 12px; height: 12px; border-radius: 50%; background: #6f42c1;"></div>
+                <span style="font-size: 0.85rem; color: #64748b;">Videos</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #00FF00;"></div>
+                <span style="font-size: 0.85rem; color: #64748b;">Top {top_k} Results</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <div style="width: 12px; height: 12px; border-radius: 50%; background: rgba(0,0,0,0); border: 2px solid #FF0000;"></div>
+                <span style="font-size: 0.85rem; color: #64748b;">Selected</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <div style="width: 12px; height: 12px; background: #ffd700; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);"></div>
+                <span style="font-size: 0.85rem; color: #64748b;">Query Vector</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
     
     # Visualization view tabs (2D, 3D, Heatmap)
     viz_tab1, viz_tab2, viz_tab3 = st.tabs(["2D View", "3D View", "Heatmap"])
@@ -1447,19 +1474,6 @@ def main():
             st.markdown('</div>', unsafe_allow_html=True)
         
         with results_col:
-            # Results column without redundant header
-            
-            # # Show scroll hint if more than 3 results
-            # if len(st.session_state.search_results) > 3:
-            #     st.markdown(f"""
-            #     <div style="text-align: center; color: #6366f1; font-size: 0.85rem; padding: 8px; background: rgba(99, 102, 241, 0.1); border-radius: 4px; margin-bottom: 10px;">
-            #         ↓ Scroll to see more results
-            #     </div>
-            #     """, unsafe_allow_html=True)
-            
-            # Create scrollable container using Streamlit's native height parameter
-            # Each thumbnail row should be ~80px (smaller thumbnail + compact text + spacing)
-            # Show 3 items = 240px + padding = 260px total
             with st.container(height=400):
                 # Display top K results in the scrollable container
                 for i, video in enumerate(st.session_state.search_results[:top_k]):
