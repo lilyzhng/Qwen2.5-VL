@@ -4,7 +4,7 @@ ALFA 0.1 - Similarity Search Interface
 """
 
 import os
-# Fix OpenMP library conflict issue  
+# Fix OpenMP library issue  
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 import sys
@@ -651,8 +651,10 @@ def preview_video_with_thumbnail(video_info: Dict, height: int = 300) -> None:
         
         # Check if video file exists
         if full_path.exists():
-            # Use VideoResultsVisualizer to extract thumbnail
-            visualizer = VideoResultsVisualizer()
+            # Use VideoResultsVisualizer to extract thumbnail with config size
+            from core.config import VideoRetrievalConfig
+            config = VideoRetrievalConfig()
+            visualizer = VideoResultsVisualizer(thumbnail_size=config.thumbnail_size)
             thumbnail = visualizer.extract_thumbnail(full_path)
             
             import base64
@@ -665,9 +667,9 @@ def preview_video_with_thumbnail(video_info: Dict, height: int = 300) -> None:
             else:
                 thumbnail_pil = thumbnail
             
-            # Convert to base64
+            # Convert to base64 with high quality
             img_buffer = io.BytesIO()
-            thumbnail_pil.save(img_buffer, format='JPEG')
+            thumbnail_pil.save(img_buffer, format='JPEG', quality=95, optimize=True)
             img_str = base64.b64encode(img_buffer.getvalue()).decode()
             
             # Create a container with 16:9 aspect ratio
@@ -730,8 +732,10 @@ def create_neighbor_grid(neighbors: List[Dict], num_cols: int = 3) -> None:
                 full_path = Path(video_path)
                 
                 if full_path.exists():
-                    # Use VideoResultsVisualizer to extract thumbnail
-                    visualizer = VideoResultsVisualizer()
+                    # Use VideoResultsVisualizer to extract thumbnail with config size
+                    from core.config import VideoRetrievalConfig
+                    config = VideoRetrievalConfig()
+                    visualizer = VideoResultsVisualizer(thumbnail_size=config.thumbnail_size)
                     thumbnail = visualizer.extract_thumbnail(full_path)
                     
                     st.image(thumbnail, use_container_width=True)
@@ -1030,7 +1034,11 @@ def main():
         .stButton > button,
         div[data-testid="stButton"] > button,
         .stButton button,
-        button[data-baseweb="button"] {
+        button[data-baseweb="button"],
+        button[kind="primary"],
+        button[kind="secondary"],
+        .stButton,
+        div[data-testid="stButton"] {
             background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
             color: white !important;
             border: none !important;
@@ -1042,12 +1050,32 @@ def main():
             width: 100% !important;
             height: auto !important;
             min-height: 2.5rem !important;
+            display: block !important;
+        }
+        
+        /* Ensure button containers also take full width */
+        .stButton,
+        div[data-testid="stButton"] {
+            width: 100% !important;
+        }
+        
+        /* Specific styling for sidebar buttons to ensure consistent width */
+        .css-1d391kg .stButton > button,
+        .css-1d391kg div[data-testid="stButton"] > button,
+        .sidebar .stButton > button,
+        .sidebar div[data-testid="stButton"] > button {
+            width: 100% !important;
+            min-width: 100% !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
         }
         
         .stButton > button:hover,
         div[data-testid="stButton"] > button:hover,
         .stButton button:hover,
-        button[data-baseweb="button"]:hover {
+        button[data-baseweb="button"]:hover,
+        button[kind="primary"]:hover,
+        button[kind="secondary"]:hover {
             transform: translateY(-2px) !important;
             box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4) !important;
             background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
@@ -1635,7 +1663,9 @@ def main():
                         from pathlib import Path
                         full_path = Path(video_path)
                         if full_path.exists():
-                            visualizer = VideoResultsVisualizer()
+                            from core.config import VideoRetrievalConfig
+                            config = VideoRetrievalConfig()
+                            visualizer = VideoResultsVisualizer(thumbnail_size=config.thumbnail_size)
                             thumbnail_array = visualizer.extract_thumbnail(full_path)
                             if thumbnail_array is not None:
                                 import base64
@@ -1648,7 +1678,7 @@ def main():
                                     thumbnail_pil = thumbnail_array
                                 
                                 img_buffer = io.BytesIO()
-                                thumbnail_pil.save(img_buffer, format='JPEG')
+                                thumbnail_pil.save(img_buffer, format='JPEG', quality=95, optimize=True)
                                 thumbnail_data = base64.b64encode(img_buffer.getvalue()).decode()
                     except Exception:
                         pass

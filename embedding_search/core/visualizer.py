@@ -15,12 +15,12 @@ logger = logging.getLogger(__name__)
 class VideoResultsVisualizer:
     """Visualize video search results with thumbnails and similarity scores."""
     
-    def __init__(self, thumbnail_size: tuple = (224, 224)):
+    def __init__(self, thumbnail_size: tuple = (480, 270)):
         """
         Initialize the visualizer.
         
         Args:
-            thumbnail_size: Size for video thumbnails (width, height)
+            thumbnail_size: Size for video thumbnails (width, height) - default 16:9 aspect ratio
         """
         self.thumbnail_size = thumbnail_size
     
@@ -53,9 +53,9 @@ class VideoResultsVisualizer:
             cv2.putText(frame, "No Preview", (10, self.thumbnail_size[1]//2), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         else:
-            # Convert BGR to RGB and resize
+            # Convert BGR to RGB and resize with high-quality interpolation
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frame = cv2.resize(frame, self.thumbnail_size)
+            frame = cv2.resize(frame, self.thumbnail_size, interpolation=cv2.INTER_LANCZOS4)
         
         return frame
     

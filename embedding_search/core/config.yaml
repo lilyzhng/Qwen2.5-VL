@@ -11,7 +11,7 @@ main_file_path: "data/main_file_path.parquet"             # Main video file path
 query_file_path: "data/query_file_path.parquet"           # Query video file paths
 use_safe_serialization: true
 supported_formats: [".mp4", ".avi", ".mov", ".mkv", ".webm"]
-thumbnail_size: [224, 224]
+thumbnail_size: [480, 270]  # 16:9 aspect ratio, higher resolution
 default_top_k: 5              # Default number of results to return
 similarity_threshold: 0.0     # Minimum similarity score (0-1)
 enable_caching: true
