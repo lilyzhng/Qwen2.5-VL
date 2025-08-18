@@ -1,5 +1,5 @@
 """
-Improved Video Embedding Extractor with batch processing and better error handling.
+Embedding Extractor with batch processing and error handling.
 """
 
 import torch
@@ -113,9 +113,7 @@ class VideoFrameProcessor(VideoProcessor):
                 cap.set(cv2.CAP_PROP_POS_FRAMES, int(frame_id))
                 ret, frame = cap.read()
                 if ret:
-                    # Convert BGR to RGB
                     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    # Resize to target resolution
                     frame = cv2.resize(frame, (target_width, target_height))
                     frames.append(frame)
             
@@ -143,7 +141,7 @@ class VideoFrameProcessor(VideoProcessor):
 
 
 class CosmosVideoEmbedder(EmbeddingModel):
-    """Extract video embeddings using NVIDIA Cosmos model with batch processing."""
+    """Extract video embeddings with batch processing."""
     
     def __init__(self, config: Optional[VideoRetrievalConfig] = None):
         """

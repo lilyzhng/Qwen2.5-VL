@@ -20,7 +20,7 @@ from unittest.mock import Mock, patch
 
 from core.config import VideoRetrievalConfig
 from core.database import ParquetVectorDatabase, UnifiedQueryManager
-from core.search import OptimizedVideoSearchEngine
+from core.search import VideoSearchEngine
 
 
 class TestParquetVectorDatabase(unittest.TestCase):
@@ -167,7 +167,7 @@ class TestUnifiedQueryManager(unittest.TestCase):
 
 
 class TestOptimizedVideoSearchEngine(unittest.TestCase):
-    """Test cases for OptimizedVideoSearchEngine with unified parquet system."""
+    """Test cases for VideoSearchEngine with unified parquet system."""
     
     def setUp(self):
         """Set up test environment."""

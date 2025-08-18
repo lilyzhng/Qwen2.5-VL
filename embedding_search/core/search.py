@@ -1,6 +1,5 @@
 """
-Optimized Video Search Engine incorporating techniques from the official NVIDIA implementation.
-Reference: https://huggingface.co/spaces/nvidia/Cosmos-Embed1/blob/main/src/streamlit_app.py
+Video Search Engine.
 """
 
 import numpy as np
@@ -37,13 +36,11 @@ def time_it(func):
     return wrapper
 
 
-class OptimizedVideoSearchEngine:
+class VideoSearchEngine:
     """
-    Optimized search engine using techniques from the official NVIDIA implementation:
-    - FAISS for efficient similarity search
-    - Embedding normalization using faiss.normalize_L2
-    - Caching for repeated queries
-    - Parquet format for efficient storage
+    a. FAISS for efficient similarity search
+    b. Embedding normalization using faiss.normalize_L2
+    c. Caching for repeated queries
     """
     
     def __init__(self,
@@ -61,13 +58,10 @@ class OptimizedVideoSearchEngine:
         self.config = config or VideoRetrievalConfig()
         self.embedder = embedder or CosmosVideoEmbedder(self.config)
         
-        # Get project root for path resolution
         self.project_root = Path(__file__).parent.parent
         
-        # Resolve database path
         db_path = self._resolve_path(self.config.main_embeddings_path)
         
-        # Use optimized database with FAISS
         self.database = VideoDatabase(
             db_path,
             self.config,
@@ -82,13 +76,11 @@ class OptimizedVideoSearchEngine:
             cache_size=self.config.cache_size if hasattr(self.config, 'cache_size') else 1000
         )
         
-        # Initialize unified query manager for pre-computed query embeddings
         self.query_manager = UnifiedQueryManager(self.config)
         
-        # Model caching (singleton pattern from official implementation)
         self._model_cache = {}
         
-        logger.info(f"OptimizedVideoSearchEngine initialized (GPU FAISS: {use_gpu_faiss})")
+        logger.info(f"VideoSearchEngine initialized (GPU FAISS: {use_gpu_faiss})")
     
     def _resolve_path(self, path: Union[str, Path]) -> Path:
         """Resolve path relative to project root if not absolute."""
@@ -108,8 +100,7 @@ class OptimizedVideoSearchEngine:
             List of video file paths
         """
         video_files = []
-        
-        # Try to load from main file path list first if configured
+
         if hasattr(self.config, 'main_file_path') and self.config.main_file_path:
             index_path = self._resolve_path(self.config.main_file_path)
         else:
@@ -160,14 +151,14 @@ class OptimizedVideoSearchEngine:
                       force_rebuild: bool = False,
                       save_format: str = "parquet"):
         """
-        Build video embeddings database with optimizations.
+        Build video embeddings database.
         
         Args:
             video_directory: Directory containing video files
             force_rebuild: If True, rebuild from scratch
-            save_format: Format to save database ("parquet" recommended)
+            save_format: Format to save database ("parquet")
         """
-        # Try to load existing database
+
         if not force_rebuild:
             try:
                 if save_format == "parquet":

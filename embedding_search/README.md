@@ -24,10 +24,6 @@ embedding_search/
 │   ├── main.py                    # Main CLI interface
 │   ├── launch_streamlit.sh        # Streamlit launcher
 │   └── mock/                      # Mock interfaces for testing
-├── benchmarks/                    # Performance testing
-│   ├── performance_test.py        # System benchmarks
-│   ├── inference_benchmark.py     # Model inference benchmarks
-│   └── example_benchmark.py       # Benchmark examples
 ├── data/                          # Data storage
 │   ├── main_embeddings.parquet    # Main video database embeddings
 │   ├── query_embeddings.parquet   # Query video embeddings
@@ -37,6 +33,8 @@ embedding_search/
 │       ├── video_database/        # Reference video collection
 │       └── user_input/             # Query videos
 ├── tests/                         # Unit tests
+├── benchmarks/                    # Performance testing
+│   ├── inference_benchmark.py     # Model inference benchmarks
 └── requirements.txt               # Python dependencies
 ```
 

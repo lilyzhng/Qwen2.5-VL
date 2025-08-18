@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-NVIDIA Cosmos Embed Model Inference Performance Benchmark
-Monitors inference time, GPU/CPU utilization, and memory usage.
+Performance Benchmark: Monitors inference time, GPU/CPU utilization, and memory usage.
 """
 
 import sys
@@ -163,7 +162,7 @@ class InferenceBenchmark:
         Initialize benchmark.
         
         Args:
-            config: Configuration for the video retrieval system
+            config: Configuration for the ALFA 0.1 retrieval
         """
         self.config = config or VideoRetrievalConfig()
         self.embedder = None
@@ -411,7 +410,7 @@ class InferenceBenchmark:
                 peak_used_gb = summary['max_gpu_vram_mb'] / 1024
                 vram_utilization = (peak_used_gb / total_vram_gb) * 100
                 
-                print(f"\n🎮 GPU VRAM USAGE:")
+                print(f"\nGPU VRAM USAGE:")
                 print(f"   Peak VRAM: {summary['max_gpu_vram_mb']:.1f} MB ({peak_used_gb:.2f} GB)")
                 print(f"   Total VRAM: {total_vram_gb:.1f} GB")
                 print(f"   VRAM Utilization: {vram_utilization:.1f}% of total")
@@ -421,15 +420,15 @@ class InferenceBenchmark:
             print(f"   Peak Usage: {summary['max_gpu_utilization_percent']:.1f}%")
             print(f"   Avg Usage: {summary['avg_gpu_utilization_percent']:.1f}%")
             
-            print(f"\n💻 CPU UTILIZATION:")
+            print(f"\nCPU UTILIZATION:")
             print(f"   Peak Usage: {summary['max_cpu_utilization_percent']:.1f}%")
             print(f"   Avg Usage: {summary['avg_cpu_utilization_percent']:.1f}%")
             
-            print(f"\n🧠 RAM USAGE:")
+            print(f"\nRAM USAGE:")
             print(f"   Peak Usage: {summary['max_ram_usage_mb']:.1f} MB ({summary['max_ram_usage_mb']/1024:.1f} GB)")
             print(f"   Avg Usage: {summary['avg_ram_usage_mb']:.1f} MB ({summary['avg_ram_usage_mb']/1024:.1f} GB)")
             
-            print(f"\n📈 THROUGHPUT:")
+            print(f"\nTHROUGHPUT:")
             print(f"   Videos per minute: {60 / summary['avg_inference_time_seconds']:.1f}")
             print(f"   Videos per hour: {3600 / summary['avg_inference_time_seconds']:.0f}")
         else:

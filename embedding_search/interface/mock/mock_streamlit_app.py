@@ -175,7 +175,7 @@ def create_video_thumbnail_mock(video_name, width=150, height=100):
 def main():
     # Page config
     st.set_page_config(
-        page_title="NVIDIA Cosmos Mock Interface",
+        page_title="ALFA 0.1 Mock Interface",
         page_icon="🔍",
         layout="wide",
         initial_sidebar_state="expanded"
@@ -190,7 +190,7 @@ def main():
         st.session_state.search_history = []
     
     # Header
-    st.title("🔍 NVIDIA Cosmos Video Search - Mock Interface")
+    st.title("🔍 ALFA 0.1 Video Search - Mock Interface")
     st.markdown("*Demonstration interface that works without CUDA or video files*")
     
     # Sidebar
@@ -448,7 +448,7 @@ def main():
     col_footer1, col_footer2, col_footer3 = st.columns(3)
     
     with col_footer1:
-        st.markdown("🚀 **Powered by NVIDIA Cosmos-Embed1**")
+        st.markdown("🚀 **Powered by ALFA 0.1-Embed1**")
     with col_footer2:
         st.markdown("🔧 **Built with Streamlit**")
     with col_footer3:

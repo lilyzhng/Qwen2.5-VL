@@ -17,7 +17,6 @@ fi
 export KMP_DUPLICATE_LIB_OK=TRUE
 
 echo "🚀 Launching ALFA 0.1 - Enhanced Similarity Search Interface..."
-echo "🔧 OpenMP fix applied for stable operation"
 echo "📁 Project root: ${PROJECT_ROOT}"
 echo "📝 Open http://localhost:8501 in your browser"
 echo ""

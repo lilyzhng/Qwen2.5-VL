@@ -1,33 +1,20 @@
-# NVIDIA Cosmos Video Retrieval System Configuration
+# ALFA 0.1 Retrieval System Configuration
 
 # Model configuration
 model_name: "/path/to/your/local/cosmos-model"
 device: "cuda"  # Use "cpu" if CUDA is not available
 batch_size: 4   # Number of videos to process in parallel
 num_frames: 8   # Number of frames to extract per video
-
-# Database configuration - Unified Parquet Storage
 main_embeddings_path: "data/main_embeddings.parquet"      # Main database (reference videos embeddings)
 query_embeddings_path: "data/query_embeddings.parquet"    # Query database (user input videos embeddings)
 main_file_path: "data/main_file_path.parquet"             # Main video file paths
 query_file_path: "data/query_file_path.parquet"           # Query video file paths
 use_safe_serialization: true
-
-
-
-# Video processing
 supported_formats: [".mp4", ".avi", ".mov", ".mkv", ".webm"]
 thumbnail_size: [224, 224]
-
-# Search configuration
 default_top_k: 5              # Default number of results to return
 similarity_threshold: 0.0     # Minimum similarity score (0-1)
-
-
-# Performance
 enable_caching: true
 cache_size: 1000
-
-# Logging
 log_level: "INFO"
 log_format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

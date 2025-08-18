@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test suite for core/search.py - OptimizedVideoSearchEngine with unified parquet storage.
+Test suite for core/search.py - VideoSearchEngine with unified parquet storage.
 """
 
 import sys
@@ -17,12 +17,12 @@ import tempfile
 import shutil
 from unittest.mock import Mock, patch
 
-from core.search import OptimizedVideoSearchEngine
+from core.search import VideoSearchEngine
 from core.config import VideoRetrievalConfig
 
 
 class TestOptimizedVideoSearchEngineUnified(unittest.TestCase):
-    """Test OptimizedVideoSearchEngine with unified parquet storage."""
+    """Test VideoSearchEngine with unified parquet storage."""
     
     def setUp(self):
         """Set up test environment."""
@@ -47,7 +47,7 @@ class TestOptimizedVideoSearchEngineUnified(unittest.TestCase):
         mock_embedder.return_value = mock_embedder_instance
         
         try:
-            engine = OptimizedVideoSearchEngine(config=self.config)
+            engine = VideoSearchEngine(config=self.config)
             
             # Check that engine uses new paths
             self.assertEqual(engine.config.main_embeddings_path, self.config.main_embeddings_path)
@@ -60,7 +60,7 @@ class TestOptimizedVideoSearchEngineUnified(unittest.TestCase):
     
     def test_path_resolution(self):
         """Test path resolution with new configuration."""
-        engine = OptimizedVideoSearchEngine.__new__(OptimizedVideoSearchEngine)
+        engine = VideoSearchEngine.__new__(VideoSearchEngine)
         engine.config = self.config
         engine.project_root = self.test_dir.parent
         
@@ -99,7 +99,7 @@ class TestOptimizedVideoSearchEngineUnified(unittest.TestCase):
         df.to_parquet(self.config.main_file_path, index=False)
         
         # Test loading
-        engine = OptimizedVideoSearchEngine.__new__(OptimizedVideoSearchEngine)
+        engine = VideoSearchEngine.__new__(VideoSearchEngine)
         engine.config = self.config
         engine.project_root = self.test_dir.parent
         
@@ -141,7 +141,7 @@ class TestConfigurationValidation(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    print("🧪 Testing core/search.py - OptimizedVideoSearchEngine")
+    print("🧪 Testing core/search.py - VideoSearchEngine")
     print("=" * 60)
     
     unittest.main(verbosity=2)

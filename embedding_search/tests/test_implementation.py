@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script to verify the embedding_search implementation works with the official NVIDIA Cosmos Embed 1 model.
+Test script to verify the embedding_search implementation
 """
 
 import sys
@@ -118,7 +118,7 @@ def test_similarity_calculation(text_embedding, video_embedding):
 def main():
     """Run all tests."""
     logger.info("=" * 60)
-    logger.info("NVIDIA Cosmos Embed 1 Implementation Test")
+    logger.info("ALFA 0.1 Implementation Test")
     logger.info("=" * 60)
     
     # Test model loading

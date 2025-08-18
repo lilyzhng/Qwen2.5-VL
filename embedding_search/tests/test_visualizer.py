@@ -21,7 +21,7 @@ from unittest.mock import Mock, patch, MagicMock
 import json
 
 from core.visualizer import VideoResultsVisualizer
-from core.search import OptimizedVideoSearchEngine
+from core.search import VideoSearchEngine
 from core.config import VideoRetrievalConfig
 
 
@@ -151,7 +151,7 @@ class TestInteractiveVisualizer:
     This shows how a Streamlit-like interface would work.
     """
     
-    def __init__(self, search_engine: OptimizedVideoSearchEngine):
+    def __init__(self, search_engine: VideoSearchEngine):
         self.search_engine = search_engine
         self.selected_video_idx = None
         self.text_query = ""
@@ -276,7 +276,7 @@ class TestSearchEngineIntegration(unittest.TestCase):
         self.config.database_path = str(self.temp_dir / "test_db")
         
         # Mock search engine with fake data
-        self.search_engine = Mock(spec=OptimizedVideoSearchEngine)
+        self.search_engine = Mock(spec=VideoSearchEngine)
         self.search_engine.get_statistics.return_value = {
             "num_videos": 8,
             "embedding_dim": 768,
@@ -387,7 +387,7 @@ def create_streamlit_like_interface_demo():
     """
     print("\n" + "=" * 70)
     print("STREAMLIT-LIKE INTERFACE DEMONSTRATION")
-    print("Simulating the official NVIDIA Cosmos-Embed1 interface structure")
+    print("Simulating the official ALFA 0.1 interface structure")
     print("=" * 70)
     
     # Simulate session state (like Streamlit)

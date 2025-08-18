@@ -1,5 +1,5 @@
 """
-Configuration management for the video retrieval system.
+Configuration management for the ALFA 0.1 retrieval system.
 """
 
 from dataclasses import dataclass, field
@@ -9,42 +9,26 @@ import yaml
 import json
 import os
 
-
 @dataclass
 class VideoRetrievalConfig:
-    """Configuration for the video retrieval system."""
+    """Configuration for the ALFA 0.1 retrieval."""
     
-    # Model configuration
     model_name: str = "/Users/lilyzhang/Desktop/Qwen2.5-VL/cookbooks/nvidia_cosmos_embed_1"
     device: str = "cuda"
     batch_size: int = 4
     num_frames: int = 8
-    
-    # Database configuration - Unified Parquet Storage
     main_embeddings_path: str = "data/main_embeddings.parquet"      # Main database (reference videos embeddings)
     query_embeddings_path: str = "data/query_embeddings.parquet"    # Query database (user input videos embeddings)
     main_file_path: str = "data/main_file_path.parquet"             # Main video file paths
     query_file_path: str = "data/query_file_path.parquet"           # Query video file paths
     use_safe_serialization: bool = True
-    
-
-    
-    # Video processing
     supported_formats: Tuple[str, ...] = ('.mp4', '.avi', '.mov')
     thumbnail_size: Tuple[int, int] = (224, 224)
-    resolution: Tuple[int, int] = (448, 448)  # Match model resolution
-    
-    # Search configuration
+    resolution: Tuple[int, int] = (448, 448)
     default_top_k: int = 5
     similarity_threshold: float = 0.0
-    
-
-    
-    # Performance
     enable_caching: bool = True
     cache_size: int = 1000
-    
-    # Logging
     log_level: str = "INFO"
     log_format: str = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     

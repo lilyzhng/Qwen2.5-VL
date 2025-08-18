@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 ALFA 0.1 - Similarity Search Interface
-Advanced embedding visualization and video similarity search.
 """
 
 import os
@@ -24,14 +23,11 @@ import torch
 from datetime import datetime
 from typing import Optional, List, Dict, Tuple
 import logging
-
-# Import our components
-from core.search import OptimizedVideoSearchEngine
+from core.search import VideoSearchEngine
 from core.visualizer import VideoResultsVisualizer
 from core.config import VideoRetrievalConfig
 from core.exceptions import VideoNotFoundError, NoResultsError
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -56,11 +52,11 @@ class SelectedVideo:
 
 
 @st.cache_resource
-def load_search_engine() -> OptimizedVideoSearchEngine:
+def load_search_engine() -> VideoSearchEngine:
     """Load and cache the search engine (following official caching pattern)."""
     try:
         config = VideoRetrievalConfig()
-        search_engine = OptimizedVideoSearchEngine(config=config)
+        search_engine = VideoSearchEngine(config=config)
         
         # Try to load existing database, if it fails, we'll work with empty database
         try:
@@ -69,7 +65,6 @@ def load_search_engine() -> OptimizedVideoSearchEngine:
             try:
                 search_engine.database.load()
             except:
-                # Start with empty database - this is fine for the demo
                 pass
                 
         return search_engine
@@ -79,12 +74,11 @@ def load_search_engine() -> OptimizedVideoSearchEngine:
 
 
 @st.cache_data
-def load_database_info(_engine: OptimizedVideoSearchEngine) -> Dict:
+def load_database_info(_engine: VideoSearchEngine) -> Dict:
     """Load and cache database information."""
     try:
         return _engine.get_statistics()
     except Exception as e:
-        # Return default stats if database not loaded
         return {
             "num_videos": 0,
             "categories": 0,
@@ -136,7 +130,6 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             for i, r in enumerate(all_videos[len(results):])  # Videos not in search results
         ])
         
-        # Create DataFrame for search results
         df_search = pd.DataFrame([
             {
                 'video_name': r['video_name'],
@@ -149,10 +142,8 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             for i, r in enumerate(results)
         ])
         
-        # Combine all videos with search results on top
         df = pd.concat([df_search, df_all], ignore_index=True)
     else:
-        # Create DataFrame for plotting (original behavior)
         df = pd.DataFrame([
             {
                 'video_name': r['video_name'],
@@ -166,9 +157,8 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
         ])
     
     # Generate coordinates based on visualization method
-    np.random.seed(42)  # For consistent results
+    np.random.seed(42)
     
-    # Query vector position (fixed at center)
     query_x, query_y, query_z = 0, 0, 0
     
     if viz_method == "umap":
@@ -180,7 +170,6 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
         title = "2D Embedding Space - UMAP"
         x_title, y_title = "UMAP Dimension 1", "UMAP Dimension 2"
     elif viz_method == "pca":
-        # Position vectors based on distance from query (higher similarity = closer)
         distances = (1 - df['similarity']) * 6
         angles = np.random.uniform(0, 2*np.pi, len(df))
         df['x'] = query_x + distances * np.cos(angles) + np.random.randn(len(df)) * 0.3
@@ -188,7 +177,6 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
         title = "2D Embedding Space - PCA"
         x_title, y_title = "PCA Dimension 1", "PCA Dimension 2"
     elif viz_method == "trimap":
-        # Position vectors based on distance from query (higher similarity = closer)
         distances = (1 - df['similarity']) * 7
         angles = np.random.uniform(0, 2*np.pi, len(df))
         df['x'] = query_x + distances * np.cos(angles) + np.random.randn(len(df)) * 0.4
@@ -196,7 +184,6 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
         title = "2D Embedding Space - TriMAP"
         x_title, y_title = "TriMAP Dimension 1", "TriMAP Dimension 2"
     elif viz_method == "tsne":
-        # Position vectors based on distance from query (higher similarity = closer)
         distances = (1 - df['similarity']) * 5
         angles = np.random.uniform(0, 2*np.pi, len(df))
         df['x'] = query_x + distances * np.cos(angles) + np.random.randn(len(df)) * 0.3
@@ -204,7 +191,6 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
         title = "2D Embedding Space - t-SNE"
         x_title, y_title = "t-SNE Dimension 1", "t-SNE Dimension 2"
     elif viz_method == "3d_umap":
-        # Position vectors in 3D space based on distance from query (higher similarity = closer)
         distances = (1 - df['similarity']) * 6
         # Generate random 3D directions
         theta = np.random.uniform(0, 2*np.pi, len(df))  # azimuthal angle
@@ -387,8 +373,6 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                 )
             )
         
-        # Note: Selected point highlighting is now handled by red circles in the top K results above
-        
         # Add query vector point for 3D (using diamond symbol)
         if query_info:
             # Use fixed query coordinates at center (same as used for positioning)
@@ -408,8 +392,6 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                 )
             )
         
-        # Add cross coordinates at origin (x=0, y=0, z=0) for 3D
-        # X-axis line
         fig.add_trace(
             go.Scatter3d(
                 x=[-10, 10], y=[0, 0], z=[0, 0],
@@ -419,7 +401,6 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                 hoverinfo='skip'
             )
         )
-        # Y-axis line
         fig.add_trace(
             go.Scatter3d(
                 x=[0, 0], y=[-10, 10], z=[0, 0],
@@ -429,7 +410,6 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                 hoverinfo='skip'
             )
         )
-        # Z-axis line
         fig.add_trace(
             go.Scatter3d(
                 x=[0, 0], y=[0, 0], z=[-10, 10],

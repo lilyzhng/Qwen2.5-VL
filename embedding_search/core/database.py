@@ -1,6 +1,5 @@
 """
 Unified Parquet Database System for Video Embeddings.
-Replaces SQLite + NPY with pure Parquet storage for both main and query databases.
 """
 
 import pandas as pd
@@ -20,7 +19,6 @@ logger = logging.getLogger(__name__)
 class ParquetVectorDatabase:
     """
     Unified Parquet-based vector database for both main and query embeddings.
-    Replaces the complex SQLite + NPY system with a simple, efficient Parquet format.
     """
     
     def __init__(self, database_path: Union[str, Path], config: Optional[VideoRetrievalConfig] = None):
@@ -35,10 +33,7 @@ class ParquetVectorDatabase:
         self.database_path = Path(database_path)
         self.df = None
         
-        # Create directory if needed
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Load existing database if it exists
         self.load()
         
     def load(self):
