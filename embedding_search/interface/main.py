@@ -66,17 +66,17 @@ def main():
     
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
     
-    # Build database command
-    build_parser = subparsers.add_parser('build', help='Build video embeddings database')
+    # Build main database command
+    build_parser = subparsers.add_parser('build-main', help='Build video embeddings database')
     build_parser.add_argument(
         '--video-dir', '-d',
         type=str,
         help='Directory containing video files'
     )
     build_parser.add_argument(
-        '--video-csv',
+        '--data-path-file',
         type=str,
-        help='Path to CSV file containing video file paths (column: sensor_video_file)'
+        help='Path to video index file containing video file paths (column: sensor_video_file)'
     )
     build_parser.add_argument(
         '--force-rebuild', '-f',
@@ -95,6 +95,11 @@ def main():
         '--query-dir', '-qd',
         type=str,
         help='Directory containing query video files'
+    )
+    build_query_parser.add_argument(
+        '--data-path-file',
+        type=str,
+        help='Path to query video index file containing video file paths (column: sensor_video_file)'
     )
     build_query_parser.add_argument(
         '--force-rebuild', '-f',
@@ -196,12 +201,8 @@ def main():
             return 1
     
     # Override config with command line arguments
-    if hasattr(args, 'video_dir') and args.video_dir:
-        config.video_dir = args.video_dir
-    if hasattr(args, 'video_csv') and args.video_csv:
-        config.video_csv = args.video_csv
-    if hasattr(args, 'query_dir') and args.query_dir:
-        config.user_input_dir = args.query_dir
+    if hasattr(args, 'data_path_file') and args.data_path_file:
+        config.main_file_path = args.data_path_file
     if hasattr(args, 'batch_size') and args.batch_size:
         config.batch_size = args.batch_size
     if hasattr(args, 'top_k') and args.top_k:
@@ -229,9 +230,11 @@ def main():
         # Initialize search engine
         search_engine = OptimizedVideoSearchEngine(config=config)
         
-        if args.command == 'build':
+        if args.command == 'build-main':
             logger.info("Building video embeddings database...")
-            search_engine.build_database(config.video_dir, args.force_rebuild)
+            # Use main_file_path for video list, or fallback to video_dir if provided
+            video_source = getattr(args, 'video_dir', None) or "from main_file_path"
+            search_engine.build_database(video_source, args.force_rebuild)
             
             # Show database info
             info = search_engine.get_database_info()
@@ -242,8 +245,9 @@ def main():
             
         elif args.command == 'build-query':
             logger.info("Building query video embeddings database...")
+            # Use query_file_path system
             stats = search_engine.build_query_database(
-                config.user_input_dir, 
+                None,  # No directory needed, uses query_file_path
                 args.force_rebuild
             )
             
@@ -374,12 +378,19 @@ def main():
             db_info = search_engine.get_database_info()
             if db_info['num_videos'] == 0:
                 logger.info("Building database first...")
-                search_engine.build_database(config.video_dir)
+                search_engine.build_database("from main_file_path")
             
-            # Use the sample input video
-            query_video = Path(config.user_input_dir) / 'car2cyclist_2.mp4'
+            # Use the sample input video - find it in query file path list
+            query_video = None
+            if hasattr(config, 'query_file_path') and config.query_file_path:
+                query_file_path = Path(config.query_file_path)
+                if query_file_path.exists():
+                    df = pd.read_parquet(query_file_path) if query_file_path.suffix == '.parquet' else pd.read_csv(query_file_path)
+                    car_rows = df[df['video_name'] == 'car2cyclist_2.mp4']
+                    if len(car_rows) > 0:
+                        query_video = Path(car_rows.iloc[0]['sensor_video_file'])
             
-            if query_video.exists():
+            if query_video and query_video.exists():
                 logger.info(f"Searching for videos similar to: {query_video.name}")
                 results = search_engine.search_by_video(query_video)
                 

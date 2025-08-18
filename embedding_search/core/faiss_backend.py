@@ -1,6 +1,5 @@
 """
-Optimizations inspired by the official NVIDIA Cosmos-Embed1 implementation.
-Reference: https://huggingface.co/spaces/nvidia/Cosmos-Embed1/blob/main/src/streamlit_app.py
+FAISS-based search backend provides similarity search, caching, and database optimizations using FAISS.
 """
 
 import numpy as np
@@ -109,7 +108,7 @@ class FaissSearchStrategy(SearchStrategy):
         return results
 
 
-class OptimizedVideoDatabase(DatabaseBackend):
+class VideoDatabase(DatabaseBackend):
     """
     Optimized database with caching and efficient storage inspired by the official implementation.
     """
@@ -315,7 +314,7 @@ class OptimizedVideoDatabase(DatabaseBackend):
             self.get_cached_similarity.cache_clear()
 
 
-class OptimizedEmbeddingCache:
+class EmbeddingCache:
     """
     Caching mechanism for embeddings inspired by Streamlit's caching in the official implementation.
     """
@@ -360,7 +359,7 @@ def batch_normalize_embeddings(embeddings: np.ndarray) -> np.ndarray:
     return embeddings
 
 
-def create_optimized_index(embeddings: np.ndarray, index_type: str = "Flat") -> faiss.Index:
+def create_index(embeddings: np.ndarray, index_type: str = "Flat") -> faiss.Index:
     """
     Create an optimized FAISS index based on the number of embeddings.
     

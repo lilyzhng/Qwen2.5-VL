@@ -26,4 +26,4 @@ echo ""
 cd "${PROJECT_ROOT}"
 
 # Run streamlit
-streamlit run "${PROJECT_ROOT}/app/streamlit_app.py"
+streamlit run "${PROJECT_ROOT}/interface/streamlit_app.py"

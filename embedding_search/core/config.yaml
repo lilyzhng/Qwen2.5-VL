@@ -6,9 +6,14 @@ device: "cuda"  # Use "cpu" if CUDA is not available
 batch_size: 4   # Number of videos to process in parallel
 num_frames: 8   # Number of frames to extract per video
 
-# Database configuration
-database_path: "data/video_embeddings.parquet"  # Path to parquet database file
-use_safe_serialization: true       # Use JSON + numpy instead of pickle
+# Database configuration - Unified Parquet Storage
+main_embeddings_path: "data/main_embeddings.parquet"      # Main database (reference videos embeddings)
+query_embeddings_path: "data/query_embeddings.parquet"    # Query database (user input videos embeddings)
+main_file_path: "data/main_file_path.parquet"             # Main video file paths
+query_file_path: "data/query_file_path.parquet"           # Query video file paths
+use_safe_serialization: true
+
+
 
 # Video processing
 supported_formats: [".mp4", ".avi", ".mov", ".mkv", ".webm"]
@@ -18,10 +23,6 @@ thumbnail_size: [224, 224]
 default_top_k: 5              # Default number of results to return
 similarity_threshold: 0.0     # Minimum similarity score (0-1)
 
-# Paths
-video_dir: "data/videos/video_database"
-user_input_dir: "data/videos/user_input"
-video_csv: "data/video_index.parquet"  # Path to video index file with video paths (requires sensor_video_file column)
 
 # Performance
 enable_caching: true

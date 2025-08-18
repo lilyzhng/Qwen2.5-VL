@@ -205,11 +205,11 @@ class TestInteractiveVisualizer:
         self._create_interface_visualizations()
         
         print("\n5. Interface Features Demonstrated:")
-        print("   ✓ Real-time text search")
-        print("   ✓ Interactive video selection")
-        print("   ✓ Similarity-based recommendations")
-        print("   ✓ Visual result comparison")
-        print("   ✓ Exportable results")
+        print("   - Real-time text search")
+        print("   - Interactive video selection")
+        print("   - Similarity-based recommendations")
+        print("   - Visual result comparison")
+        print("   - Exportable results")
     
     def _get_similar_videos(self, video_path: str, k: int = 5):
         """Get similar videos to the selected one."""
@@ -233,9 +233,9 @@ class TestInteractiveVisualizer:
                 self.text_query,
                 self.search_results[:3]
             )
-            print(f"   📊 Text search visualization: {vis_path}")
+            print(f"   Text search visualization: {vis_path}")
         except Exception as e:
-            print(f"   ⚠️  Visualization failed: {e}")
+            print(f"   Warning: Visualization failed: {e}")
         
         # Create comparison grid
         if len(self.search_results) >= 4:
@@ -245,9 +245,9 @@ class TestInteractiveVisualizer:
                     video_paths,
                     grid_size=(2, 2)
                 )
-                print(f"   📊 Comparison grid: {grid_path}")
+                print(f"   Comparison grid: {grid_path}")
             except Exception as e:
-                print(f"   ⚠️  Grid creation failed: {e}")
+                print(f"   Warning: Grid creation failed: {e}")
     
     def export_session_data(self, output_path: Path):
         """Export current session data."""
@@ -261,7 +261,7 @@ class TestInteractiveVisualizer:
         with open(output_path, 'w') as f:
             json.dump(session_data, f, indent=2)
         
-        print(f"   💾 Session data exported: {output_path}")
+        print(f"   Session data exported: {output_path}")
 
 
 class TestSearchEngineIntegration(unittest.TestCase):
@@ -337,13 +337,13 @@ class TestSearchEngineIntegration(unittest.TestCase):
         # Step 1: Initialize components
         print("\n1. Initializing components...")
         visualizer = VideoResultsVisualizer()
-        print("   ✓ VideoResultsVisualizer created")
+        print("   - VideoResultsVisualizer created")
         
         # Step 2: Perform search
         print("\n2. Performing search...")
         query = "car approaching cyclist"
         results = self.search_engine.search_by_text(query, top_k=3)
-        print(f"   ✓ Search completed: {len(results)} results")
+        print(f"   - Search completed: {len(results)} results")
         
         # Step 3: Create visualizations
         print("\n3. Creating visualizations...")
@@ -353,7 +353,7 @@ class TestSearchEngineIntegration(unittest.TestCase):
             mock_vis.return_value = Path("mock_visualization.png")
             
             vis_path = visualizer.visualize_text_search_results(query, results)
-            print(f"   ✓ Text search visualization: {vis_path}")
+            print(f"   - Text search visualization: {vis_path}")
             
             mock_vis.assert_called_once_with(query, results)
         
@@ -370,14 +370,14 @@ class TestSearchEngineIntegration(unittest.TestCase):
         with open(export_path, 'w') as f:
             json.dump(export_data, f, indent=2)
         
-        print(f"   ✓ Results exported: {export_path}")
+        print(f"   - Results exported: {export_path}")
         
         # Step 5: Summary
         print("\n5. Workflow Summary:")
-        print("   ✓ Search performed successfully")
-        print("   ✓ Visualizations generated")
-        print("   ✓ Results exported for sharing")
-        print("   ✓ Ready for interactive use")
+        print("   - Search performed successfully")
+        print("   - Visualizations generated")
+        print("   - Results exported for sharing")
+        print("   - Ready for interactive use")
 
 
 def create_streamlit_like_interface_demo():
@@ -401,25 +401,25 @@ def create_streamlit_like_interface_demo():
     }
     
     # Simulate interface layout
-    print("\n📱 INTERFACE LAYOUT SIMULATION:")
-    print("┌─────────────────────┬─────────────────────┐")
-    print("│ LEFT PANEL          │ RIGHT PANEL         │")
-    print("│                     │                     │")
-    print("│ 🔍 Search Controls  │ 📺 Video Preview    │")
-    print("│ • Text Input        │ • Selected Video    │")
-    print("│ • Dataset Selector  │ • Similarity Score  │")
-    print("│                     │                     │")
-    print("│ 📊 Results Plot     │ ⚙️ Controls         │")
-    print("│ • Similarity Map    │ • Export Options    │")
-    print("│ • Clickable Points  │ • View Settings     │")
-    print("└─────────────────────┴─────────────────────┘")
-    print("│                                           │")
-    print("│ 🎬 BOTTOM PANEL: 5 Nearest Neighbors     │")
-    print("│ [Video1] [Video2] [Video3] [Video4] [Video5] │")
-    print("└───────────────────────────────────────────┘")
+    print("\nINTERFACE LAYOUT SIMULATION:")
+    print("+-------------------------+-------------------------+")
+    print("| LEFT PANEL          | RIGHT PANEL         |")
+    print("|                     |                     |")
+    print("| Search Controls     | Video Preview       |")
+    print("| - Text Input        | - Selected Video    |")
+    print("| - Dataset Selector  | - Similarity Score  |")
+    print("|                     |                     |")
+    print("| Results Plot        | Controls            |")
+    print("| - Similarity Map    | - Export Options    |")
+    print("| - Clickable Points  | - View Settings     |")
+    print("+-------------------------+-------------------------+")
+    print("|                                           |")
+    print("| BOTTOM PANEL: 5 Nearest Neighbors         |")
+    print("| [Video1] [Video2] [Video3] [Video4] [Video5] |")
+    print("+-------------------------------------------+")
     
     # Simulate user interactions
-    print("\n🖱️  USER INTERACTION SIMULATION:")
+    print("\nUSER INTERACTION SIMULATION:")
     
     # 1. Dataset selection
     print("1. User selects dataset: 'Traffic Scenarios (8 videos)'")
@@ -430,8 +430,8 @@ def create_streamlit_like_interface_demo():
     session_state["text_query"] = "car approaching cyclist"
     
     # Simulate search processing
-    print("   🔄 Processing text query...")
-    print("   📊 Finding nearest video in embedding space...")
+    print("   Processing text query...")
+    print("   Finding nearest video in embedding space...")
     
     # Mock search results
     session_state["search_results"] = [
@@ -440,8 +440,8 @@ def create_streamlit_like_interface_demo():
         {"video_id": 5, "similarity": 0.73, "name": "car2ped_1.mp4"}
     ]
     
-    print(f"   ✅ Found match: {session_state['search_results'][0]['name']}")
-    print(f"   📍 Similarity score: {session_state['search_results'][0]['similarity']:.3f}")
+    print(f"   Found match: {session_state['search_results'][0]['name']}")
+    print(f"   Similarity score: {session_state['search_results'][0]['similarity']:.3f}")
     
     # 3. Video selection and neighbors
     session_state["selected_video"] = session_state["search_results"][0]
@@ -461,29 +461,29 @@ def create_streamlit_like_interface_demo():
         print(f"   {i}. {neighbor}")
     
     # 5. Interactive features
-    print("\n🎯 INTERACTIVE FEATURES:")
-    print("✓ Real-time text search with instant results")
-    print("✓ Clickable similarity plot for exploration")
-    print("✓ Hover tooltips showing video metadata")
-    print("✓ Zoom and pan on similarity visualization")
-    print("✓ Export functionality for found results")
-    print("✓ Responsive layout adapting to screen size")
+    print("\nINTERACTIVE FEATURES:")
+    print("- Real-time text search with instant results")
+    print("- Clickable similarity plot for exploration")
+    print("- Hover tooltips showing video metadata")
+    print("- Zoom and pan on similarity visualization")
+    print("- Export functionality for found results")
+    print("- Responsive layout adapting to screen size")
     
     # 6. Technical implementation
-    print("\n⚙️  TECHNICAL IMPLEMENTATION:")
-    print("• Frontend: Streamlit with custom components")
-    print("• Backend: FAISS for similarity search")
-    print("• Visualization: Plotly for interactive plots")
-    print("• Video Display: HTML5 video with YouTube embedding")
-    print("• State Management: Streamlit session state")
-    print("• Caching: @st.cache_data for model and embeddings")
+    print("\nTECHNICAL IMPLEMENTATION:")
+    print("- Frontend: Streamlit with custom components")
+    print("- Backend: FAISS for similarity search")
+    print("- Visualization: Plotly for interactive plots")
+    print("- Video Display: HTML5 video with video embedding")
+    print("- State Management: Streamlit session state")
+    print("- Caching: @st.cache_data for model and embeddings")
     
     return session_state
 
 
 def run_all_visualizer_tests():
     """Run all visualizer tests and demonstrations."""
-    print("🧪 RUNNING COMPREHENSIVE VISUALIZER TESTS")
+    print("RUNNING COMPREHENSIVE VISUALIZER TESTS")
     print("=" * 60)
     
     # Run unit tests
@@ -492,9 +492,9 @@ def run_all_visualizer_tests():
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     
     if result.wasSuccessful():
-        print("✅ All unit tests passed!")
+        print("All unit tests passed!")
     else:
-        print("❌ Some unit tests failed!")
+        print("Some unit tests failed!")
     
     # Run integration tests
     print("\n2. INTEGRATION TESTS:")
@@ -502,27 +502,27 @@ def run_all_visualizer_tests():
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     
     if result.wasSuccessful():
-        print("✅ All integration tests passed!")
+        print("All integration tests passed!")
     else:
-        print("❌ Some integration tests failed!")
+        print("Some integration tests failed!")
     
     # Run interface demonstration
     print("\n3. INTERFACE DEMONSTRATIONS:")
     try:
         session_state = create_streamlit_like_interface_demo()
-        print("✅ Interface demonstration completed!")
+        print("Interface demonstration completed!")
         
         # Show final session state
-        print(f"\n📊 FINAL SESSION STATE:")
+        print(f"\nFINAL SESSION STATE:")
         print(f"Selected Video: {session_state.get('selected_video', {}).get('name', 'None')}")
         print(f"Text Query: '{session_state.get('text_query', '')}'")
         print(f"Results Found: {len(session_state.get('search_results', []))}")
         
     except Exception as e:
-        print(f"❌ Interface demonstration failed: {e}")
+        print(f"Interface demonstration failed: {e}")
     
     print("\n" + "=" * 60)
-    print("🎉 VISUALIZER TEST SUITE COMPLETED!")
+    print("VISUALIZER TEST SUITE COMPLETED!")
     print("=" * 60)
 
 

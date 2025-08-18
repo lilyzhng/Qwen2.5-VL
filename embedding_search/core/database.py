@@ -1,386 +1,414 @@
 """
-Improved Video Database Manager with safe serialization and better error handling.
+Unified Parquet Database System for Video Embeddings.
+Replaces SQLite + NPY with pure Parquet storage for both main and query databases.
 """
 
-import json
+import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import List, Dict, Union, Optional, Tuple, Any
+from typing import Union, Optional, Dict, List, Any
 import logging
 from datetime import datetime
 import hashlib
 
-from .base import DatabaseBackend
 from .config import VideoRetrievalConfig
-from .exceptions import (
-    DatabaseError, DatabaseNotFoundError, DatabaseCorruptedError
-)
+from .exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
 
 
-class SafeVideoDatabase(DatabaseBackend):
-    """Video database with JSON + numpy serialization for safety."""
+class ParquetVectorDatabase:
+    """
+    Unified Parquet-based vector database for both main and query embeddings.
+    Replaces the complex SQLite + NPY system with a simple, efficient Parquet format.
+    """
     
-    def __init__(self, database_path: Union[str, Path] = "data/video_embeddings", 
-                 config: Optional[VideoRetrievalConfig] = None):
+    def __init__(self, database_path: Union[str, Path], config: Optional[VideoRetrievalConfig] = None):
         """
-        Initialize the video database.
+        Initialize Parquet vector database.
         
         Args:
-            database_path: Base path for database files (without extension)
+            database_path: Path to the parquet database file
             config: Configuration object
         """
         self.config = config or VideoRetrievalConfig()
         self.database_path = Path(database_path)
+        self.df = None
         
-        # Separate files for metadata and embeddings
-        self.metadata_path = self.database_path.with_suffix('.json')
-        self.embeddings_path = self.database_path.with_suffix('.npy')
+        # Create directory if needed
+        self.database_path.parent.mkdir(parents=True, exist_ok=True)
         
-        self.embeddings = []
-        self.metadata = []
-        self.embedding_matrix = None
+        # Load existing database if it exists
+        self.load()
         
-        # Version for compatibility checking
-        self.version = "2.0"
-    
-    def _compute_checksum(self, data: np.ndarray) -> str:
-        """Compute checksum for data integrity."""
-        return hashlib.sha256(data.tobytes()).hexdigest()
-    
-    def add_embeddings(self, embeddings_data: List[Dict[str, Any]]):
-        """
-        Add video embeddings to the database with validation.
-        
-        Args:
-            embeddings_data: List of dictionaries containing embeddings and metadata
-        """
-        if not embeddings_data:
-            logger.warning("No embeddings to add")
-            return
-        
-        # Validate embeddings
-        embedding_dim = None
-        for data in embeddings_data:
-            if 'embedding' not in data or 'video_path' not in data:
-                raise ValueError("Missing required fields in embedding data")
-            
-            # Check embedding dimension consistency
-            if embedding_dim is None:
-                embedding_dim = data['embedding'].shape[0]
-            elif data['embedding'].shape[0] != embedding_dim:
-                raise ValueError(f"Inconsistent embedding dimensions: expected {embedding_dim}, got {data['embedding'].shape[0]}")
-        
-        # Add to database
-        for data in embeddings_data:
-            # Ensure embedding is normalized
-            embedding = data["embedding"]
-            norm = np.linalg.norm(embedding)
-            if norm > 0:
-                embedding = embedding / norm
-            
-            self.embeddings.append(embedding)
-            
-            # Store metadata
-            meta = {
-                "video_path": str(data["video_path"]),
-                "video_name": Path(data["video_path"]).name,
-                "embedding_dim": data.get("embedding_dim", embedding_dim),
-                "num_frames": data.get("num_frames", 0),
-                "added_at": datetime.now().isoformat(),
-                "checksum": self._compute_checksum(embedding)
-            }
-            self.metadata.append(meta)
-        
-        # Update embedding matrix
-        self._update_embedding_matrix()
-        logger.info(f"Added {len(embeddings_data)} embeddings to database")
-    
-    def _update_embedding_matrix(self):
-        """Update the embedding matrix for efficient similarity computation."""
-        if self.embeddings:
-            self.embedding_matrix = np.vstack(self.embeddings)
-            # Ensure all embeddings are normalized
-            norms = np.linalg.norm(self.embedding_matrix, axis=1, keepdims=True)
-            self.embedding_matrix = self.embedding_matrix / np.maximum(norms, 1e-8)
+    def load(self):
+        """Load database from parquet file."""
+        if self.database_path.exists():
+            try:
+                self.df = pd.read_parquet(self.database_path)
+                # Set video_name as index for fast lookups
+                if 'video_name' in self.df.columns and self.df.index.name != 'video_name':
+                    self.df = self.df.set_index('video_name', drop=False)
+                logger.info(f"Loaded {len(self.df)} embeddings from {self.database_path}")
+            except Exception as e:
+                logger.warning(f"Could not load database {self.database_path}: {e}")
+                self._create_empty_database()
         else:
-            self.embedding_matrix = None
+            self._create_empty_database()
     
-    def save(self, path: Optional[Union[str, Path]] = None):
+    def _create_empty_database(self):
+        """Create empty database with proper schema."""
+        self.df = pd.DataFrame({
+            'video_name': [],
+            'video_path': [],
+            'embedding': [],
+            'embedding_dim': [],
+            'num_frames': [],
+            'file_hash': [],
+            'file_size': [],
+            'created_at': [],
+            'last_accessed': [],
+            'access_count': [],
+            'category': []
+        })
+        
+        # Set index if not empty
+        if len(self.df) > 0:
+            self.df = self.df.set_index('video_name', drop=False)
+        
+    def add_embedding(self, video_name: str, video_path: Union[str, Path], 
+                     embedding: np.ndarray, metadata: Optional[Dict] = None) -> bool:
         """
-        Save the database using JSON for metadata and numpy for embeddings.
+        Add or update an embedding in the database.
         
         Args:
-            path: Optional base path for saving
-        """
-        save_path = Path(path) if path else self.database_path
-        metadata_path = save_path.with_suffix('.json')
-        embeddings_path = save_path.with_suffix('.npy')
-        
-        try:
-            # Save embeddings as numpy array
-            if self.embeddings:
-                embeddings_array = np.vstack(self.embeddings)
-                np.save(embeddings_path, embeddings_array)
-                logger.info(f"Saved {len(self.embeddings)} embeddings to {embeddings_path}")
-            
-            # Prepare metadata
-            db_metadata = {
-                "version": self.version,
-                "created_at": datetime.now().isoformat(),
-                "num_videos": len(self.metadata),
-                "embedding_dim": self.embeddings[0].shape[0] if self.embeddings else 0,
-                "videos": self.metadata
-            }
-            
-            # Save metadata as JSON
-            with open(metadata_path, 'w') as f:
-                json.dump(db_metadata, f, indent=2)
-            
-            logger.info(f"Database metadata saved to {metadata_path}")
-            
-        except Exception as e:
-            raise DatabaseError(f"Failed to save database: {str(e)}")
-    
-    def load(self, path: Optional[Union[str, Path]] = None):
-        """
-        Load the database from JSON metadata and numpy embeddings.
-        
-        Args:
-            path: Optional base path for loading
-        """
-        load_path = Path(path) if path else self.database_path
-        metadata_path = load_path.with_suffix('.json')
-        embeddings_path = load_path.with_suffix('.npy')
-        
-        # Check if files exist
-        if not metadata_path.exists():
-            raise DatabaseNotFoundError(f"Database metadata not found at {metadata_path}")
-        
-        try:
-            # Load metadata
-            with open(metadata_path, 'r') as f:
-                db_metadata = json.load(f)
-            
-            # Check version compatibility
-            if db_metadata.get('version', '1.0') != self.version:
-                logger.warning(f"Database version mismatch: expected {self.version}, got {db_metadata.get('version')}")
-            
-            self.metadata = db_metadata.get('videos', [])
-            
-            # Load embeddings if file exists
-            if embeddings_path.exists():
-                embeddings_array = np.load(embeddings_path)
-                
-                # Verify dimensions
-                expected_count = db_metadata.get('num_videos', 0)
-                if len(embeddings_array) != expected_count:
-                    raise DatabaseCorruptedError(
-                        f"Embedding count mismatch: expected {expected_count}, got {len(embeddings_array)}"
-                    )
-                
-                # Verify checksums for data integrity
-                self.embeddings = []
-                for i, (embedding, meta) in enumerate(zip(embeddings_array, self.metadata)):
-                    if 'checksum' in meta:
-                        computed_checksum = self._compute_checksum(embedding)
-                        if computed_checksum != meta['checksum']:
-                            logger.warning(f"Checksum mismatch for video {meta['video_name']}")
-                    
-                    self.embeddings.append(embedding)
-                
-                self._update_embedding_matrix()
-            else:
-                logger.warning(f"Embeddings file not found at {embeddings_path}")
-                self.embeddings = []
-                self.embedding_matrix = None
-            
-            logger.info(f"Database loaded with {len(self.embeddings)} videos")
-            
-        except json.JSONDecodeError as e:
-            raise DatabaseCorruptedError(f"Failed to parse database metadata: {str(e)}")
-        except Exception as e:
-            if isinstance(e, (DatabaseNotFoundError, DatabaseCorruptedError)):
-                raise
-            raise DatabaseError(f"Failed to load database: {str(e)}")
-    
-    def compute_similarity(self, query_embedding: np.ndarray, top_k: int = 5) -> List[Tuple[int, float, Dict]]:
-        """
-        Compute cosine similarity between query and all database embeddings.
-        
-        Args:
-            query_embedding: Query video embedding
-            top_k: Number of top similar videos to return
-            
-        Returns:
-            List of tuples (index, similarity_score, metadata)
-        """
-        if self.embedding_matrix is None or len(self.embedding_matrix) == 0:
-            logger.warning("No embeddings in database")
-            return []
-        
-        # Ensure query is normalized
-        query_norm = query_embedding / np.linalg.norm(query_embedding)
-        
-        # Compute cosine similarities (embeddings are already normalized)
-        similarities = np.dot(self.embedding_matrix, query_norm)
-        
-        # Handle edge cases
-        top_k = min(top_k, len(similarities))
-        
-        # Get top-k indices
-        top_indices = np.argsort(similarities)[::-1][:top_k]
-        
-        results = []
-        for idx in top_indices:
-            results.append((
-                int(idx),
-                float(similarities[idx]),
-                self.metadata[idx].copy()  # Return a copy to prevent modification
-            ))
-        
-        return results
-    
-    def get_embedding_by_filename(self, filename: str) -> Optional[Tuple[np.ndarray, Dict]]:
-        """
-        Get pre-computed embedding by video filename.
-        
-        Args:
-            filename: Video filename (e.g., "car2cyclist_2.mp4")
-            
-        Returns:
-            Tuple of (embedding, metadata) if found, None otherwise
-        """
-        for i, meta in enumerate(self.metadata):
-            if Path(meta['video_path']).name == filename:
-                if i < len(self.embeddings):
-                    return self.embeddings[i], meta
-        return None
-    
-    def get_embedding_by_path(self, video_path: Union[str, Path]) -> Optional[Tuple[np.ndarray, Dict]]:
-        """
-        Get pre-computed embedding by full video path.
-        
-        Args:
+            video_name: Name of the video file
             video_path: Full path to video file
+            embedding: Embedding vector
+            metadata: Additional metadata
             
         Returns:
-            Tuple of (embedding, metadata) if found, None otherwise
+            True if successful
         """
-        video_path_str = str(video_path)
-        for i, meta in enumerate(self.metadata):
-            if meta['video_path'] == video_path_str:
-                if i < len(self.embeddings):
-                    return self.embeddings[i], meta
-        return None
-    
-    def list_available_videos(self) -> List[Dict[str, str]]:
-        """
-        Get list of all available videos with their filenames and paths.
-        
-        Returns:
-            List of dictionaries with 'filename', 'path', and 'added_at' keys
-        """
-        videos = []
-        for meta in self.metadata:
-            videos.append({
-                'filename': Path(meta['video_path']).name,
-                'path': meta['video_path'],
-                'added_at': meta.get('added_at', 'unknown')
-            })
-        return videos
-
-    def get_statistics(self) -> Dict[str, Any]:
-        """Get comprehensive statistics about the database."""
-        if not self.embeddings:
-            return {
-                "num_videos": 0,
-                "embedding_dim": 0,
-                "video_names": [],
-                "database_size_mb": 0,
-                "version": self.version
-            }
-        
-        # Calculate database size
-        db_size = 0
-        if self.metadata_path.exists():
-            db_size += self.metadata_path.stat().st_size
-        if self.embeddings_path.exists():
-            db_size += self.embeddings_path.stat().st_size
-        
-        return {
-            "num_videos": len(self.embeddings),
-            "embedding_dim": self.embeddings[0].shape[0],
-            "video_names": [m["video_name"] for m in self.metadata],
-            "database_size_mb": db_size / (1024 * 1024),
-            "version": self.version,
-            "created_dates": [m.get("added_at", "unknown") for m in self.metadata]
-        }
-    
-    def clear(self):
-        """Clear all data from the database."""
-        self.embeddings = []
-        self.metadata = []
-        self.embedding_matrix = None
-        logger.info("Database cleared")
-    
-    def remove_video(self, video_path: str) -> bool:
-        """
-        Remove a video from the database by path.
-        
-        Args:
-            video_path: Path of the video to remove
-            
-        Returns:
-            True if video was found and removed, False otherwise
-        """
-        video_path = str(video_path)  # Ensure string comparison
-        
-        for i, meta in enumerate(self.metadata):
-            if meta["video_path"] == video_path:
-                del self.embeddings[i]
-                del self.metadata[i]
-                self._update_embedding_matrix()
-                logger.info(f"Removed video: {video_path}")
-                return True
-        
-        logger.warning(f"Video not found in database: {video_path}")
-        return False
-    
-    def export_to_legacy_format(self, path: Union[str, Path]):
-        """Export database to legacy pickle format for compatibility."""
-        import pickle
-        
-        legacy_data = {
-            "embeddings": self.embeddings,
-            "metadata": self.metadata,
-            "embedding_matrix": self.embedding_matrix
-        }
-        
-        with open(path, 'wb') as f:
-            pickle.dump(legacy_data, f)
-        
-        logger.info(f"Exported database to legacy format: {path}")
-    
-    def import_from_legacy_format(self, path: Union[str, Path]):
-        """Import database from legacy pickle format."""
-        import pickle
-        
         try:
-            with open(path, 'rb') as f:
-                legacy_data = pickle.load(f)
+            video_path = Path(video_path)
             
-            self.embeddings = legacy_data.get("embeddings", [])
-            self.metadata = legacy_data.get("metadata", [])
-            self.embedding_matrix = legacy_data.get("embedding_matrix", None)
+            # Get file information
+            file_stat = video_path.stat() if video_path.exists() else None
+            file_hash = self._get_file_hash(video_path) if video_path.exists() else None
             
-            # Add checksums to imported data
-            for i, (embedding, meta) in enumerate(zip(self.embeddings, self.metadata)):
-                if 'checksum' not in meta:
-                    meta['checksum'] = self._compute_checksum(embedding)
+            # Prepare row data
+            row_data = {
+                'video_name': video_name,
+                'video_path': str(video_path.absolute()),
+                'embedding': embedding.tolist(),
+                'embedding_dim': embedding.shape[0],
+                'num_frames': metadata.get('num_frames', self.config.num_frames) if metadata else self.config.num_frames,
+                'file_hash': file_hash,
+                'file_size': file_stat.st_size if file_stat else 0,
+                'created_at': datetime.now().isoformat(),
+                'last_accessed': datetime.now().isoformat(),
+                'access_count': 1,
+                'category': metadata.get('category', 'query') if metadata else 'query'
+            }
             
-            logger.info(f"Imported {len(self.embeddings)} videos from legacy format")
+            # Add additional metadata
+            if metadata:
+                for key, value in metadata.items():
+                    if key not in row_data:
+                        row_data[key] = value
+            
+            # Initialize DataFrame if needed
+            if self.df is None or len(self.df) == 0:
+                self._create_empty_database()
+                
+            # Convert to DataFrame for single row
+            new_row = pd.DataFrame([row_data])
+            
+            # Add to DataFrame
+            if len(self.df) == 0:
+                self.df = new_row.set_index('video_name', drop=False)
+            else:
+                # Update existing or add new
+                if video_name in self.df.index:
+                    # Update existing
+                    for key, value in row_data.items():
+                        self.df.loc[video_name, key] = value
+                else:
+                    # Add new
+                    new_row = new_row.set_index('video_name', drop=False)
+                    self.df = pd.concat([self.df, new_row])
+            
+            logger.info(f"Added embedding for: {video_name}")
+            return True
             
         except Exception as e:
-            raise DatabaseError(f"Failed to import legacy database: {str(e)}")
+            logger.error(f"Error adding embedding for {video_name}: {e}")
+            return False
+    
+    def get_embedding(self, video_name: str) -> Optional[np.ndarray]:
+        """
+        Get embedding by video name.
+        
+        Args:
+            video_name: Name of the video file
+            
+        Returns:
+            Embedding array or None if not found
+        """
+        if self.df is None or len(self.df) == 0 or video_name not in self.df.index:
+            return None
+            
+        try:
+            row = self.df.loc[video_name]
+            embedding = np.array(row['embedding'], dtype='float32')
+            
+            # Update access information
+            self.df.loc[video_name, 'last_accessed'] = datetime.now().isoformat()
+            self.df.loc[video_name, 'access_count'] = int(self.df.loc[video_name, 'access_count']) + 1
+            
+            return embedding
+            
+        except Exception as e:
+            logger.error(f"Error retrieving embedding for {video_name}: {e}")
+            return None
+    
+    def list_videos(self) -> List[str]:
+        """Get list of all video names in the database."""
+        if self.df is None or len(self.df) == 0:
+            return []
+        return self.df['video_name'].tolist()
+    
+    def save(self):
+        """Save database to parquet file."""
+        if self.df is not None and len(self.df) > 0:
+            try:
+                # Reset index before saving to avoid index column issues
+                df_to_save = self.df.reset_index(drop=True)
+                df_to_save.to_parquet(self.database_path, index=False)
+                logger.info(f"Saved {len(df_to_save)} embeddings to {self.database_path}")
+            except Exception as e:
+                logger.error(f"Error saving database: {e}")
+                raise DatabaseError(f"Failed to save database: {e}")
+        else:
+            logger.info("No data to save")
+    
+    def _get_file_hash(self, file_path: Path) -> str:
+        """Compute file hash for integrity checking."""
+        if not file_path.exists():
+            return ""
+        
+        hash_md5 = hashlib.md5()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_md5.update(chunk)
+        return hash_md5.hexdigest()
+    
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get database statistics."""
+        if self.df is None or len(self.df) == 0:
+            return {"total_embeddings": 0, "categories": {}}
+            
+        stats = {
+            "total_embeddings": len(self.df),
+            "categories": self.df['category'].value_counts().to_dict() if 'category' in self.df.columns else {},
+            "embedding_dim": int(self.df['embedding_dim'].iloc[0]) if len(self.df) > 0 else 0,
+            "database_size_mb": round(self.database_path.stat().st_size / (1024 * 1024), 2) if self.database_path.exists() else 0
+        }
+        
+        return stats
+
+
+class UnifiedQueryManager:
+    """
+    Unified manager for query embeddings using pure Parquet storage.
+    Replaces the complex QueryDatabaseManager with a simpler, more efficient system.
+    """
+    
+    def __init__(self, config: Optional[VideoRetrievalConfig] = None):
+        """Initialize unified query manager."""
+        self.config = config or VideoRetrievalConfig()
+        
+        # Use new parquet database
+        self.query_db = ParquetVectorDatabase(
+            self.config.query_embeddings_path,
+            self.config
+        )
+        
+        logger.info("UnifiedQueryManager initialized with Parquet storage")
+    
+    def build_query_database_from_file_list(self, query_file_path: Union[str, Path],
+                                          force_rebuild: bool = False) -> Dict[str, Any]:
+        """
+        Build query database from file path list (Parquet or CSV).
+        
+        Args:
+            query_file_path: Path to file containing query video paths
+            force_rebuild: Whether to rebuild from scratch
+            
+        Returns:
+            Build statistics
+        """
+        from .embedder import CosmosVideoEmbedder
+        from .faiss_backend import batch_normalize_embeddings
+        
+        file_path = Path(query_file_path)
+        if not file_path.exists():
+            raise ValueError(f"Query file path list not found: {file_path}")
+        
+        # Load video paths from file
+        if file_path.suffix.lower() == '.parquet':
+            df = pd.read_parquet(file_path)
+        else:
+            df = pd.read_csv(file_path)
+        
+        if 'sensor_video_file' not in df.columns:
+            raise ValueError(f"Column 'sensor_video_file' not found in {file_path}")
+        
+        # Filter for query videos only
+        if 'category' in df.columns:
+            query_df = df[df['category'] == 'user_input']
+        else:
+            query_df = df
+        
+        video_paths = [Path(path) for path in query_df['sensor_video_file'].tolist()]
+        video_files = [path for path in video_paths if path.exists()]
+        
+        if not video_files:
+            logger.warning(f"No valid query video files found in {file_path}")
+            return {"processed": 0, "cached": 0, "errors": 0}
+        
+        logger.info(f"Found {len(video_files)} query video files from file list")
+        
+        # Initialize embedder
+        embedder = CosmosVideoEmbedder(self.config)
+        
+        stats = {"processed": 0, "cached": 0, "errors": 0}
+        
+        for video_path in video_files:
+            filename = video_path.name
+            
+            try:
+                # Check if already processed
+                if not force_rebuild and self.query_db.get_embedding(filename) is not None:
+                    stats["cached"] += 1
+                    logger.debug(f"Already cached: {filename}")
+                    continue
+                
+                # Extract embedding
+                logger.info(f"Processing: {filename}")
+                embedding = embedder.extract_video_embedding(video_path)
+                
+                # Normalize
+                embedding = embedding.astype('float32').reshape(1, -1)
+                batch_normalize_embeddings(embedding)
+                embedding = embedding[0]
+                
+                # Store in database
+                metadata = {
+                    "num_frames": self.config.num_frames,
+                    "category": "query"
+                }
+                
+                if self.query_db.add_embedding(filename, video_path, embedding, metadata):
+                    stats["processed"] += 1
+                else:
+                    stats["errors"] += 1
+                    
+            except Exception as e:
+                logger.error(f"Error processing {filename}: {e}")
+                stats["errors"] += 1
+        
+        # Save database
+        self.query_db.save()
+        
+        logger.info(f"Query database build complete: {stats}")
+        return stats
+
+    def build_query_database(self, query_video_dir: Union[str, Path], 
+                           force_rebuild: bool = False) -> Dict[str, Any]:
+        """
+        Build query database from video directory.
+        
+        Args:
+            query_video_dir: Directory containing query videos
+            force_rebuild: Whether to rebuild from scratch
+            
+        Returns:
+            Build statistics
+        """
+        from .embedder import CosmosVideoEmbedder
+        from .faiss_backend import batch_normalize_embeddings
+        
+        query_dir = Path(query_video_dir)
+        if not query_dir.exists():
+            raise ValueError(f"Query video directory not found: {query_dir}")
+        
+        # Get video files
+        video_files = []
+        for ext in self.config.supported_formats:
+            video_files.extend(query_dir.glob(f"*{ext}"))
+            video_files.extend(query_dir.glob(f"*{ext.upper()}"))
+        
+        if not video_files:
+            logger.warning(f"No video files found in {query_dir}")
+            return {"processed": 0, "cached": 0, "errors": 0}
+        
+        logger.info(f"Found {len(video_files)} query video files")
+        
+        # Initialize embedder
+        embedder = CosmosVideoEmbedder(self.config)
+        
+        stats = {"processed": 0, "cached": 0, "errors": 0}
+        
+        for video_path in video_files:
+            filename = video_path.name
+            
+            try:
+                # Check if already processed
+                if not force_rebuild and self.query_db.get_embedding(filename) is not None:
+                    stats["cached"] += 1
+                    logger.debug(f"Already cached: {filename}")
+                    continue
+                
+                # Extract embedding
+                logger.info(f"Processing: {filename}")
+                embedding = embedder.extract_video_embedding(video_path)
+                
+                # Normalize
+                embedding = embedding.astype('float32').reshape(1, -1)
+                batch_normalize_embeddings(embedding)
+                embedding = embedding[0]
+                
+                # Store in database
+                metadata = {
+                    "num_frames": self.config.num_frames,
+                    "category": "query"
+                }
+                
+                if self.query_db.add_embedding(filename, video_path, embedding, metadata):
+                    stats["processed"] += 1
+                else:
+                    stats["errors"] += 1
+                    
+            except Exception as e:
+                logger.error(f"Error processing {filename}: {e}")
+                stats["errors"] += 1
+        
+        # Save database
+        self.query_db.save()
+        
+        logger.info(f"Query database build complete: {stats}")
+        return stats
+    
+    def get_query_embedding(self, filename: str) -> Optional[np.ndarray]:
+        """Get query embedding by filename."""
+        return self.query_db.get_embedding(filename)
+    
+    def list_available_query_videos(self) -> List[str]:
+        """Get list of available query video filenames."""
+        return self.query_db.list_videos()
+    
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get query database statistics."""
+        return self.query_db.get_statistics()

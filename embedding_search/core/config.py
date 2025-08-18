@@ -20,12 +20,17 @@ class VideoRetrievalConfig:
     batch_size: int = 4
     num_frames: int = 8
     
-    # Database configuration
-    database_path: str = "data/video_embeddings.parquet"
+    # Database configuration - Unified Parquet Storage
+    main_embeddings_path: str = "data/main_embeddings.parquet"      # Main database (reference videos embeddings)
+    query_embeddings_path: str = "data/query_embeddings.parquet"    # Query database (user input videos embeddings)
+    main_file_path: str = "data/main_file_path.parquet"             # Main video file paths
+    query_file_path: str = "data/query_file_path.parquet"           # Query video file paths
     use_safe_serialization: bool = True
     
+
+    
     # Video processing
-    supported_formats: Tuple[str, ...] = ('.mp4', '.avi', '.mov', '.mkv', '.webm')
+    supported_formats: Tuple[str, ...] = ('.mp4', '.avi', '.mov')
     thumbnail_size: Tuple[int, int] = (224, 224)
     resolution: Tuple[int, int] = (448, 448)  # Match model resolution
     
@@ -33,10 +38,7 @@ class VideoRetrievalConfig:
     default_top_k: int = 5
     similarity_threshold: float = 0.0
     
-    # Paths
-    video_dir: str = "data/videos/video_database"
-    user_input_dir: str = "data/videos/user_input"
-    video_csv: Optional[str] = "data/video_index.parquet"  # Path to video index file (CSV or Parquet)
+
     
     # Performance
     enable_caching: bool = True
@@ -87,22 +89,19 @@ class VideoRetrievalConfig:
         # Get project root (parent of core directory)
         project_root = Path(__file__).parent.parent
         
-        # Check if paths exist
-        for path_attr in ['video_dir', 'user_input_dir']:
-            path = getattr(self, path_attr)
-            if path:
-                # Convert to absolute path if relative
-                if not Path(path).is_absolute():
-                    abs_path = project_root / path
-                else:
-                    abs_path = Path(path)
-                    
-                if not abs_path.exists():
-                    print(f"Warning: {path_attr} does not exist: {abs_path}")
         
-        # Check video_csv if provided
-        if self.video_csv and not Path(self.video_csv).exists():
-            print(f"Warning: video_csv does not exist: {self.video_csv}")
+        # Check file path lists if provided
+        for file_path_attr in ['main_file_path', 'query_file_path']:
+            if hasattr(self, file_path_attr):
+                file_path = getattr(self, file_path_attr)
+                if file_path:
+                    if not Path(file_path).is_absolute():
+                        abs_path = project_root / file_path
+                    else:
+                        abs_path = Path(file_path)
+                    
+                    if not abs_path.exists():
+                        print(f"Warning: {file_path_attr} does not exist: {abs_path}")
 
 
 # Default configuration instance

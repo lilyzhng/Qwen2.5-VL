@@ -1,3 +1,8 @@
+# TODO
+- change data/video_index.csv to data/video_index.parquet
+- check if there is any redundancy in /Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/benchmarks
+- the query embedding should be saved in parquet too, instead of npy
+
 # Qwen2.5-VL
 
 

@@ -14,13 +14,13 @@ from functools import wraps
 
 from .base import EmbeddingModel
 from .embedder import CosmosVideoEmbedder
-from .optimizations import (
-    OptimizedVideoDatabase, FaissSearchStrategy, OptimizedEmbeddingCache,
+from .faiss_backend import (
+    VideoDatabase, FaissSearchStrategy, EmbeddingCache,
     batch_normalize_embeddings
 )
 from .config import VideoRetrievalConfig
 from .exceptions import VideoNotFoundError, SearchError, NoResultsError
-from .query_cache import QueryDatabaseManager
+from .database import UnifiedQueryManager
 
 logger = logging.getLogger(__name__)
 
@@ -65,10 +65,10 @@ class OptimizedVideoSearchEngine:
         self.project_root = Path(__file__).parent.parent
         
         # Resolve database path
-        db_path = self._resolve_path(self.config.database_path)
+        db_path = self._resolve_path(self.config.main_embeddings_path)
         
         # Use optimized database with FAISS
-        self.database = OptimizedVideoDatabase(
+        self.database = VideoDatabase(
             db_path,
             self.config,
             use_faiss=True
@@ -78,12 +78,12 @@ class OptimizedVideoSearchEngine:
         self.search_strategy = FaissSearchStrategy(use_gpu=use_gpu_faiss)
         
         # Initialize embedding cache
-        self.embedding_cache = OptimizedEmbeddingCache(
+        self.embedding_cache = EmbeddingCache(
             cache_size=self.config.cache_size if hasattr(self.config, 'cache_size') else 1000
         )
         
-        # Initialize query database manager for pre-computed query embeddings
-        self.query_manager = QueryDatabaseManager(self.config)
+        # Initialize unified query manager for pre-computed query embeddings
+        self.query_manager = UnifiedQueryManager(self.config)
         
         # Model caching (singleton pattern from official implementation)
         self._model_cache = {}
@@ -109,36 +109,39 @@ class OptimizedVideoSearchEngine:
         """
         video_files = []
         
-        # Try to load from video index file (CSV or Parquet) first if configured
-        if self.config.video_csv:
-            index_path = self._resolve_path(self.config.video_csv)
-            if index_path.exists():
-                try:
-                    logger.info(f"Loading video files from index: {index_path}")
-                    # Support both CSV and Parquet formats
-                    if index_path.suffix.lower() == '.parquet':
-                        df = pd.read_parquet(index_path)
-                    else:
-                        df = pd.read_csv(index_path)
-                    
-                    # Check for sensor_video_file column
-                    if 'sensor_video_file' not in df.columns:
-                        logger.warning(f"Column 'sensor_video_file' not found in CSV. Available columns: {list(df.columns)}")
-                        logger.info("Falling back to directory scanning")
-                    else:
-                        # Get unique video file paths from CSV
-                        video_paths = df['sensor_video_file'].drop_duplicates().tolist()
-                        video_files = [Path(path) for path in video_paths if Path(path).exists()]
-                        
-                        if video_files:
-                            logger.info(f"Loaded {len(video_files)} video files from CSV")
-                            return video_files
-                        else:
-                            logger.warning("No valid video files found in CSV, falling back to directory scanning")
-                            
-                except Exception as e:
-                    logger.warning(f"Error reading CSV file: {e}")
+        # Try to load from main file path list first if configured
+        if hasattr(self.config, 'main_file_path') and self.config.main_file_path:
+            index_path = self._resolve_path(self.config.main_file_path)
+        else:
+            index_path = None
+            
+        if index_path and index_path.exists():
+            try:
+                logger.info(f"Loading video files from index: {index_path}")
+                # Support both CSV and Parquet formats
+                if index_path.suffix.lower() == '.parquet':
+                    df = pd.read_parquet(index_path)
+                else:
+                    df = pd.read_csv(index_path)
+                
+                # Check for sensor_video_file column
+                if 'sensor_video_file' not in df.columns:
+                    logger.warning(f"Column 'sensor_video_file' not found in index file. Available columns: {list(df.columns)}")
                     logger.info("Falling back to directory scanning")
+                else:
+                    # Get unique video file paths from index
+                    video_paths = df['sensor_video_file'].drop_duplicates().tolist()
+                    video_files = [Path(path) for path in video_paths if Path(path).exists()]
+                    
+                    if video_files:
+                        logger.info(f"Loaded {len(video_files)} video files from index")
+                        return video_files
+                    else:
+                        logger.warning("No valid video files found in index, falling back to directory scanning")
+                        
+            except Exception as e:
+                logger.warning(f"Error reading index file: {e}")
+                logger.info("Falling back to directory scanning")
         
         # Fallback to directory scanning
         video_dir = Path(video_directory)
@@ -168,7 +171,7 @@ class OptimizedVideoSearchEngine:
         if not force_rebuild:
             try:
                 if save_format == "parquet":
-                    db_path = self._resolve_path(self.config.database_path)
+                    db_path = self._resolve_path(self.config.main_embeddings_path)
                     self.database.load_from_parquet(db_path)
                 else:
                     self.database.load()
@@ -226,7 +229,20 @@ class OptimizedVideoSearchEngine:
         Returns:
             Build statistics
         """
-        query_dir = self._resolve_path(query_video_directory) if query_video_directory else self._resolve_path(self.config.user_input_dir)
+        # Use query file path if available, otherwise fall back to directory
+        if hasattr(self.config, 'query_file_path') and self.config.query_file_path:
+            # Load query videos from file path list
+            query_file_path = self._resolve_path(self.config.query_file_path)
+            if query_file_path.exists():
+                logger.info(f"Loading query videos from file path list: {query_file_path}")
+                return self.query_manager.build_query_database_from_file_list(query_file_path, force_rebuild)
+        
+        # Fallback to directory-based approach (should not be needed with file path lists)
+        if query_video_directory:
+            query_dir = self._resolve_path(query_video_directory)
+        else:
+            # No fallback directory available, require query_file_path
+            raise ValueError("No query video directory provided and no query_file_path configured")
         
         if not query_dir.exists():
             logger.warning(f"Query video directory not found: {query_dir}")
@@ -268,12 +284,24 @@ class OptimizedVideoSearchEngine:
         # Fall back to real-time computation
         logger.info(f"Falling back to real-time processing for: {filename}")
         
-        # Try to find the file in user input directory
-        query_path = self._resolve_path(self.config.user_input_dir) / filename
-        if not query_path.exists():
-            raise VideoNotFoundError(f"Query video not found: {filename}")
+        # Try to find the file in query file path list
+        if hasattr(self.config, 'query_file_path') and self.config.query_file_path:
+            query_file_path = self._resolve_path(self.config.query_file_path)
+            if query_file_path.exists():
+                # Load query file paths
+                if query_file_path.suffix.lower() == '.parquet':
+                    df = pd.read_parquet(query_file_path)
+                else:
+                    df = pd.read_csv(query_file_path)
+                
+                # Find the specific file
+                matching_rows = df[df['video_name'] == filename]
+                if len(matching_rows) > 0:
+                    query_path = Path(matching_rows.iloc[0]['sensor_video_file'])
+                    if query_path.exists():
+                        return self.search_by_video(query_path, top_k)
         
-        return self.search_by_video(query_path, top_k)
+        raise VideoNotFoundError(f"Query video not found: {filename}. Please ensure it's listed in query_file_path.")
     
     def _extract_embeddings_optimized(self, video_paths: List[Path]) -> List[Dict[str, Any]]:
         """
@@ -422,7 +450,7 @@ class OptimizedVideoSearchEngine:
         # Ensure database is loaded
         if not hasattr(self.database, 'embedding_matrix') or self.database.embedding_matrix is None:
             # Load from parquet format
-            db_path = self._resolve_path(self.config.database_path)
+            db_path = self._resolve_path(self.config.main_embeddings_path)
             self.database.load_from_parquet(db_path)
         
         # Use FAISS search
