@@ -1,0 +1,32 @@
+# NVIDIA Cosmos Video Retrieval System Configuration
+
+# Model configuration
+model_name: "/path/to/your/local/cosmos-model"
+device: "cuda"  # Use "cpu" if CUDA is not available
+batch_size: 4   # Number of videos to process in parallel
+num_frames: 8   # Number of frames to extract per video
+
+# Database configuration
+database_path: "data/video_embeddings.parquet"  # Path to parquet database file
+use_safe_serialization: true       # Use JSON + numpy instead of pickle
+
+# Video processing
+supported_formats: [".mp4", ".avi", ".mov", ".mkv", ".webm"]
+thumbnail_size: [224, 224]
+
+# Search configuration
+default_top_k: 5              # Default number of results to return
+similarity_threshold: 0.0     # Minimum similarity score (0-1)
+
+# Paths
+video_dir: "data/videos/video_database"
+user_input_dir: "data/videos/user_input"
+video_csv: "data/video_index.parquet"  # Path to video index file with video paths (requires sensor_video_file column)
+
+# Performance
+enable_caching: true
+cache_size: 1000
+
+# Logging
+log_level: "INFO"
+log_format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
