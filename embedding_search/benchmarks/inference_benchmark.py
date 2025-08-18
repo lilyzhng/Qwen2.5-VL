@@ -6,7 +6,6 @@ Performance Benchmark: Monitors inference time, GPU/CPU utilization, and memory 
 import sys
 from pathlib import Path
 
-# Add project root to Python path
 project_root = Path(__file__).parent.parent.absolute()
 sys.path.insert(0, str(project_root))
 
@@ -83,12 +82,10 @@ class PerformanceMonitor:
         while self.monitoring:
             timestamp = time.time()
             
-            # CPU and RAM monitoring
             cpu_percent = psutil.cpu_percent(interval=None)
             memory_info = psutil.virtual_memory()
             memory_mb = memory_info.used / (1024 * 1024)
             
-            # GPU monitoring - separate VRAM and utilization
             gpu_vram_mb = 0
             gpu_utilization_percent = 0
             
@@ -127,7 +124,6 @@ class PerformanceMonitor:
                 except Exception as e:
                     logger.debug(f"GPU monitoring error: {e}")
             
-            # Store metrics
             self.metrics['cpu_percent'].append(cpu_percent)
             self.metrics['memory_mb'].append(memory_mb)
             self.metrics['gpu_vram_mb'].append(gpu_vram_mb)
@@ -221,15 +217,13 @@ class InferenceBenchmark:
             
         logger.info(f"Benchmarking video: {video_path.name}")
         
-        # Clear GPU cache before inference
+        # Ensure clean GPU state by clearing cache and synchronizing
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
             
-        # Start monitoring
         monitor.start_monitoring()
         
-        # Run inference
         start_time = time.time()
         try:
             embeddings = self.embedder.extract_video_embedding(Path(video_path))
@@ -245,10 +239,8 @@ class InferenceBenchmark:
             monitor.stop_monitoring()
             return {'error': str(e), 'video_path': str(video_path)}
         
-        # Stop monitoring and get stats
         performance_stats = monitor.stop_monitoring()
         
-        # Compile results
         result = {
             'video_path': str(video_path),
             'video_name': video_path.name,
@@ -274,7 +266,6 @@ class InferenceBenchmark:
         """
         logger.info("Starting NVIDIA Cosmos Embed inference benchmark...")
         
-        # Get system info
         system_info = self.get_system_info()
         logger.info(f"System: {system_info['cpu_count']} CPU cores, "
                    f"{system_info['total_memory_gb']:.1f}GB RAM")
@@ -285,10 +276,8 @@ class InferenceBenchmark:
         else:
             logger.warning("CUDA not available - running on CPU")
             
-        # Setup model
         model_load_time = self.setup_model()
         
-        # Find video files
         video_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.webm'}
         video_files = [
             f for f in video_dir.rglob('*') 
@@ -300,7 +289,6 @@ class InferenceBenchmark:
             
         logger.info(f"Found {len(video_files)} videos to benchmark")
         
-        # Run benchmarks
         benchmark_results = []
         monitor = PerformanceMonitor()
         
@@ -313,7 +301,6 @@ class InferenceBenchmark:
             # Small delay between videos
             time.sleep(0.5)
             
-        # Calculate summary statistics
         successful_results = [r for r in benchmark_results if 'error' not in r]
         
         if successful_results:
@@ -343,7 +330,6 @@ class InferenceBenchmark:
         else:
             summary = {'error': 'No successful inferences'}
             
-        # Compile final results
         final_results = {
             'benchmark_info': {
                 'timestamp': datetime.now().isoformat(),
@@ -455,28 +441,23 @@ def main():
     
     args = parser.parse_args()
     
-    # Load configuration
     if args.config:
         config = VideoRetrievalConfig.from_yaml(args.config)
     else:
         config = VideoRetrievalConfig()
         
-    # Override device if specified
     if args.device:
         config.device = args.device
         
-    # Validate video directory
     video_dir = Path(args.video_dir)
     if not video_dir.exists():
         logger.error(f"Video directory not found: {video_dir}")
         return 1
         
     try:
-        # Run benchmark
         benchmark = InferenceBenchmark(config)
         results = benchmark.run_benchmark(video_dir, args.max_videos)
         
-        # Save and display results
         benchmark.save_results(results, args.output)
         benchmark.print_summary(results)
         

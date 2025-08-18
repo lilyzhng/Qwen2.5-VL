@@ -342,7 +342,7 @@ class MockVisualizer:
         
         # Header
         ax_header = fig.add_subplot(gs[0, :])
-        ax_header.text(0.5, 0.5, '🔍 NVIDIA Cosmos Video Search Dashboard (Mock Interface)', 
+        ax_header.text(0.5, 0.5, '🔍 ALFA 0.1 Video Search Dashboard (Mock Interface)', 
                       ha='center', va='center', fontsize=20, fontweight='bold',
                       bbox=dict(boxstyle="round,pad=0.5", facecolor="lightblue"))
         ax_header.set_xlim(0, 1)

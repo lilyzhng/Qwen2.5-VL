@@ -10,7 +10,6 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import sys
 from pathlib import Path
 
-# Add project root to Python path
 project_root = Path(__file__).parent.parent.absolute()
 sys.path.insert(0, str(project_root))
 
@@ -60,7 +59,7 @@ def load_search_engine() -> VideoSearchEngine:
         
         # Try to load existing database, if it fails, we'll work with empty database
         try:
-            search_engine.database.load_from_parquet(config.database_path + ".parquet")
+            search_engine.database.load_from_parquet(config.main_embeddings_path)
         except:
             try:
                 search_engine.database.load()
@@ -117,7 +116,6 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
     
     # Use all videos from database if provided, otherwise use just search results
     if all_videos and len(all_videos) > len(results):
-        # Create DataFrame with all videos
         df_all = pd.DataFrame([
             {
                 'video_name': r.get('video_name', f"Video {i+1}"),
@@ -200,7 +198,6 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
         df['z'] = query_z + distances * np.cos(phi) + np.random.randn(len(df)) * 0.3
         title = "3D Embedding Space - UMAP"
     else:  # similarity heatmap
-        # Create similarity matrix visualization
         n = len(df)
         similarity_matrix = np.random.rand(n, n) * 0.5 + 0.3
         for i in range(n):
@@ -252,14 +249,13 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
         )
         return fig
     
-    # Create 2D or 3D scatter plot
     if viz_method == "3d_umap":
         # Split data into search results and other videos
         if 'is_search_result' in df.columns:
             df_search = df[df['is_search_result'] == True]
             df_other = df[df['is_search_result'] == False]
             
-            # Create traces for non-search-result videos (grayed out)
+            # Separate traces: grayed out background videos vs highlighted search results
             traces = []
             if len(df_other) > 0:
                 traces.append(go.Scatter3d(
@@ -278,7 +274,6 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                     showlegend=True
                 ))
             
-            # Create trace for search results (colorful)
             if len(df_search) > 0:
                 traces.append(go.Scatter3d(
                     x=df_search['x'],
@@ -337,9 +332,8 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                 customdata=df[['rank', 'similarity']].values
             ))
         
-        # Add green/red circle highlights for top K results (3D)
+        # Highlight top K results with colored circles: red for selected, green for others
         if top_k is not None and top_k > 0:
-            # Get top K search results only
             if 'is_search_result' in df.columns:
                 search_results = df[df['is_search_result'] == True]
                 top_k_points = search_results.head(top_k)
@@ -661,7 +655,6 @@ def preview_video_with_thumbnail(video_info: Dict, height: int = 300) -> None:
             visualizer = VideoResultsVisualizer()
             thumbnail = visualizer.extract_thumbnail(full_path)
             
-            # Display thumbnail with proper aspect ratio (16:9)
             import base64
             import io
             from PIL import Image
@@ -741,7 +734,6 @@ def create_neighbor_grid(neighbors: List[Dict], num_cols: int = 3) -> None:
                     visualizer = VideoResultsVisualizer()
                     thumbnail = visualizer.extract_thumbnail(full_path)
                     
-                    # Display real thumbnail
                     st.image(thumbnail, use_container_width=True)
                     st.write(f"**{neighbor['video_name']}**")
                     st.write(f"Score: {neighbor['similarity_score']:.3f}")
@@ -1315,7 +1307,8 @@ def main():
             from pathlib import Path
             # Get project root and resolve video directory
             project_root = Path(__file__).parent.parent
-            video_dir = project_root / "data" / "videos" / "user_input"
+            # Use configurable path for query videos
+            video_dir = project_root / "data" / "videos" / "user_input"  # TODO: Make this configurable
             
             # Get available query videos (includes pre-computed ones)
             try:
@@ -1488,7 +1481,6 @@ def main():
                 } if viz_method == 'umap' and 'umap_neighbors' in locals() else {})
             )
             
-            # Display plot with click handling
             plot_selection = st.plotly_chart(
                 fig, 
                 use_container_width=True,
@@ -1549,7 +1541,6 @@ def main():
                 all_videos=all_videos
             )
             
-            # Display 3D plot with click handling
             plot_selection_3d = st.plotly_chart(
                 fig, 
                 use_container_width=True,
@@ -1585,7 +1576,6 @@ def main():
                 None
             )
             
-            # Display heatmap
             st.plotly_chart(fig, use_container_width=True, key=f"heatmap_{len(st.session_state.search_results)}")
         else:
             st.info("👆 Use the search interface in the sidebar to find videos and visualize them here!")

@@ -7,7 +7,6 @@ Shows how the visualization components work together.
 import sys
 from pathlib import Path
 
-# Add project root to Python path
 project_root = Path(__file__).parent.parent.absolute()
 sys.path.insert(0, str(project_root))
 
@@ -33,14 +32,12 @@ class TestVideoVisualizer(unittest.TestCase):
         self.temp_dir = Path(tempfile.mkdtemp())
         self.visualizer = VideoResultsVisualizer()
         
-        # Create mock video files
         self.mock_videos = []
         for i in range(5):
             video_path = self.temp_dir / f"video_{i}.mp4"
             self._create_mock_video(video_path)
             self.mock_videos.append(video_path)
         
-        # Create mock search results
         self.mock_results = [
             {
                 "rank": 1,
@@ -71,7 +68,7 @@ class TestVideoVisualizer(unittest.TestCase):
     
     def _create_mock_video(self, video_path: Path):
         """Create a mock video file for testing."""
-        # Create a simple video with colored frames
+        # Generate video with different colored frames for visual distinction
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(str(video_path), fourcc, 1.0, (224, 224))
         
@@ -123,7 +120,6 @@ class TestVideoVisualizer(unittest.TestCase):
         """Test video thumbnail extraction."""
         video_path = self.mock_videos[0]
         
-        # Extract thumbnail
         thumbnail = self.visualizer.extract_thumbnail(video_path)
         
         # Verify thumbnail properties

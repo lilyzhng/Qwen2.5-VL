@@ -9,14 +9,12 @@ from pathlib import Path
 import torch
 import numpy as np
 
-# Add project root to Python path
 project_root = Path(__file__).parent.parent.absolute()
 sys.path.insert(0, str(project_root))
 
 from core.config import VideoRetrievalConfig
 from core.embedder import CosmosVideoEmbedder
 
-# Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -66,7 +64,6 @@ def test_video_embedding(embedder):
         logger.warning("✗ Video directory not found, skipping video test")
         return None
     
-    # Find any video file
     video_files = []
     for ext in ['.mp4', '.avi', '.mov', '.mkv', '.webm']:
         video_files.extend(video_dir.glob(f"*{ext}"))

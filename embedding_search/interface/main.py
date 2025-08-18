@@ -153,7 +153,6 @@ def main():
         parser.print_help()
         return 0
     
-    # Load configuration
     config = VideoRetrievalConfig()
     
     if args.config:
@@ -176,7 +175,6 @@ def main():
     if hasattr(args, 'threshold') and args.threshold:
         config.similarity_threshold = args.threshold
     
-    # Validate configuration
     try:
         config.validate()
     except ValueError as e:

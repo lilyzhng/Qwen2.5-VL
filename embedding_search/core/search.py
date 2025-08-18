@@ -68,7 +68,7 @@ class VideoSearchEngine:
             use_faiss=True
         )
         
-        # Use FAISS search strategy
+        # FAISS provides faster similarity search with optional GPU acceleration
         self.search_strategy = FaissSearchStrategy(use_gpu=use_gpu_faiss)
         
         # Initialize embedding cache
@@ -171,7 +171,6 @@ class VideoSearchEngine:
             except Exception as e:
                 logger.info(f"Could not load existing database: {e}")
         
-        # Get video files using the new helper method
         video_files = self._get_video_files(video_directory)
         
         if not video_files:
@@ -190,7 +189,6 @@ class VideoSearchEngine:
         if new_videos:
             logger.info(f"Processing {len(new_videos)} new videos")
             
-            # Extract embeddings with batch processing
             embeddings_data = self._extract_embeddings_optimized(new_videos)
             
             if embeddings_data:

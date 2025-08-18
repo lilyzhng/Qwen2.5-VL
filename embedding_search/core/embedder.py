@@ -69,7 +69,6 @@ class VideoFrameProcessor(VideoProcessor):
             frame_ids = np.linspace(0, total_frames - 1, num_frames, dtype=int).tolist()
             frames = reader.get_batch(frame_ids).asnumpy()
             
-            # Get target resolution from config (default 448x448)
             target_height, target_width = self.config.resolution
             
             # Resize frames if they don't match target resolution
@@ -106,7 +105,6 @@ class VideoFrameProcessor(VideoProcessor):
             frame_ids = np.linspace(0, total_frames - 1, num_frames, dtype=int)
             frames = []
             
-            # Get target resolution from config
             target_height, target_width = self.config.resolution
             
             for frame_id in frame_ids:
@@ -153,7 +151,7 @@ class CosmosVideoEmbedder(EmbeddingModel):
         self.config = config or VideoRetrievalConfig()
         self.video_processor = VideoFrameProcessor(self.config)
         
-        # Set device and determine appropriate dtype
+        # Use CPU fallback when CUDA unavailable to prevent runtime errors
         self.device = self.config.device if torch.cuda.is_available() else "cpu"
         if self.device != self.config.device:
             logger.warning(f"CUDA not available, using CPU instead of {self.config.device}")
@@ -164,15 +162,12 @@ class CosmosVideoEmbedder(EmbeddingModel):
         
         logger.info(f"Initializing CosmosVideoEmbedder on {self.device} with dtype {self.dtype}")
         
-        # Load model and preprocessor
         try:
-            # Load the model from local path
             self.model = AutoModel.from_pretrained(
                 self.config.model_name, 
                 trust_remote_code=True
             ).to(self.device, dtype=self.dtype)
             
-            # Set model to evaluation mode
             self.model.eval()
             
             self.preprocess = AutoProcessor.from_pretrained(
@@ -216,13 +211,12 @@ class CosmosVideoEmbedder(EmbeddingModel):
             Normalized embedding vector
         """
         try:
-            # Load video frames
             frames = self.video_processor.load_frames(video_path)
             
             # Prepare batch for model (BTCHW format)
             batch = np.transpose(np.expand_dims(frames, 0), (0, 1, 4, 2, 3))
             
-            # Process video (following official implementation pattern)
+            # Disable gradients for inference to save memory and improve speed
             with torch.no_grad():
                 video_inputs = self.preprocess(videos=batch).to(
                     self.device, 
@@ -291,17 +285,14 @@ class CosmosVideoEmbedder(EmbeddingModel):
         embeddings_data = []
         failed_videos = []
         
-        # Process videos in batches
         with tqdm(total=len(video_paths), desc="Extracting embeddings") as pbar:
             for i in range(0, len(video_paths), batch_size):
                 batch_paths = video_paths[i:i+batch_size]
                 batch_frames = []
                 valid_paths = []
                 
-                # Load frames for batch
                 for path in batch_paths:
                     try:
-                        # Validate path
                         if not path.exists():
                             raise VideoNotFoundError(f"Video not found: {path}")
                         if not path.suffix.lower() in self.config.supported_formats:
@@ -330,7 +321,6 @@ class CosmosVideoEmbedder(EmbeddingModel):
                     
                     batch_tensor = np.stack(batch_videos, axis=0)
                     
-                    # Process batch
                     with torch.no_grad():
                         inputs = self.preprocess(videos=batch_tensor).to(
                             self.device,
