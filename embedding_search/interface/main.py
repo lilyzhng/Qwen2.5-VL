@@ -12,9 +12,6 @@ sys.path.insert(0, str(project_root))
 
 import argparse
 import logging
-import json
-import yaml
-import pandas as pd
 from core.search import VideoSearchEngine
 from core.visualizer import VideoResultsVisualizer
 from core.config import VideoRetrievalConfig
