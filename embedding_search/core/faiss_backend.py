@@ -11,9 +11,9 @@ import logging
 from functools import lru_cache
 import pandas as pd
 
-from .base import DatabaseBackend, SearchStrategy
+from .base import SearchStrategy
 from .config import VideoRetrievalConfig
-from typing import Union
+from typing import Union, Any
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ class FaissSearchStrategy(SearchStrategy):
         
     def search(self, 
                query_embedding: np.ndarray, 
-               database: DatabaseBackend, 
+               database: Any, 
                top_k: int = 5,
                filters: Optional[Dict[str, Any]] = None) -> List[Tuple[int, float, Dict]]:
         """
@@ -108,210 +108,7 @@ class FaissSearchStrategy(SearchStrategy):
         return results
 
 
-class VideoDatabase(DatabaseBackend):
-    """
-    Optimized database with caching and efficient storage inspired by the official implementation.
-    """
-    
-    def __init__(self, database_path: Union[str, Path] = "data/video_embeddings",
-                 config: Optional[VideoRetrievalConfig] = None,
-                 use_faiss: bool = True):
-        """
-        Initialize optimized database.
-        
-        Args:
-            database_path: Base path for database files
-            config: Configuration object
-            use_faiss: Whether to use FAISS for search
-        """
-        self.database_path = Path(database_path)
-        self.config = config or VideoRetrievalConfig()
-        self.use_faiss = use_faiss
-        
-        # Storage
-        self.embeddings = []
-        self.metadata = []
-        self.embedding_matrix = None
-        
-        # FAISS search strategy
-        self.faiss_search = FaissSearchStrategy() if use_faiss else None
-        
-        # Caching for frequently accessed data
-        self._cache = {}
-        
-    def add_embeddings(self, embeddings_data: List[Dict[str, Any]]):
-        """Add embeddings with automatic index updates."""
-        if not embeddings_data:
-            return
-            
-        for data in embeddings_data:
-            # Ensure normalization as in official implementation
-            embedding = data["embedding"].astype('float32')
-            faiss.normalize_L2(embedding.reshape(1, -1))
-            
-            self.embeddings.append(embedding)
-            self.metadata.append({
-                "video_path": str(data["video_path"]),
-                "video_name": Path(data["video_path"]).name,
-                **{k: v for k, v in data.items() if k not in ["embedding", "video_path"]}
-            })
-        
-        self._update_embedding_matrix()
-        self._clear_cache()
-        
-    def _update_embedding_matrix(self):
-        """Update embedding matrix and rebuild FAISS index if needed."""
-        if self.embeddings:
-            self.embedding_matrix = np.vstack(self.embeddings).astype('float32')
-            
-            # Rebuild FAISS index
-            if self.faiss_search:
-                self.faiss_search.build_index(self.embedding_matrix)
-        else:
-            self.embedding_matrix = None
-            
-    def compute_similarity(self, query_embedding: np.ndarray, top_k: int = 5) -> List[Tuple[int, float, Dict]]:
-        """Compute similarity using FAISS if available, otherwise fallback to numpy."""
-        if self.use_faiss and self.faiss_search:
-            return self.faiss_search.search(query_embedding, self, top_k)
-        else:
-            # Fallback to numpy implementation
-            return self._numpy_similarity(query_embedding, top_k)
-            
-    def _numpy_similarity(self, query_embedding: np.ndarray, top_k: int = 5) -> List[Tuple[int, float, Dict]]:
-        """Numpy-based similarity computation as fallback."""
-        if self.embedding_matrix is None:
-            return []
-            
-        # Normalize query
-        query_norm = query_embedding.astype('float32')
-        faiss.normalize_L2(query_norm.reshape(1, -1))
-        
-        # Compute similarities
-        similarities = np.dot(self.embedding_matrix, query_norm)
-        
-        # Get top-k
-        top_indices = np.argsort(similarities)[::-1][:top_k]
-        
-        results = []
-        for idx in top_indices:
-            results.append((
-                int(idx),
-                float(similarities[idx]),
-                self.metadata[idx].copy()
-            ))
-            
-        return results
-    
-    def save_as_parquet(self, path: Optional[Union[str, Path]] = None):
-        """
-        Save database in Parquet format as used in the official implementation.
-        This format is more efficient than JSON for large datasets.
-        """
-        save_path = Path(path) if path else self.database_path.with_suffix('.parquet')
-        
-        if not self.embeddings:
-            logger.warning("No embeddings to save")
-            return
-            
-        # Create DataFrame
-        data = []
-        for emb, meta in zip(self.embeddings, self.metadata):
-            row = meta.copy()
-            row['embedding'] = emb.tolist()
-            data.append(row)
-            
-        df = pd.DataFrame(data)
-        df.to_parquet(save_path, index=False)
-        
-        logger.info(f"Database saved to {save_path} in Parquet format")
-        
-    def load_from_parquet(self, path: Union[str, Path]):
-        """
-        Load database from Parquet format as used in the official implementation.
-        """
-        load_path = Path(path)
-        
-        if not load_path.exists():
-            raise FileNotFoundError(f"Parquet file not found: {load_path}")
-            
-        df = pd.read_parquet(load_path)
-        
-        # Extract embeddings
-        self.embeddings = []
-        self.metadata = []
-        
-        for _, row in df.iterrows():
-            embedding = np.array(row['embedding'], dtype='float32')
-            self.embeddings.append(embedding)
-            
-            # Extract metadata (all columns except embedding)
-            meta = row.to_dict()
-            del meta['embedding']
-            self.metadata.append(meta)
-            
-        self._update_embedding_matrix()
-        logger.info(f"Loaded {len(self.embeddings)} embeddings from {load_path}")
-    
-    @lru_cache(maxsize=128)
-    def get_cached_similarity(self, query_hash: str, top_k: int) -> List[Tuple[int, float, Dict]]:
-        """Cache similarity results for repeated queries."""
-        # This would be called with a hash of the query embedding
-        # Implementation would depend on how you want to handle caching
-        pass
-    
-    def get_statistics(self) -> Dict[str, Any]:
-        """Get statistics with additional FAISS information."""
-        stats = {
-            "num_videos": len(self.embeddings),
-            "embedding_dim": self.embeddings[0].shape[0] if self.embeddings else 0,
-            "using_faiss": self.use_faiss,
-            "index_type": type(self.faiss_search.index).__name__ if self.faiss_search and self.faiss_search.index else "None"
-        }
-        return stats
-    
-    def clear(self):
-        """Clear database and caches."""
-        self.embeddings = []
-        self.metadata = []
-        self.embedding_matrix = None
-        self._cache.clear()
-        if self.faiss_search:
-            self.faiss_search.index = None
-            
-    def save(self, path: Optional[Union[str, Path]] = None):
-        """Save using Parquet format for better performance."""
-        self.save_as_parquet(path)
-        
-    def load(self, path: Optional[Union[str, Path]] = None):
-        """Load from Parquet if available, otherwise try other formats."""
-        load_path = Path(path) if path else self.database_path
-        
-        # Try Parquet first
-        parquet_path = load_path.with_suffix('.parquet')
-        if parquet_path.exists():
-            self.load_from_parquet(parquet_path)
-            return
-            
-        # Fallback to other formats
-        raise NotImplementedError("Only Parquet format is supported in optimized database")
-        
-    def remove_video(self, video_path: str) -> bool:
-        """Remove video with index rebuild."""
-        for i, meta in enumerate(self.metadata):
-            if meta.get("video_path") == video_path:
-                del self.embeddings[i]
-                del self.metadata[i]
-                self._update_embedding_matrix()
-                self._clear_cache()
-                return True
-        return False
-        
-    def _clear_cache(self):
-        """Clear internal caches."""
-        self._cache.clear()
-        if hasattr(self.get_cached_similarity, 'cache_clear'):
-            self.get_cached_similarity.cache_clear()
+# VideoDatabase class removed - using ParquetVectorDatabase instead
 
 
 class EmbeddingCache:

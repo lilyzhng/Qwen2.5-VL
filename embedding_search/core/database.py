@@ -77,7 +77,30 @@ class ParquetVectorDatabase:
         
         if len(self.df) > 0:
             self.df = self.df.set_index('video_name', drop=False)
-
+    
+    @property
+    def embedding_matrix(self) -> Optional[np.ndarray]:
+        """Get embeddings as a numpy matrix for FAISS search."""
+        if self.df is None or len(self.df) == 0:
+            return None
+        # Convert list of embeddings to numpy array
+        embeddings = np.array(self.df['embedding'].tolist()).astype('float32')
+        return embeddings
+    
+    @property
+    def metadata(self) -> List[Dict[str, Any]]:
+        """Get metadata list for compatibility with FAISS search."""
+        if self.df is None or len(self.df) == 0:
+            return []
+        # Convert dataframe rows to metadata dictionaries
+        metadata_list = []
+        for _, row in self.df.iterrows():
+            meta = row.to_dict()
+            # Remove embedding from metadata to save memory
+            meta.pop('embedding', None)
+            metadata_list.append(meta)
+        return metadata_list
+    
     def add_embedding(self, video_name: str, video_path: Union[str, Path], 
                      embedding: np.ndarray, metadata: Optional[Dict] = None) -> bool:
         """

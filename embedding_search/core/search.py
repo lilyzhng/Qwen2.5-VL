@@ -14,12 +14,12 @@ from functools import wraps
 from .base import EmbeddingModel
 from .embedder import CosmosVideoEmbedder
 from .faiss_backend import (
-    VideoDatabase, FaissSearchStrategy, EmbeddingCache,
+    FaissSearchStrategy, EmbeddingCache,
     batch_normalize_embeddings
 )
 from .config import VideoRetrievalConfig
 from .exceptions import VideoNotFoundError, SearchError, NoResultsError
-from .database import UnifiedQueryManager
+from .database import UnifiedQueryManager, ParquetVectorDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -62,11 +62,8 @@ class VideoSearchEngine:
         
         db_path = self._resolve_path(self.config.main_embeddings_path)
         
-        self.database = VideoDatabase(
-            db_path,
-            self.config,
-            use_faiss=True
-        )
+        # Use ParquetVectorDatabase for main database to support thumbnails
+        self.database = ParquetVectorDatabase(db_path, self.config)
         
         # FAISS provides faster similarity search with optional GPU acceleration
         self.search_strategy = FaissSearchStrategy(use_gpu=use_gpu_faiss)
@@ -155,13 +152,10 @@ class VideoSearchEngine:
         """
         if not force_rebuild:
             try:
-                if save_format == "parquet":
-                    db_path = self._resolve_path(self.config.main_embeddings_path)
-                    self.database.load_from_parquet(db_path)
-                else:
-                    self.database.load()
-                logger.info("Loaded existing database")
-                return
+                # ParquetVectorDatabase loads automatically in __init__
+                if hasattr(self.database, 'df') and self.database.df is not None and len(self.database.df) > 0:
+                    logger.info("Loaded existing database")
+                    return
             except Exception as e:
                 logger.info(f"Could not load existing database: {e}")
         
@@ -173,11 +167,12 @@ class VideoSearchEngine:
         
         logger.info(f"Found {len(video_files)} video files")
         
-        if hasattr(self.database, 'metadata'):
-            existing_paths = {m.get("video_path") for m in self.database.metadata}
-            new_videos = [v for v in video_files if str(v) not in existing_paths]
-        else:
-            new_videos = video_files
+        # Check existing videos in ParquetVectorDatabase
+        existing_videos = set()
+        if hasattr(self.database, 'df') and self.database.df is not None and len(self.database.df) > 0:
+            existing_videos = set(self.database.df['video_path'].tolist())
+        
+        new_videos = [v for v in video_files if str(v.absolute()) not in existing_videos]
         
         if new_videos:
             logger.info(f"Processing {len(new_videos)} new videos")
@@ -185,13 +180,20 @@ class VideoSearchEngine:
             embeddings_data = self._extract_embeddings_optimized(new_videos)
             
             if embeddings_data:
-                self.database.add_embeddings(embeddings_data)
+                # Add embeddings one by one to ParquetVectorDatabase
+                for emb_data in embeddings_data:
+                    video_path = Path(emb_data["video_path"])
+                    video_name = video_path.name
+                    embedding = emb_data["embedding"]
+                    metadata = {
+                        "num_frames": self.config.num_frames,
+                        "category": "main",
+                        **{k: v for k, v in emb_data.items() if k not in ["video_path", "embedding"]}
+                    }
+                    self.database.add_embedding(video_name, video_path, embedding, metadata)
                 
-                if save_format == "parquet":
-                    self.database.save_as_parquet()
-                else:
-                    self.database.save()
-                    
+                # Save the database
+                self.database.save()
                 logger.info(f"Database updated with {len(embeddings_data)} videos")
         else:
             logger.info("All videos already in database")
@@ -405,9 +407,9 @@ class VideoSearchEngine:
         Returns:
             Formatted search results
         """
-        if not hasattr(self.database, 'embedding_matrix') or self.database.embedding_matrix is None:
-            db_path = self._resolve_path(self.config.main_embeddings_path)
-            self.database.load_from_parquet(db_path)
+        # Ensure database is loaded
+        if self.database.embedding_matrix is None:
+            logger.warning("No embeddings in database for search")
         
         results = self.search_strategy.search(
             query_embedding,
@@ -484,7 +486,12 @@ class VideoSearchEngine:
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get comprehensive statistics."""
+        # Get stats from ParquetVectorDatabase
         stats = self.database.get_statistics()
+        
+        # Map ParquetVectorDatabase stats to expected format
+        if 'total_embeddings' in stats:
+            stats['num_videos'] = stats.pop('total_embeddings', 0)
         
         stats.update({
             "cache_size": len(self.embedding_cache._cache),
@@ -504,14 +511,14 @@ class VideoSearchEngine:
             stats = self.get_statistics()
             
             video_names = []
-            if hasattr(self.database, 'metadata') and self.database.metadata:
-                video_names = [meta.get('video_name', '') for meta in self.database.metadata]
-            
             database_size_mb = 0
-            if hasattr(self.database, 'embedding_matrix') and self.database.embedding_matrix is not None:
-                matrix_size = self.database.embedding_matrix.nbytes / (1024 * 1024)
-                metadata_size = len(str(self.database.metadata)) / (1024 * 1024)
-                database_size_mb = matrix_size + metadata_size
+            
+            # Get data from ParquetVectorDatabase
+            if self.database.df is not None:
+                video_names = self.database.df['video_name'].tolist() if 'video_name' in self.database.df.columns else []
+                # Calculate database size from parquet file
+                if self.database.database_path.exists():
+                    database_size_mb = self.database.database_path.stat().st_size / (1024 * 1024)
             
             info = {
                 'num_videos': stats.get('num_videos', 0),

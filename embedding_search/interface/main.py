@@ -64,9 +64,9 @@ def main():
         help='Directory containing video files'
     )
     build_parser.add_argument(
-        '--data-path-file',
+        '--main-file-path',
         type=str,
-        help='Path to video index file containing video file paths (column: sensor_video_file)'
+        help='Path to main video index file containing video file paths (column: sensor_video_file)'
     )
     build_parser.add_argument(
         '--force-rebuild', '-f',
@@ -85,7 +85,7 @@ def main():
         help='Directory containing query video files'
     )
     build_query_parser.add_argument(
-        '--data-path-file',
+        '--query-file-path',
         type=str,
         help='Path to query video index file containing video file paths (column: sensor_video_file)'
     )
@@ -163,8 +163,10 @@ def main():
             return 1
     
     # Override config with command line arguments
-    if hasattr(args, 'data_path_file') and args.data_path_file:
-        config.main_file_path = args.data_path_file
+    if hasattr(args, 'main_file_path') and args.main_file_path:
+        config.main_file_path = args.main_file_path
+    if hasattr(args, 'query_file_path') and args.query_file_path:
+        config.query_file_path = args.query_file_path
     if hasattr(args, 'batch_size') and args.batch_size:
         config.batch_size = args.batch_size
     if hasattr(args, 'top_k') and args.top_k:

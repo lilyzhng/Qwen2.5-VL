@@ -644,12 +644,15 @@ def get_thumbnail_from_result(video_info: Dict) -> Optional[str]:
     Returns:
         Base64 encoded thumbnail string or None if not available
     """
-    # First try to get stored thumbnail
+    video_name = video_info.get('video_name', 'Unknown')
+    
     thumbnail_b64 = video_info.get('thumbnail', '')
     if thumbnail_b64:
         return thumbnail_b64
     
     # Fallback to on-the-fly extraction (legacy behavior)
+    logger.info(f"Extracting thumbnail on-the-fly for {video_name}")
+    
     video_path = video_info.get('video_path', '')
     if not video_path:
         return None
@@ -683,11 +686,16 @@ def get_thumbnail_from_result(video_info: Dict) -> Optional[str]:
         # Convert to base64 with high quality
         img_buffer = io.BytesIO()
         thumbnail_pil.save(img_buffer, format='JPEG', quality=95, optimize=True)
-        return base64.b64encode(img_buffer.getvalue()).decode()
+        result = base64.b64encode(img_buffer.getvalue()).decode()
+        
+        return result
         
     except Exception as e:
         logger.warning(f"Failed to extract thumbnail for {video_path}: {e}")
         return None
+
+
+# get_thumbnail_with_source_info function removed as requested
 
 
 def preview_video_with_thumbnail(video_info: Dict, height: int = 300) -> None:
@@ -1608,6 +1616,8 @@ def main():
     if st.session_state.search_results:
         st.markdown('<div class="section-title">Top K Results</div>', unsafe_allow_html=True)
 
+        # Removed thumbnail loading summary as requested
+
         current_selection = max(
             st.session_state.text_selection.idx if st.session_state.text_selection.is_valid() else -1,
             st.session_state.click_selection.idx if st.session_state.click_selection.is_valid() else -1
@@ -1659,7 +1669,7 @@ def main():
                                 <div style="color: {score_color}; font-weight: 600; font-size: 0.65rem; line-height: 1.0; margin-bottom: 1px;">
                                     Score: {video['similarity_score']:.3f} {'✓' if is_selected else ''}
                                 </div>
-                                <div style="color: #64748b; font-size: 0.6rem; line-height: 1.0;">
+                                <div style="color: #64748b; font-size: 0.6rem; line-height: 1.0; margin-bottom: 1px;">
                                     Rank #{video.get('rank', i+1)}
                                 </div>
                             </div>

@@ -50,14 +50,14 @@ Build the main video database from your reference video collection:
 
 ```bash
 # Using video file list
-python interface/main.py build-main --data-path-file data/main_file_path.parquet
+python interface/main.py build-main --main-file-path data/main_file_path.parquet
 ```
 ### 2. Generate Query Embeddings Database
 Build the query video database for fast similarity search:
 
 ```bash
 # Using query file list
-python interface/main.py build-query --data-path-file data/query_file_path.parquet
+python interface/main.py build-query --query-file-path data/query_file_path.parquet
 ```
 
 ### 3. Launch Streamlit App
