@@ -18,14 +18,16 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-import torch
+import base64
+import io
 from datetime import datetime
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict
 import logging
+from PIL import Image
 from core.search import VideoSearchEngine
 from core.visualizer import VideoResultsVisualizer
 from core.config import VideoRetrievalConfig
-from core.exceptions import VideoNotFoundError, NoResultsError
+from core.exceptions import NoResultsError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -83,8 +85,6 @@ def load_database_info(_engine: VideoSearchEngine) -> Dict:
             "categories": 0,
             "embedding_dim": 768,
             "search_backend": "FAISS",
-            "using_gpu": False,
-            "cache_size": 0,
             "error": str(e)
         }
 
@@ -628,9 +628,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
     return fig
 
 
-def create_similarity_plot(results: List[Dict], selected_idx: Optional[int] = None) -> go.Figure:
-    """Legacy function for backwards compatibility."""
-    return create_embedding_visualization(results, "umap", selected_idx)
+
 
 
 def get_thumbnail_from_result(video_info: Dict) -> Optional[str]:
@@ -673,10 +671,6 @@ def get_thumbnail_from_result(video_info: Dict) -> Optional[str]:
         if thumbnail is None:
             return None
             
-        import base64
-        import io
-        from PIL import Image
-        
         # Convert numpy array to PIL if needed
         if isinstance(thumbnail, np.ndarray):
             thumbnail_pil = Image.fromarray(thumbnail)
@@ -693,136 +687,6 @@ def get_thumbnail_from_result(video_info: Dict) -> Optional[str]:
     except Exception as e:
         logger.warning(f"Failed to extract thumbnail for {video_path}: {e}")
         return None
-
-
-# get_thumbnail_with_source_info function removed as requested
-
-
-def preview_video_with_thumbnail(video_info: Dict, height: int = 300) -> None:
-    """
-    Create a video preview with real thumbnail extraction.
-    Falls back to placeholder if thumbnail extraction fails.
-    """
-    video_path = video_info.get('video_path', '')
-    slice_id = video_info.get('slice_id', 'Unknown')
-    similarity = video_info.get('similarity_score', 0)
-    rank = video_info.get('rank', 'N/A')
-    
-    # Get thumbnail using the new helper function
-    thumbnail_b64 = get_thumbnail_from_result(video_info)
-    
-    if thumbnail_b64:
-        # Create a container with 16:9 aspect ratio
-        st.markdown(
-            f"""
-            <div style="position: relative; width: 100%; padding-bottom: 56.25%; /* 16:9 aspect ratio */">
-                <img src="data:image/jpeg;base64,{thumbnail_b64}" 
-                     style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 8px;">
-            </div>
-            """, 
-            unsafe_allow_html=True
-        )
-    else:
-        # Fallback to placeholder if no thumbnail available
-        preview_video_placeholder(video_info, height)
-
-
-def preview_video_placeholder(video_info: Dict, height: int = 300) -> None:
-    """
-    Create a video preview placeholder as fallback.
-    """
-    st.markdown(f"""
-    <div class="video-thumbnail" style="height: {height}px;">
-        🎬
-    </div>
-    <div style="text-align: center; margin-top: 1rem;">
-        <h3 style="color: #1e293b; margin-bottom: 0.5rem;">{video_info.get('slice_id', 'Unknown')}</h3>
-        <p style="color: #6366f1; font-weight: 600; font-size: 1.2rem; margin-bottom: 0.5rem;">
-            Similarity: {video_info.get('similarity_score', 0):.3f}
-        </p>
-        <p style="color: #64748b; margin-bottom: 0.5rem;">Rank: #{video_info.get('rank', 'N/A')}</p>
-        <small style="color: #9ca3af;">
-            Video file not found or thumbnail extraction failed
-        </small>
-    </div>
-    """, unsafe_allow_html=True)
-
-
-def create_neighbor_grid(neighbors: List[Dict], num_cols: int = 3) -> None:
-    """Create a grid of neighbor videos with real thumbnails."""
-    if not neighbors:
-        st.write("No neighbors to display")
-        return
-    
-    # Create columns
-    cols = st.columns(num_cols)
-    
-    for i, neighbor in enumerate(neighbors[:num_cols]):
-        with cols[i]:
-            # Get thumbnail using the new helper function
-            thumbnail_b64 = get_thumbnail_from_result(neighbor)
-            
-            if thumbnail_b64:
-                # Display thumbnail directly from base64
-                import base64
-                import io
-                from PIL import Image
-                
-                thumbnail_bytes = base64.b64decode(thumbnail_b64)
-                thumbnail_pil = Image.open(io.BytesIO(thumbnail_bytes))
-                thumbnail_array = np.array(thumbnail_pil)
-                
-                st.image(thumbnail_array, use_container_width=True)
-                st.write(f"**{neighbor['slice_id']}**")
-                st.write(f"Score: {neighbor['similarity_score']:.3f}")
-            else:
-                # Fallback to placeholder
-                create_neighbor_placeholder(neighbor)
-
-
-def create_neighbor_placeholder(neighbor: Dict) -> None:
-    """Create a placeholder for neighbor video."""
-    st.markdown(f"""
-    <div class="video-card">
-        <div style="
-            width: 100%;
-            height: 100px;
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 0.75rem;
-            font-size: 2rem;
-            color: white;
-            position: relative;
-            overflow: hidden;
-        ">
-            <div style="
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background: linear-gradient(45deg, 
-                    rgba(255,255,255,0.1) 25%, 
-                    transparent 25%, 
-                    transparent 75%, 
-                    rgba(255,255,255,0.1) 75%);
-                background-size: 15px 15px;
-            "></div>
-            🎥
-        </div>
-        <div style="text-align: center;">
-            <div style="font-weight: 600; color: #1e293b; margin-bottom: 0.25rem; font-size: 0.9rem;">
-                {neighbor['slice_id']}
-            </div>
-            <div style="color: #6366f1; font-weight: 600; font-size: 0.85rem;">
-                Score: {neighbor['similarity_score']:.3f}
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
 
 
 def main():
@@ -994,37 +858,7 @@ def main():
             border: 1px solid rgba(226, 232, 240, 0.5);
         }
         
-        .video-thumbnail {
-            width: 100%;
-            height: 300px;
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
-            border-radius: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 4rem;
-            color: white;
-            margin-bottom: 1.5rem;
-            position: relative;
-            overflow: hidden;
-            box-shadow: 0 20px 40px rgba(99, 102, 241, 0.3);
-        }
-        
-        .video-thumbnail::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: linear-gradient(45deg, 
-                rgba(255,255,255,0.1) 25%, 
-                transparent 25%, 
-                transparent 75%, 
-                rgba(255,255,255,0.1) 75%);
-            background-size: 30px 30px;
-        }
-        
+
         /* Video cards */
         .video-card {
             background: white;
@@ -1060,15 +894,9 @@ def main():
             box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
         }
         
-        /* Button styling - Force purple for all buttons */
+        /* Button styling - Only style actual buttons, not containers */
         .stButton > button,
-        div[data-testid="stButton"] > button,
-        .stButton button,
-        button[data-baseweb="button"],
-        button[kind="primary"],
-        button[kind="secondary"],
-        .stButton,
-        div[data-testid="stButton"] {
+        div[data-testid="stButton"] > button {
             background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
             color: white !important;
             border: none !important;
@@ -1081,44 +909,32 @@ def main():
             height: auto !important;
             min-height: 2.5rem !important;
             display: block !important;
+            box-sizing: border-box !important;
         }
         
-        /* Ensure button containers also take full width */
+        /* Ensure button containers take full width but don't get button styling */
         .stButton,
         div[data-testid="stButton"] {
             width: 100% !important;
         }
         
-        /* Specific styling for sidebar buttons to ensure consistent width */
-        .css-1d391kg .stButton > button,
-        .css-1d391kg div[data-testid="stButton"] > button,
-        .sidebar .stButton > button,
-        .sidebar div[data-testid="stButton"] > button {
-            width: 100% !important;
-            min-width: 100% !important;
-            max-width: 100% !important;
-            box-sizing: border-box !important;
-        }
-        
         .stButton > button:hover,
-        div[data-testid="stButton"] > button:hover,
-        .stButton button:hover,
-        button[data-baseweb="button"]:hover,
-        button[kind="primary"]:hover,
-        button[kind="secondary"]:hover {
+        div[data-testid="stButton"] > button:hover {
             transform: translateY(-2px) !important;
             box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4) !important;
             background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
         }
         
         /* Secondary button */
-        .stButton > button[kind="secondary"] {
-            background: linear-gradient(135deg, #64748b 0%, #475569 100%);
-            box-shadow: 0 4px 8px rgba(100, 116, 139, 0.2);
+        .stButton > button[kind="secondary"],
+        div[data-testid="stButton"] > button[kind="secondary"] {
+            background: linear-gradient(135deg, #64748b 0%, #475569 100%) !important;
+            box-shadow: 0 4px 8px rgba(100, 116, 139, 0.2) !important;
         }
         
-        .stButton > button[kind="secondary"]:hover {
-            box-shadow: 0 8px 20px rgba(100, 116, 139, 0.4);
+        .stButton > button[kind="secondary"]:hover,
+        div[data-testid="stButton"] > button[kind="secondary"]:hover {
+            box-shadow: 0 8px 20px rgba(100, 116, 139, 0.4) !important;
         }
         
         /* Selectbox styling */
@@ -1232,15 +1048,33 @@ def main():
             margin-bottom: 0.25rem !important;
         }
         
-        /* Hide any unwanted buttons in results area */
-        .stColumn:last-child .stButton {
-            display: none !important;
+        /* Smaller buttons for top K results */
+        .top-k-button button {
+            padding: 0.3rem 0.8rem !important;
+            font-size: 0.8rem !important;
+            min-height: 2rem !important;
         }
         
-        /* Hide empty button containers */
-        .stColumn:last-child .element-container:empty {
-            display: none !important;
+        /* Custom scrollbar styling for horizontal scroll */
+        .horizontal-scroll-container::-webkit-scrollbar {
+            height: 8px;
         }
+        
+        .horizontal-scroll-container::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 4px;
+        }
+        
+        .horizontal-scroll-container::-webkit-scrollbar-thumb {
+            background: #6366f1;
+            border-radius: 4px;
+        }
+        
+        .horizontal-scroll-container::-webkit-scrollbar-thumb:hover {
+            background: #4f46e5;
+        }
+        
+
         
         /* Style buttons in results column */
         .stColumn:last-child .stButton > button {
@@ -1261,16 +1095,6 @@ def main():
             background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-        
-        /* Style thumbnail containers */
-        .stColumn:last-child .stImage {
-            margin-bottom: 0.5rem;
-        }
-        
-        /* Add spacing between result items */
-        .stColumn:last-child .element-container {
-            margin-bottom: 0.75rem !important;
         }
         
         /* Make result cards more interactive */
@@ -1325,12 +1149,11 @@ def main():
         st.session_state.text_query = ""
     if 'search_results' not in st.session_state:
         st.session_state.search_results = []
-    if 'force_update' not in st.session_state:
-        st.session_state.force_update = False
+
     if 'input_video_info' not in st.session_state:
         st.session_state.input_video_info = None
     if 'similarity_threshold' not in st.session_state:
-        st.session_state.similarity_threshold = 0.5
+        st.session_state.similarity_threshold = 0.3  # Lower default for better text search compatibility
     if 'top_k' not in st.session_state:
         st.session_state.top_k = 5
     
@@ -1455,7 +1278,9 @@ def main():
                         
                         st.success(f"Found {len(results)} results!")
                     except NoResultsError:
-                        st.warning("No results found above similarity threshold")
+                        st.warning(f"No results found above similarity threshold ({st.session_state.similarity_threshold:.2f})")
+                        if st.session_state.similarity_threshold > 0.3:
+                            st.info("💡 **Tip:** Text searches typically have lower similarity scores. Try reducing the similarity threshold to 0.1-0.3 for better results.")
                     except Exception as e:
                         st.error(f"Search failed: {e}")
             else:
@@ -1463,7 +1288,14 @@ def main():
 
         st.session_state.top_k = st.slider("Top-K Results", 1, 15, st.session_state.top_k)
 
-        st.session_state.similarity_threshold = st.slider("Similarity Threshold", 0.0, 1.0, st.session_state.similarity_threshold, 0.1)
+        st.session_state.similarity_threshold = st.slider(
+            "Similarity Threshold", 
+            0.0, 
+            1.0, 
+            st.session_state.similarity_threshold, 
+            0.05,  # Smaller step size for finer control
+            help="Lower values show more results. Text searches typically need lower thresholds (0.1-0.3) than video searches (0.3-0.5)."
+        )
 
         viz_method = st.selectbox(
             "Visualization Method",
@@ -1545,7 +1377,7 @@ def main():
                 **({
                     'neighbors': umap_neighbors,
                     'min_dist': umap_min_dist
-                } if viz_method == 'umap' and 'umap_neighbors' in locals() else {})
+                } if viz_method == 'umap' else {})
             )
             
             plot_selection = st.plotly_chart(
@@ -1562,15 +1394,6 @@ def main():
                 if clicked_idx != st.session_state.click_selection.idx:
                     st.session_state.click_selection = SelectedVideo(clicked_idx)
                     st.rerun()
-            
-            # Add click instructions
-            # st.markdown("""
-            # <div style="text-align: center; margin-top: 1rem; padding: 1rem; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 12px; border: 1px solid rgba(226, 232, 240, 0.5);">
-            #     <p style="margin: 0; color: #64748b; font-size: 0.9rem;">
-            #         💡 <strong>Tip:</strong> Click on any point in the visualization to view that video in the primary view below
-            #     </p>
-            # </div>
-            # """, unsafe_allow_html=True)
         else:
             st.info("👆 Use the search interface in the sidebar to find videos and visualize them here!")
     
@@ -1617,15 +1440,6 @@ def main():
                 if clicked_idx != st.session_state.click_selection.idx:
                     st.session_state.click_selection = SelectedVideo(clicked_idx)
                     st.rerun()
-            
-            # # Add click instructions for 3D view
-            # st.markdown("""
-            # <div style="text-align: center; margin-top: 1rem; padding: 1rem; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 12px; border: 1px solid rgba(226, 232, 240, 0.5);">
-            #     <p style="margin: 0; color: #64748b; font-size: 0.9rem;">
-            #         💡 <strong>Tip:</strong> Click on any point in the 3D visualization to view that video in the primary view below
-            #     </p>
-            # </div>
-            # """, unsafe_allow_html=True)
         else:
             st.info("👆 Use the search interface in the sidebar to find videos and visualize them here!")
     
@@ -1642,8 +1456,7 @@ def main():
         else:
             st.info("👆 Use the search interface in the sidebar to find videos and visualize them here!")
     
-    if st.session_state.get('force_update', False):
-        st.session_state.force_update = False
+
 
     if st.session_state.search_results:
 
@@ -1658,67 +1471,123 @@ def main():
         st.markdown("""
         <div style="text-align: center; margin-bottom: 1.5rem;">
             <h3 style="color: #1e293b; font-size: 1.5rem; font-weight: 700; margin: 0;">Top K Results</h3>
+            <p style="color: #64748b; font-size: 0.9rem; margin-top: 0.5rem; font-style: italic;">
+                💡 Click on points in the embedding visualization above to select and view different results
+            </p>
         </div>
         """, unsafe_allow_html=True)
         
-        # Use Streamlit columns with better styling - display exactly top_k results up to 5 max
-        num_display_results = min(st.session_state.top_k, 5, len(st.session_state.search_results))
-        result_columns = st.columns(num_display_results)
+        # Create a fixed-width horizontal scrollable container for top K results
+        total_results = len(st.session_state.search_results)
         
-        for i, video in enumerate(st.session_state.search_results[:num_display_results]):
-            with result_columns[i]:
+        # Use native Streamlit columns for guaranteed horizontal layout
+        # Show up to 5 results in columns, then add a note about scrolling through embedding visualization
+        num_display_results = min(5, len(st.session_state.search_results))
+        
+        if num_display_results > 0:
+            result_columns = st.columns(num_display_results)
+            
+            for i in range(num_display_results):
+                video = st.session_state.search_results[i]
                 is_selected = (current_selection == i)
-                thumbnail_data = get_thumbnail_from_result(video)
                 
-                # Single rank button with consistent styling
-                if st.button(f"Rank {i+1}", key=f"select_result_{i}", 
-                           use_container_width=True, 
-                           type="primary" if is_selected else "secondary"):
-                    st.session_state.text_selection = SelectedVideo(i)
-                    st.rerun()
-                
-                # Display thumbnail with consistent aspect ratio
-                if thumbnail_data:
-                    try:
-                        import base64
-                        import io
-                        from PIL import Image
-                        
-                        thumbnail_bytes = base64.b64decode(thumbnail_data)
-                        thumbnail_pil = Image.open(io.BytesIO(thumbnail_bytes))
-                        thumbnail_array = np.array(thumbnail_pil)
-                        
-                        st.image(thumbnail_array, use_container_width=True)
-                    except Exception as e:
-                        logger.warning(f"Failed to display thumbnail for {video['slice_id']}: {e}")
+                with result_columns[i]:
+                    # Get thumbnail data
+                    thumbnail_data = get_thumbnail_from_result(video)
+                    
+                    # Style variables
+                    border_style = "border: 3px solid #6366f1;" if is_selected else "border: 2px solid #e2e8f0;"
+                    overlay_bg = "rgba(99,102,241,0.9)" if is_selected else "rgba(0,0,0,0.7)"
+                    overlay_shadow = "box-shadow: 0 2px 8px rgba(99,102,241,0.4);" if is_selected else ""
+                    checkmark = " ✓" if is_selected else ""
+                    
+                    if thumbnail_data:
+                        try:
+                            # Process image
+                            thumbnail_bytes = base64.b64decode(thumbnail_data)
+                            thumbnail_pil = Image.open(io.BytesIO(thumbnail_bytes))
+                            
+                            # Resize to fixed height
+                            fixed_height = 200
+                            original_width, original_height = thumbnail_pil.size
+                            aspect_ratio = original_width / original_height
+                            calculated_width = int(fixed_height * aspect_ratio)
+                            
+                            thumbnail_pil_resized = thumbnail_pil.resize((calculated_width, fixed_height), Image.Resampling.LANCZOS)
+                            
+                            # Convert to base64
+                            img_buffer = io.BytesIO()
+                            thumbnail_pil_resized.save(img_buffer, format='JPEG', quality=95)
+                            img_b64 = base64.b64encode(img_buffer.getvalue()).decode()
+                            
+                            # Display image with overlay
+                            st.markdown(f"""
+                            <div style="position: relative; margin-bottom: 0.5rem;">
+                                <img src="data:image/jpeg;base64,{img_b64}" 
+                                     style="width: 100%; height: 200px; border-radius: 8px; object-fit: cover; {border_style}">
+                                <div style="position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); 
+                                     background: {overlay_bg}; color: white; padding: 4px 8px; border-radius: 4px; 
+                                     font-size: 0.75rem; font-weight: 600; backdrop-filter: blur(4px); {overlay_shadow}">
+                                    Rank {i+1}{checkmark}
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                        except Exception as e:
+                            logger.warning(f"Failed to display thumbnail for {video['slice_id']}: {e}")
+                            # Fallback placeholder
+                            st.markdown(f"""
+                            <div style="position: relative; margin-bottom: 0.5rem;">
+                                <div style="width: 100%; height: 200px; background: #6366f1; border-radius: 8px; {border_style}
+                                     display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
+                                    🎬
+                                </div>
+                                <div style="position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); 
+                                     background: {overlay_bg}; color: white; padding: 4px 8px; border-radius: 4px; 
+                                     font-size: 0.75rem; font-weight: 600; backdrop-filter: blur(4px); {overlay_shadow}">
+                                    Rank {i+1}{checkmark}
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                    else:
+                        # Colored placeholder
+                        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
+                        color = colors[i % len(colors)]
                         st.markdown(f"""
-                        <div style="width: 100%; aspect-ratio: 16/9; background: #6366f1; border-radius: 8px;
-                             display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
-                            🎬
+                        <div style="position: relative; margin-bottom: 0.5rem;">
+                            <div style="width: 100%; height: 200px; background: {color}; border-radius: 8px; {border_style}
+                                 display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
+                                🎬
+                            </div>
+                            <div style="position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); 
+                                 background: {overlay_bg}; color: white; padding: 4px 8px; border-radius: 4px; 
+                                 font-size: 0.75rem; font-weight: 600; backdrop-filter: blur(4px); {overlay_shadow}">
+                                Rank {i+1}{checkmark}
+                            </div>
                         </div>
                         """, unsafe_allow_html=True)
-                else:
-                    # Placeholder with consistent styling
-                    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
-                    color = colors[i % len(colors)]
+                    
+                    # Video info - single row with ID and score
                     st.markdown(f"""
-                    <div style="width: 100%; aspect-ratio: 16/9; background: {color}; border-radius: 8px;
-                         display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
-                        🎬
+                    <div style="text-align: center; margin-top: 0.75rem;">
+                        <div style="font-size: 0.85rem; color: #1e293b;">
+                            <span style="font-weight: 600;">{video['slice_id'][:8]}</span>
+                            <span style="color: #6366f1; font-weight: 600; margin-left: 0.5rem;">
+                                Score: {video['similarity_score']:.3f}
+                            </span>
+                        </div>
                     </div>
                     """, unsafe_allow_html=True)
-                
-                # Video info with consistent typography
-                st.markdown(f"""
-                <div style="text-align: center; margin-top: 0.75rem;">
-                    <div style="font-size: 0.9rem; font-weight: 600; color: #1e293b; margin-bottom: 0.25rem;">
-                        {video['slice_id'][:8]}...
-                    </div>
-                    <div style="font-size: 0.85rem; color: #6366f1; font-weight: 600;">
-                        Score: {video['similarity_score']:.3f}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+        
+        # Add navigation hint if there are many results
+        if total_results > 5:
+            st.markdown(f"""
+            <div style="text-align: center; margin-top: 0.5rem;">
+                <small style="color: #64748b; font-style: italic;">
+                    Showing top 5 of {total_results} results. Click points in the embedding visualization above to view other results.
+                </small>
+            </div>
+            """, unsafe_allow_html=True)
         
         # Display input and selected result side by side with improved styling
         if current_selection is not None and current_selection < len(st.session_state.search_results):
@@ -1772,10 +1641,6 @@ def main():
                         # Display input thumbnail
                         if input_thumbnail:
                             try:
-                                import base64
-                                import io
-                                from PIL import Image
-                                
                                 thumbnail_bytes = base64.b64decode(input_thumbnail)
                                 thumbnail_pil = Image.open(io.BytesIO(thumbnail_bytes))
                                 thumbnail_array = np.array(thumbnail_pil)
@@ -1803,9 +1668,6 @@ def main():
                         <div style="text-align: center; margin-top: 0.75rem;">
                             <div style="font-size: 0.95rem; font-weight: 600; color: #1e293b; margin-bottom: 0.25rem;">
                                 {input_slice_id}
-                            </div>
-                            <div style="font-size: 0.8rem; color: #64748b;">
-                                Input Video
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
@@ -1846,10 +1708,6 @@ def main():
                 thumbnail_data = get_thumbnail_from_result(featured_video)
                 if thumbnail_data:
                     try:
-                        import base64
-                        import io
-                        from PIL import Image
-                        
                         thumbnail_bytes = base64.b64decode(thumbnail_data)
                         thumbnail_pil = Image.open(io.BytesIO(thumbnail_bytes))
                         thumbnail_array = np.array(thumbnail_pil)
@@ -1870,19 +1728,11 @@ def main():
                     </div>
                     """, unsafe_allow_html=True)
                 
-                # Display selected video info with compact styling
+                # Display selected video info - only slice_id
                 st.markdown(f"""
                 <div style="text-align: center; margin-top: 0.75rem;">
-                    <div style="font-size: 0.95rem; font-weight: 600; color: #1e293b; margin-bottom: 0.5rem;">
+                    <div style="font-size: 0.95rem; font-weight: 600; color: #1e293b;">
                         {featured_video['slice_id']}
-                    </div>
-                    <div style="font-size: 0.85rem; color: #64748b; margin-bottom: 0.25rem;">
-                        <span style="font-weight: 500;">Rank:</span> 
-                        <span style="color: #10b981; font-weight: 700;">#{featured_video.get('rank', current_selection + 1)}</span>
-                    </div>
-                    <div style="font-size: 0.85rem; color: #64748b;">
-                        <span style="font-weight: 500;">Score:</span> 
-                        <span style="color: #6366f1; font-weight: 700;">{featured_video['similarity_score']:.4f}</span>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
