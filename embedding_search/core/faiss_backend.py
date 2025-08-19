@@ -20,8 +20,7 @@ logger = logging.getLogger(__name__)
 
 class FaissSearchStrategy(SearchStrategy):
     """
-    Optimized search using FAISS library as shown in the official implementation.
-    FAISS provides highly optimized similarity search.
+    Search using FAISS library.
     """
     
     def __init__(self, use_gpu: bool = False):
@@ -44,7 +43,6 @@ class FaissSearchStrategy(SearchStrategy):
         """
         embeddings = embeddings.astype('float32')
         
-        # Normalize embeddings as done in the official implementation
         faiss.normalize_L2(embeddings)
         
         self.dimension = embeddings.shape[1]
@@ -66,7 +64,7 @@ class FaissSearchStrategy(SearchStrategy):
                top_k: int = 5,
                filters: Optional[Dict[str, Any]] = None) -> List[Tuple[int, float, Dict]]:
         """
-        Perform optimized search using FAISS.
+        Perform search using FAISS.
         
         Args:
             query_embedding: Query embedding vector
@@ -113,7 +111,7 @@ class FaissSearchStrategy(SearchStrategy):
 
 class EmbeddingCache:
     """
-    Caching mechanism for embeddings inspired by Streamlit's caching in the official implementation.
+    Caching mechanism for embeddings.
     """
     
     def __init__(self, cache_size: int = 1000):
@@ -148,8 +146,7 @@ class EmbeddingCache:
 # Additional optimization utilities
 def batch_normalize_embeddings(embeddings: np.ndarray) -> np.ndarray:
     """
-    Batch normalize embeddings using FAISS as in the official implementation.
-    This is more efficient than normalizing one by one.
+    Batch normalize embeddings using FAISS
     """
     embeddings = embeddings.astype('float32')
     faiss.normalize_L2(embeddings)
@@ -158,7 +155,7 @@ def batch_normalize_embeddings(embeddings: np.ndarray) -> np.ndarray:
 
 def create_index(embeddings: np.ndarray, index_type: str = "Flat") -> faiss.Index:
     """
-    Create an optimized FAISS index based on the number of embeddings.
+    Create a FAISS index based on the number of embeddings.
     
     Args:
         embeddings: Embeddings to index

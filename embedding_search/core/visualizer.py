@@ -111,11 +111,11 @@ class VideoResultsVisualizer:
                 thumb = self.extract_thumbnail(result['video_path'])
                 ax.imshow(thumb)
             except Exception as e:
-                logger.error(f"Error loading thumbnail for {result['video_name']}: {e}")
+                logger.error(f"Error loading thumbnail for {result['slice_id']}: {e}")
                 ax.text(0.5, 0.5, "Error loading\nthumbnail", ha='center', va='center')
             
             # Add title with rank and similarity score
-            title = f"Rank {result['rank']}\n{result['video_name']}\nScore: {result['similarity_score']:.3f}"
+            title = f"Rank {result['rank']}\n{result['slice_id']}\nScore: {result['similarity_score']:.3f}"
             ax.set_title(title, fontsize=10)
             ax.axis('off')
         
@@ -180,11 +180,11 @@ class VideoResultsVisualizer:
                 thumb = self.extract_thumbnail(result['video_path'])
                 ax.imshow(thumb)
             except Exception as e:
-                logger.error(f"Error loading thumbnail for {result['video_name']}: {e}")
+                logger.error(f"Error loading thumbnail for {result['slice_id']}: {e}")
                 ax.text(0.5, 0.5, "Error loading\nthumbnail", ha='center', va='center')
             
             # Add title with rank and similarity score
-            title = f"Rank {result['rank']}\n{result['video_name']}\nScore: {result['similarity_score']:.3f}"
+            title = f"Rank {result['rank']}\n{result['slice_id']}\nScore: {result['similarity_score']:.3f}"
             ax.set_title(title, fontsize=10)
             ax.axis('off')
         

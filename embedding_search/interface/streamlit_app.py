@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 class SelectedVideo:
-    """Track selected video with timestamp (following official implementation pattern)."""
+    """Track selected video with timestamp."""
     
     def __init__(self, idx: int = -1):
         self.idx = int(idx)
@@ -52,7 +52,7 @@ class SelectedVideo:
 
 @st.cache_resource
 def load_search_engine() -> VideoSearchEngine:
-    """Load and cache the search engine (following official caching pattern)."""
+    """Load and cache the search engine."""
     try:
         config = VideoRetrievalConfig()
         search_engine = VideoSearchEngine(config=config)
@@ -96,7 +96,7 @@ def get_all_videos_from_database(search_engine) -> List[Dict]:
             all_videos = []
             for i, metadata in enumerate(search_engine.database.metadata):
                 video_info = {
-                    'video_name': metadata.get('video_name', f"Video {i+1}"),
+                    'slice_id': metadata.get('slice_id', f"Video {i+1}"),
                     'video_path': metadata.get('video_path', ''),
                     'similarity_score': 0.1,  # Default low similarity
                     'rank': i + 1000,  # High rank for non-search results
@@ -118,7 +118,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
     if all_videos and len(all_videos) > len(results):
         df_all = pd.DataFrame([
             {
-                'video_name': r.get('video_name', f"Video {i+1}"),
+                'slice_id': r.get('slice_id', f"Video {i+1}"),
                 'similarity': 0.1,  # Default low similarity for non-search results
                 'rank': i + len(results) + 1,  # Rank after search results
                 'category': getattr(r, 'category', 'unknown'),
@@ -130,7 +130,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
         
         df_search = pd.DataFrame([
             {
-                'video_name': r['video_name'],
+                'slice_id': r['slice_id'],
                 'similarity': r['similarity_score'],
                 'rank': r['rank'],
                 'category': getattr(r, 'category', 'unknown'),
@@ -144,7 +144,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
     else:
         df = pd.DataFrame([
             {
-                'video_name': r['video_name'],
+                'slice_id': r['slice_id'],
                 'similarity': r['similarity_score'],
                 'rank': r['rank'],
                 'category': getattr(r, 'category', 'unknown'),
@@ -268,7 +268,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                         color='lightgray',
                         opacity=0.3
                     ),
-                    text=df_other['video_name'],
+                    text=df_other['slice_id'],
                     hovertemplate='<b>%{text}</b><br>Database Video<extra></extra>',
                     name='Videos',
                     showlegend=True
@@ -296,7 +296,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                             outlinewidth=0
                         )
                     ),
-                    text=df_search['video_name'],
+                    text=df_search['slice_id'],
                     hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<extra></extra>',
                     customdata=df_search[['rank', 'similarity']].values,
                     name='Search Results',
@@ -327,7 +327,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                         outlinewidth=0
                     )
                 ),
-                text=df['video_name'],
+                text=df['slice_id'],
                 hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<extra></extra>',
                 customdata=df[['rank', 'similarity']].values
             ))
@@ -362,7 +362,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                     name=f'Top {top_k} Results',
                     showlegend=True,
                     hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<br>Top Result<extra></extra>',
-                    text=top_k_points['video_name'],
+                    text=top_k_points['slice_id'],
                     customdata=top_k_points[['rank', 'similarity']].values
                 )
             )
@@ -462,7 +462,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                         color='lightgray',
                         opacity=0.3
                     ),
-                    text=df_other['video_name'],
+                    text=df_other['slice_id'],
                     hovertemplate='<b>%{text}</b><br>Database Video<extra></extra>',
                     name='Videos',
                     showlegend=True
@@ -490,7 +490,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                             outlinewidth=0
                         )
                     ),
-                    text=df_search['video_name'],
+                    text=df_search['slice_id'],
                     hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<extra></extra>',
                     customdata=df_search[['rank', 'similarity']].values,
                     name='Search Results',
@@ -504,7 +504,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                 y='y',
                 size='similarity',
                 color='similarity',
-                hover_name='video_name',
+                hover_name='slice_id',
                 hover_data=['rank', 'similarity'],
                 color_continuous_scale='Viridis',
                 title=title
@@ -513,7 +513,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             # Enhance hover template for better information display
             fig.update_traces(
                 hovertemplate='<b>%{hovertext}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<extra></extra>',
-                hovertext=df['video_name'],
+                hovertext=df['slice_id'],
                 customdata=df[['rank', 'similarity']].values
             )
         
@@ -547,7 +547,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                     name=f'Top {top_k} Results',
                     showlegend=True,
                     hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<br>Top Result<extra></extra>',
-                    text=top_k_points['video_name'],
+                    text=top_k_points['slice_id'],
                     customdata=top_k_points[['rank', 'similarity']].values
                 )
             )
@@ -644,14 +644,14 @@ def get_thumbnail_from_result(video_info: Dict) -> Optional[str]:
     Returns:
         Base64 encoded thumbnail string or None if not available
     """
-    video_name = video_info.get('video_name', 'Unknown')
+    slice_id = video_info.get('slice_id', 'Unknown')
     
     thumbnail_b64 = video_info.get('thumbnail', '')
     if thumbnail_b64:
         return thumbnail_b64
     
     # Fallback to on-the-fly extraction (legacy behavior)
-    logger.info(f"Extracting thumbnail on-the-fly for {video_name}")
+    logger.info(f"Extracting thumbnail on-the-fly for {slice_id}")
     
     video_path = video_info.get('video_path', '')
     if not video_path:
@@ -704,7 +704,7 @@ def preview_video_with_thumbnail(video_info: Dict, height: int = 300) -> None:
     Falls back to placeholder if thumbnail extraction fails.
     """
     video_path = video_info.get('video_path', '')
-    video_name = video_info.get('video_name', 'Unknown')
+    slice_id = video_info.get('slice_id', 'Unknown')
     similarity = video_info.get('similarity_score', 0)
     rank = video_info.get('rank', 'N/A')
     
@@ -736,7 +736,7 @@ def preview_video_placeholder(video_info: Dict, height: int = 300) -> None:
         🎬
     </div>
     <div style="text-align: center; margin-top: 1rem;">
-        <h3 style="color: #1e293b; margin-bottom: 0.5rem;">{video_info.get('video_name', 'Unknown')}</h3>
+        <h3 style="color: #1e293b; margin-bottom: 0.5rem;">{video_info.get('slice_id', 'Unknown')}</h3>
         <p style="color: #6366f1; font-weight: 600; font-size: 1.2rem; margin-bottom: 0.5rem;">
             Similarity: {video_info.get('similarity_score', 0):.3f}
         </p>
@@ -773,7 +773,7 @@ def create_neighbor_grid(neighbors: List[Dict], num_cols: int = 3) -> None:
                 thumbnail_array = np.array(thumbnail_pil)
                 
                 st.image(thumbnail_array, use_container_width=True)
-                st.write(f"**{neighbor['video_name']}**")
+                st.write(f"**{neighbor['slice_id']}**")
                 st.write(f"Score: {neighbor['similarity_score']:.3f}")
             else:
                 # Fallback to placeholder
@@ -815,7 +815,7 @@ def create_neighbor_placeholder(neighbor: Dict) -> None:
         </div>
         <div style="text-align: center;">
             <div style="font-weight: 600; color: #1e293b; margin-bottom: 0.25rem; font-size: 0.9rem;">
-                {neighbor['video_name']}
+                {neighbor['slice_id']}
             </div>
             <div style="color: #6366f1; font-weight: 600; font-size: 0.85rem;">
                 Score: {neighbor['similarity_score']:.3f}
@@ -1637,7 +1637,7 @@ def main():
             st.markdown(f"""
             <div style="text-align: center; margin-top: 1rem;">
                 <h3 style="color: #1e293b; margin-bottom: 0.5rem; font-size: 1.4rem;">
-                    {featured_video['video_name']} <span style="color: #6366f1; margin-left: 20px;">Score: {featured_video['similarity_score']:.3f}</span>
+                    {featured_video['slice_id']} <span style="color: #6366f1; margin-left: 20px;">Score: {featured_video['similarity_score']:.3f}</span>
                 </h3>
             </div>
             """, unsafe_allow_html=True)
@@ -1664,7 +1664,7 @@ def main():
                             </div>
                             <div style="flex: 1; min-width: 0; padding-left: 4px;">
                                 <div style="color: #1e293b; font-weight: 600; font-size: 0.75rem; line-height: 1.0; margin-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                    {video['video_name']}
+                                    {video['slice_id']}
                                 </div>
                                 <div style="color: {score_color}; font-weight: 600; font-size: 0.65rem; line-height: 1.0; margin-bottom: 1px;">
                                     Score: {video['similarity_score']:.3f} {'✓' if is_selected else ''}
@@ -1689,7 +1689,7 @@ def main():
                             </div>
                             <div style="flex: 1; min-width: 0; padding-left: 4px;">
                                 <div style="color: #1e293b; font-weight: 600; font-size: 0.75rem; line-height: 1.0; margin-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                    {video['video_name']}
+                                    {video['slice_id']}
                                 </div>
                                 <div style="color: {score_color}; font-weight: 600; font-size: 0.65rem; line-height: 1.0; margin-bottom: 1px;">
                                     Score: {video['similarity_score']:.3f} {'✓' if is_selected else ''}
@@ -1709,7 +1709,7 @@ def main():
             results_df = pd.DataFrame([
                 {
                     'Rank': r['rank'],
-                    'Video Name': r['video_name'],
+                    'Video Name': r['slice_id'],
                     'Similarity Score': f"{r['similarity_score']:.4f}",
                     'Video Path': r['video_path']
                 }

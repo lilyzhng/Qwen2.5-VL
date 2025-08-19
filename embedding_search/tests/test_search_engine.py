@@ -21,7 +21,7 @@ from core.search import VideoSearchEngine
 from core.config import VideoRetrievalConfig
 
 
-class TestOptimizedVideoSearchEngineUnified(unittest.TestCase):
+class TestVideoSearchEngineUnified(unittest.TestCase):
     """Test VideoSearchEngine with unified parquet storage."""
     
     def setUp(self):
@@ -79,12 +79,12 @@ class TestOptimizedVideoSearchEngineUnified(unittest.TestCase):
         # Create test file list
         test_videos = [
             {
-                'video_name': 'test1.mp4',
+                'slice_id': 'test1.mp4',
                 'sensor_video_file': str(self.test_dir / 'test1.mp4'),
                 'category': 'video_database'
             },
             {
-                'video_name': 'test2.mp4',
+                'slice_id': 'test2.mp4',
                 'sensor_video_file': str(self.test_dir / 'test2.mp4'),
                 'category': 'video_database'
             }

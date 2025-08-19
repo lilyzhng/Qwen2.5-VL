@@ -243,7 +243,7 @@ class InferenceBenchmark:
         
         result = {
             'video_path': str(video_path),
-            'video_name': video_path.name,
+            'slice_id': video_path.name,  # For benchmarking, use full filename as we don't have parquet mapping
             'inference_time_seconds': inference_time,
             'embedding_shape': embeddings.shape if embeddings is not None else None,
             'embedding_size_mb': embeddings.nbytes / (1024**2) if embeddings is not None else 0,

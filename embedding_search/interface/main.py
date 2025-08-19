@@ -235,7 +235,7 @@ def main():
             
             for result in results:
                 print(f"\nRank {result['rank']}:")
-                print(f"  Video: {result['video_name']}")
+                print(f"  Video: {result['slice_id']}")
                 print(f"  Path: {result['video_path']}")
                 print(f"  Similarity Score: {result['similarity_score']:.4f}")
             
@@ -270,10 +270,10 @@ def main():
             
             if info['num_videos'] > 0:
                 print("\nVideos in database:")
-                for i, video_name in enumerate(info['video_names'][:10], 1):
-                    print(f"  {i}. {video_name}")
-                if len(info['video_names']) > 10:
-                    print(f"  ... and {len(info['video_names']) - 10} more")
+                for i, slice_id in enumerate(info['slice_ids'][:10], 1):
+                    print(f"  {i}. {slice_id}")
+                if len(info['slice_ids']) > 10:
+                    print(f"  ... and {len(info['slice_ids']) - 10} more")
         
         elif args.command == 'query-info':
             stats = search_engine.get_statistics()
@@ -327,7 +327,7 @@ def main():
             text_results = search_engine.search_by_text("car approaching cyclist")
             for result in text_results[:3]:
                 print(f"\nRank {result['rank']}:")
-                print(f"  Video: {result['video_name']}")
+                print(f"  Video: {result['slice_id']}")
                 print(f"  Similarity Score: {result['similarity_score']:.4f}")
             
             logger.info("Demo completed successfully!")

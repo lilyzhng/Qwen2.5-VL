@@ -48,7 +48,7 @@ class VideoSearchEngine:
                  embedder: Optional[EmbeddingModel] = None,
                  use_gpu_faiss: bool = False):
         """
-        Initialize optimized search engine.
+        Initialize search engine.
         
         Args:
             config: Configuration object
@@ -167,30 +167,64 @@ class VideoSearchEngine:
         
         logger.info(f"Found {len(video_files)} video files")
         
-        # Check existing videos in ParquetVectorDatabase
-        existing_videos = set()
-        if hasattr(self.database, 'df') and self.database.df is not None and len(self.database.df) > 0:
-            existing_videos = set(self.database.df['video_path'].tolist())
+        # Load slice_id mapping if available
+        path_to_slice_id = {}
+        if hasattr(self.config, 'main_file_path') and self.config.main_file_path:
+            index_path = self._resolve_path(self.config.main_file_path)
+            if index_path and index_path.exists():
+                try:
+                    if index_path.suffix.lower() == '.parquet':
+                        df = pd.read_parquet(index_path)
+                    else:
+                        df = pd.read_csv(index_path)
+                    
+                    if 'slice_id' in df.columns and 'sensor_video_file' in df.columns:
+                        for _, row in df.iterrows():
+                            path_to_slice_id[Path(row['sensor_video_file'])] = row['slice_id']
+                        logger.info(f"Loaded slice_id mapping for {len(path_to_slice_id)} videos")
+                except Exception as e:
+                    logger.warning(f"Error loading slice_id mapping: {e}")
         
-        new_videos = [v for v in video_files if str(v.absolute()) not in existing_videos]
+        # Check existing videos in ParquetVectorDatabase using only slice_id as key
+        existing_slice_ids = set()
+        if hasattr(self.database, 'df') and self.database.df is not None and len(self.database.df) > 0:
+            existing_slice_ids = set(self.database.df['slice_id'].tolist())
+        
+        # Filter videos that are not already in the database by slice_id
+        new_videos = []
+        for v in video_files:
+            slice_id = path_to_slice_id.get(v)
+            if slice_id is None:
+                logger.warning(f"No slice_id found for video path: {v}")
+                continue
+                
+            # Skip if the slice_id is already in the database
+            if slice_id in existing_slice_ids:
+                continue
+                
+            new_videos.append(v)
         
         if new_videos:
             logger.info(f"Processing {len(new_videos)} new videos")
             
-            embeddings_data = self._extract_embeddings_optimized(new_videos)
+            embeddings_data = self._extract_embeddings(new_videos)
             
             if embeddings_data:
                 # Add embeddings one by one to ParquetVectorDatabase
                 for emb_data in embeddings_data:
                     video_path = Path(emb_data["video_path"])
-                    video_name = video_path.name
+                    # Use slice_id from mapping - it must exist in the parquet file
+                    slice_id = path_to_slice_id.get(video_path)
+                    if slice_id is None:
+                        logger.error(f"No slice_id found for video path: {video_path}")
+                        continue
                     embedding = emb_data["embedding"]
                     metadata = {
                         "num_frames": self.config.num_frames,
                         "category": "main",
                         **{k: v for k, v in emb_data.items() if k not in ["video_path", "embedding"]}
                     }
-                    self.database.add_embedding(video_name, video_path, embedding, metadata)
+                    self.database.add_embedding(slice_id, video_path, embedding, metadata)
                 
                 # Save the database
                 self.database.save()
@@ -229,12 +263,12 @@ class VideoSearchEngine:
         logger.info(f"Building query database from: {query_dir}")
         return self.query_manager.build_query_database(query_dir, force_rebuild)
 
-    def search_by_filename(self, filename: str, top_k: Optional[int] = None) -> List[Dict]:
+    def search_by_filename(self, slice_id: str, top_k: Optional[int] = None) -> List[Dict]:
         """
-        Search using pre-computed query video embedding by filename.
+        Search using pre-computed query video embedding by slice_id.
         
         Args:
-            filename: Query video filename (e.g., "car2cyclist_2.mp4")
+            slice_id: Unique identifier for the slice (e.g., "0859975219")
             top_k: Number of results
             
         Returns:
@@ -243,21 +277,21 @@ class VideoSearchEngine:
         top_k = top_k or self.config.default_top_k
         
         try:
-            query_embedding = self.query_manager.get_query_embedding(filename)
+            query_embedding = self.query_manager.get_query_embedding(slice_id)
             
             if query_embedding is not None:
-                logger.info(f"Using pre-computed embedding for: {filename}")
+                logger.info(f"Using pre-computed embedding for slice_id: {slice_id}")
                 try:
                     return self._search_by_embedding(query_embedding, top_k)
                 except Exception as e:
                     logger.error(f"Error during pre-computed search: {e}")
                     logger.info("Falling back to real-time computation...")
             else:
-                logger.warning(f"No pre-computed embedding found for {filename}")
+                logger.warning(f"No pre-computed embedding found for slice_id: {slice_id}")
         except Exception as e:
             logger.error(f"Error accessing query cache: {e}")
         
-        logger.info(f"Falling back to real-time processing for: {filename}")
+        logger.info(f"Falling back to real-time processing for slice_id: {slice_id}")
         
         if hasattr(self.config, 'query_file_path') and self.config.query_file_path:
             query_file_path = self._resolve_path(self.config.query_file_path)
@@ -267,15 +301,15 @@ class VideoSearchEngine:
                 else:
                     df = pd.read_csv(query_file_path)
                 
-                matching_rows = df[df['video_name'] == filename]
+                matching_rows = df[df['slice_id'] == slice_id]
                 if len(matching_rows) > 0:
                     query_path = Path(matching_rows.iloc[0]['sensor_video_file'])
                     if query_path.exists():
                         return self.search_by_video(query_path, top_k)
         
-        raise VideoNotFoundError(f"Query video not found: {filename}. Please ensure it's listed in query_file_path.")
+        raise VideoNotFoundError(f"Query video not found for slice_id: {slice_id}. Please ensure it's listed in query_file_path.")
 
-    def _extract_embeddings_optimized(self, video_paths: List[Path]) -> List[Dict[str, Any]]:
+    def _extract_embeddings(self, video_paths: List[Path]) -> List[Dict[str, Any]]:
         """
         Extract embeddings with optimizations:
         - Batch processing
@@ -369,7 +403,7 @@ class VideoSearchEngine:
     def search_by_text(self, query_text: str,
                       top_k: Optional[int] = None) -> List[Dict]:
         """
-        Search videos using text query (following official implementation pattern).
+        Search videos using text query.
         
         Args:
             query_text: Text query
@@ -428,7 +462,7 @@ class VideoSearchEngine:
             result = {
                 "rank": len(formatted_results) + 1,
                 "video_path": metadata.get("video_path", ""),
-                "video_name": metadata.get("video_name", ""),
+                "slice_id": metadata.get("slice_id", ""),
                 "similarity_score": similarity,
                 "metadata": metadata,
                 "thumbnail": metadata.get("thumbnail", ""),
@@ -443,7 +477,7 @@ class VideoSearchEngine:
     
     def get_neighbors(self, video_idx: int, k: int = 5, ignore_self: bool = True) -> List[int]:
         """
-        Get k nearest neighbors for a video by index (as in official implementation).
+        Get k nearest neighbors for a video by index.
         
         Args:
             video_idx: Index of video in database
@@ -510,12 +544,12 @@ class VideoSearchEngine:
         try:
             stats = self.get_statistics()
             
-            video_names = []
+            slice_ids = []
             database_size_mb = 0
             
             # Get data from ParquetVectorDatabase
             if self.database.df is not None:
-                video_names = self.database.df['video_name'].tolist() if 'video_name' in self.database.df.columns else []
+                slice_ids = self.database.df['slice_id'].tolist() if 'slice_id' in self.database.df.columns else []
                 # Calculate database size from parquet file
                 if self.database.database_path.exists():
                     database_size_mb = self.database.database_path.stat().st_size / (1024 * 1024)
@@ -524,7 +558,7 @@ class VideoSearchEngine:
                 'num_videos': stats.get('num_videos', 0),
                 'embedding_dim': stats.get('embedding_dim', 0),
                 'database_size_mb': database_size_mb,
-                'video_names': video_names,
+                'slice_ids': slice_ids,
                 'version': '2.0',
                 'search_backend': stats.get('search_backend', 'Unknown'),
                 'cache_size': stats.get('cache_size', 0),
@@ -538,7 +572,7 @@ class VideoSearchEngine:
                 'num_videos': 0,
                 'embedding_dim': 0,
                 'database_size_mb': 0,
-                'video_names': [],
+                'slice_ids': [],
                 'version': '2.0',
                 'search_backend': 'Unknown',
                 'cache_size': 0,

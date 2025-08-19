@@ -139,7 +139,7 @@ class TestUnifiedQueryManager(unittest.TestCase):
         
         # Create file list
         df = pd.DataFrame([{
-            'video_name': 'test_query.mp4',
+            'slice_id': 'test_query.mp4',
             'sensor_video_file': str(test_video_path.absolute()),
             'category': 'user_input'
         }])
@@ -230,12 +230,12 @@ class TestFilePathGeneration(unittest.TestCase):
         # Test data structure
         test_data = [
             {
-                'video_name': 'test1.mp4',
+                'slice_id': 'test1.mp4',
                 'sensor_video_file': '/path/to/test1.mp4',
                 'category': 'video_database'
             },
             {
-                'video_name': 'test2.mp4', 
+                'slice_id': 'test2.mp4', 
                 'sensor_video_file': '/path/to/test2.mp4',
                 'category': 'user_input'
             }
@@ -244,12 +244,12 @@ class TestFilePathGeneration(unittest.TestCase):
         df = pd.DataFrame(test_data)
         
         # Check required columns exist
-        required_columns = ['video_name', 'sensor_video_file', 'category']
+        required_columns = ['slice_id', 'sensor_video_file', 'category']
         for col in required_columns:
             self.assertIn(col, df.columns)
         
         # Check data types
-        self.assertTrue(df['video_name'].dtype == 'object')
+        self.assertTrue(df['slice_id'].dtype == 'object')
         self.assertTrue(df['sensor_video_file'].dtype == 'object')
         self.assertTrue(df['category'].dtype == 'object')
 

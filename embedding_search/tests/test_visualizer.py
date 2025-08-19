@@ -41,21 +41,21 @@ class TestVideoVisualizer(unittest.TestCase):
         self.mock_results = [
             {
                 "rank": 1,
-                "video_name": "car2cyclist_1.mp4",
+                "slice_id": "car2cyclist_1.mp4",
                 "video_path": str(self.mock_videos[0]),
                 "similarity_score": 0.95,
                 "metadata": {"num_frames": 8, "added_at": "2024-01-01"}
             },
             {
                 "rank": 2,
-                "video_name": "car2cyclist_2.mp4",
+                "slice_id": "car2cyclist_2.mp4",
                 "video_path": str(self.mock_videos[1]),
                 "similarity_score": 0.87,
                 "metadata": {"num_frames": 8, "added_at": "2024-01-01"}
             },
             {
                 "rank": 3,
-                "video_name": "car2ped_1.mp4",
+                "slice_id": "car2ped_1.mp4",
                 "video_path": str(self.mock_videos[2]),
                 "similarity_score": 0.73,
                 "metadata": {"num_frames": 8, "added_at": "2024-01-01"}
@@ -143,8 +143,7 @@ class TestVideoVisualizer(unittest.TestCase):
 
 class TestInteractiveVisualizer:
     """
-    Demonstration of interactive visualizer interface inspired by the official implementation.
-    This shows how a Streamlit-like interface would work.
+    Demonstration of interactive visualizer interface.
     """
     
     def __init__(self, search_engine: VideoSearchEngine):
@@ -179,7 +178,7 @@ class TestInteractiveVisualizer:
             # Display top result
             if self.search_results:
                 top_result = self.search_results[0]
-                print(f"   Top result: {top_result['video_name']} (score: {top_result['similarity_score']:.3f})")
+                print(f"   Top result: {top_result['slice_id']} (score: {top_result['similarity_score']:.3f})")
                 
         except Exception as e:
             print(f"   Search failed: {e}")
@@ -190,7 +189,7 @@ class TestInteractiveVisualizer:
         if self.search_results:
             self.selected_video_idx = 0
             selected = self.search_results[self.selected_video_idx]
-            print(f"   User selects: {selected['video_name']}")
+            print(f"   User selects: {selected['slice_id']}")
             
             # Get neighbors
             neighbors = self._get_similar_videos(selected['video_path'])
@@ -284,7 +283,7 @@ class TestSearchEngineIntegration(unittest.TestCase):
         self.mock_results = [
             {
                 "rank": i+1,
-                "video_name": f"video_{i}.mp4",
+                "slice_id": f"video_{i}.mp4",
                 "video_path": str(self.temp_dir / f"video_{i}.mp4"),
                 "similarity_score": 0.9 - i*0.1,
                 "metadata": {"test": True}
@@ -379,11 +378,9 @@ class TestSearchEngineIntegration(unittest.TestCase):
 def create_streamlit_like_interface_demo():
     """
     Demonstrate how a Streamlit-like interface would work.
-    This simulates the official NVIDIA implementation structure.
     """
     print("\n" + "=" * 70)
     print("STREAMLIT-LIKE INTERFACE DEMONSTRATION")
-    print("Simulating the official ALFA 0.1 interface structure")
     print("=" * 70)
     
     # Simulate session state (like Streamlit)
