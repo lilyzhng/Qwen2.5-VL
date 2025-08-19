@@ -1,5 +1,5 @@
 """
-Unified Parquet Database System for Video Embeddings.
+Unified Parquet Database System for Vector Embeddings.
 """
 
 import pandas as pd
@@ -9,9 +9,12 @@ from typing import Union, Optional, Dict, List, Any
 import logging
 from datetime import datetime
 import hashlib
+import base64
+import io
 
 from .config import VideoRetrievalConfig
 from .exceptions import DatabaseError
+from .visualizer import VideoResultsVisualizer
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +35,9 @@ class ParquetVectorDatabase:
         self.config = config or VideoRetrievalConfig()
         self.database_path = Path(database_path)
         self.df = None
+        
+        # Initialize thumbnail extractor
+        self.thumbnail_extractor = VideoResultsVisualizer(thumbnail_size=self.config.thumbnail_size)
         
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self.load()
@@ -64,13 +70,14 @@ class ParquetVectorDatabase:
             'created_at': [],
             'last_accessed': [],
             'access_count': [],
-            'category': []
+            'category': [],
+            'thumbnail': [],
+            'thumbnail_size': []
         })
         
-        # Set index if not empty
         if len(self.df) > 0:
             self.df = self.df.set_index('video_name', drop=False)
-        
+
     def add_embedding(self, video_name: str, video_path: Union[str, Path], 
                      embedding: np.ndarray, metadata: Optional[Dict] = None) -> bool:
         """
@@ -88,11 +95,10 @@ class ParquetVectorDatabase:
         try:
             video_path = Path(video_path)
             
-            # Get file information
             file_stat = video_path.stat() if video_path.exists() else None
             file_hash = self._get_file_hash(video_path) if video_path.exists() else None
+            thumbnail_b64, thumbnail_size = self._extract_and_encode_thumbnail(video_path) if video_path.exists() else ("", (0, 0))
             
-            # Prepare row data
             row_data = {
                 'video_name': video_name,
                 'video_path': str(video_path.absolute()),
@@ -104,43 +110,37 @@ class ParquetVectorDatabase:
                 'created_at': datetime.now().isoformat(),
                 'last_accessed': datetime.now().isoformat(),
                 'access_count': 1,
-                'category': metadata.get('category', 'query') if metadata else 'query'
+                'category': metadata.get('category', 'query') if metadata else 'query',
+                'thumbnail': thumbnail_b64,
+                'thumbnail_size': thumbnail_size
             }
             
-            # Add additional metadata
             if metadata:
                 for key, value in metadata.items():
                     if key not in row_data:
                         row_data[key] = value
             
-            # Initialize DataFrame if needed
             if self.df is None or len(self.df) == 0:
                 self._create_empty_database()
-                
-            # Convert to DataFrame for single row
+            
             new_row = pd.DataFrame([row_data])
             
-            # Add to DataFrame
             if len(self.df) == 0:
                 self.df = new_row.set_index('video_name', drop=False)
             else:
-                # Update existing or add new
                 if video_name in self.df.index:
-                    # Update existing
                     for key, value in row_data.items():
                         self.df.loc[video_name, key] = value
                 else:
-                    # Add new
                     new_row = new_row.set_index('video_name', drop=False)
                     self.df = pd.concat([self.df, new_row])
             
             logger.info(f"Added embedding for: {video_name}")
             return True
-            
         except Exception as e:
             logger.error(f"Error adding embedding for {video_name}: {e}")
             return False
-    
+
     def get_embedding(self, video_name: str) -> Optional[np.ndarray]:
         """
         Get embedding by video name.
@@ -153,21 +153,70 @@ class ParquetVectorDatabase:
         """
         if self.df is None or len(self.df) == 0 or video_name not in self.df.index:
             return None
-            
+        
         try:
             row = self.df.loc[video_name]
             embedding = np.array(row['embedding'], dtype='float32')
             
-            # Update access information
             self.df.loc[video_name, 'last_accessed'] = datetime.now().isoformat()
             self.df.loc[video_name, 'access_count'] = int(self.df.loc[video_name, 'access_count']) + 1
             
             return embedding
-            
         except Exception as e:
             logger.error(f"Error retrieving embedding for {video_name}: {e}")
             return None
-    
+
+    def get_thumbnail(self, video_name: str) -> Optional[np.ndarray]:
+        """
+        Get thumbnail image by video name.
+        
+        Args:
+            video_name: Name of the video file
+            
+        Returns:
+            Thumbnail image as numpy array or None if not found
+        """
+        if self.df is None or len(self.df) == 0 or video_name not in self.df.index:
+            return None
+        
+        try:
+            row = self.df.loc[video_name]
+            thumbnail_b64 = row.get('thumbnail', '')
+            
+            if not thumbnail_b64:
+                return None
+            
+            from PIL import Image
+            
+            thumbnail_bytes = base64.b64decode(thumbnail_b64)
+            thumbnail_pil = Image.open(io.BytesIO(thumbnail_bytes))
+            thumbnail_array = np.array(thumbnail_pil)
+            
+            return thumbnail_array
+        except Exception as e:
+            logger.error(f"Error retrieving thumbnail for {video_name}: {e}")
+            return None
+
+    def get_thumbnail_base64(self, video_name: str) -> Optional[str]:
+        """
+        Get thumbnail as base64 string by video name.
+        
+        Args:
+            video_name: Name of the video file
+            
+        Returns:
+            Base64 encoded thumbnail or None if not found
+        """
+        if self.df is None or len(self.df) == 0 or video_name not in self.df.index:
+            return None
+        
+        try:
+            row = self.df.loc[video_name]
+            return row.get('thumbnail', '')
+        except Exception as e:
+            logger.error(f"Error retrieving thumbnail base64 for {video_name}: {e}")
+            return None
+
     def list_videos(self) -> List[str]:
         """Get list of all video names in the database."""
         if self.df is None or len(self.df) == 0:
@@ -178,7 +227,6 @@ class ParquetVectorDatabase:
         """Save database to parquet file."""
         if self.df is not None and len(self.df) > 0:
             try:
-                # Reset index before saving to avoid index column issues
                 df_to_save = self.df.reset_index(drop=True)
                 df_to_save.to_parquet(self.database_path, index=False)
                 logger.info(f"Saved {len(df_to_save)} embeddings to {self.database_path}")
@@ -187,7 +235,42 @@ class ParquetVectorDatabase:
                 raise DatabaseError(f"Failed to save database: {e}")
         else:
             logger.info("No data to save")
-    
+
+    def _extract_and_encode_thumbnail(self, video_path: Path) -> tuple[str, tuple[int, int]]:
+        """
+        Extract thumbnail from video and encode as base64.
+        
+        Args:
+            video_path: Path to video file
+            
+        Returns:
+            Tuple of (base64_encoded_thumbnail, (width, height))
+        """
+        try:
+            thumbnail_array = self.thumbnail_extractor.extract_thumbnail(video_path)
+            
+            if thumbnail_array is None:
+                return "", (0, 0)
+            
+            from PIL import Image
+            
+            if isinstance(thumbnail_array, np.ndarray):
+                thumbnail_pil = Image.fromarray(thumbnail_array)
+            else:
+                thumbnail_pil = thumbnail_array
+            
+            img_buffer = io.BytesIO()
+            thumbnail_pil.save(img_buffer, format='JPEG', quality=95, optimize=True)
+            thumbnail_b64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+            
+            width, height = thumbnail_pil.size
+            
+            logger.debug(f"Extracted thumbnail for {video_path.name}: {width}x{height}")
+            return thumbnail_b64, (width, height)
+        except Exception as e:
+            logger.warning(f"Failed to extract thumbnail for {video_path}: {e}")
+            return "", (0, 0)
+
     def _get_file_hash(self, file_path: Path) -> str:
         """Compute file hash for integrity checking."""
         if not file_path.exists():
@@ -198,7 +281,7 @@ class ParquetVectorDatabase:
             for chunk in iter(lambda: f.read(4096), b""):
                 hash_md5.update(chunk)
         return hash_md5.hexdigest()
-    
+
     def get_statistics(self) -> Dict[str, Any]:
         """Get database statistics."""
         if self.df is None or len(self.df) == 0:
@@ -251,7 +334,6 @@ class UnifiedQueryManager:
         if not file_path.exists():
             raise ValueError(f"Query file path list not found: {file_path}")
         
-        # Load video paths from file
         if file_path.suffix.lower() == '.parquet':
             df = pd.read_parquet(file_path)
         else:
@@ -260,7 +342,6 @@ class UnifiedQueryManager:
         if 'sensor_video_file' not in df.columns:
             raise ValueError(f"Column 'sensor_video_file' not found in {file_path}")
         
-        # Filter for query videos only
         if 'category' in df.columns:
             query_df = df[df['category'] == 'user_input']
         else:
@@ -275,7 +356,6 @@ class UnifiedQueryManager:
         
         logger.info(f"Found {len(video_files)} query video files from file list")
         
-        # Initialize embedder
         embedder = CosmosVideoEmbedder(self.config)
         
         stats = {"processed": 0, "cached": 0, "errors": 0}
@@ -284,22 +364,22 @@ class UnifiedQueryManager:
             filename = video_path.name
             
             try:
-                # Check if already processed
+
                 if not force_rebuild and self.query_db.get_embedding(filename) is not None:
                     stats["cached"] += 1
                     logger.debug(f"Already cached: {filename}")
                     continue
                 
-                # Extract embedding
+
                 logger.info(f"Processing: {filename}")
                 embedding = embedder.extract_video_embedding(video_path)
                 
-                # Normalize
+
                 embedding = embedding.astype('float32').reshape(1, -1)
                 batch_normalize_embeddings(embedding)
                 embedding = embedding[0]
                 
-                # Store in database
+
                 metadata = {
                     "num_frames": self.config.num_frames,
                     "category": "query"
@@ -314,7 +394,7 @@ class UnifiedQueryManager:
                 logger.error(f"Error processing {filename}: {e}")
                 stats["errors"] += 1
         
-        # Save database
+
         self.query_db.save()
         
         logger.info(f"Query database build complete: {stats}")
@@ -339,7 +419,7 @@ class UnifiedQueryManager:
         if not query_dir.exists():
             raise ValueError(f"Query video directory not found: {query_dir}")
         
-        # Get video files
+
         video_files = []
         for ext in self.config.supported_formats:
             video_files.extend(query_dir.glob(f"*{ext}"))
@@ -351,7 +431,7 @@ class UnifiedQueryManager:
         
         logger.info(f"Found {len(video_files)} query video files")
         
-        # Initialize embedder
+
         embedder = CosmosVideoEmbedder(self.config)
         
         stats = {"processed": 0, "cached": 0, "errors": 0}
@@ -360,22 +440,22 @@ class UnifiedQueryManager:
             filename = video_path.name
             
             try:
-                # Check if already processed
+
                 if not force_rebuild and self.query_db.get_embedding(filename) is not None:
                     stats["cached"] += 1
                     logger.debug(f"Already cached: {filename}")
                     continue
                 
-                # Extract embedding
+
                 logger.info(f"Processing: {filename}")
                 embedding = embedder.extract_video_embedding(video_path)
                 
-                # Normalize
+
                 embedding = embedding.astype('float32').reshape(1, -1)
                 batch_normalize_embeddings(embedding)
                 embedding = embedding[0]
                 
-                # Store in database
+
                 metadata = {
                     "num_frames": self.config.num_frames,
                     "category": "query"
@@ -390,7 +470,7 @@ class UnifiedQueryManager:
                 logger.error(f"Error processing {filename}: {e}")
                 stats["errors"] += 1
         
-        # Save database
+
         self.query_db.save()
         
         logger.info(f"Query database build complete: {stats}")

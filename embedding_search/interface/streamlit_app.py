@@ -633,6 +633,63 @@ def create_similarity_plot(results: List[Dict], selected_idx: Optional[int] = No
     return create_embedding_visualization(results, "umap", selected_idx)
 
 
+def get_thumbnail_from_result(video_info: Dict) -> Optional[str]:
+    """
+    Get thumbnail base64 string from search result.
+    Uses stored thumbnail if available, otherwise extracts on-the-fly as fallback.
+    
+    Args:
+        video_info: Video information dictionary from search results
+        
+    Returns:
+        Base64 encoded thumbnail string or None if not available
+    """
+    # First try to get stored thumbnail
+    thumbnail_b64 = video_info.get('thumbnail', '')
+    if thumbnail_b64:
+        return thumbnail_b64
+    
+    # Fallback to on-the-fly extraction (legacy behavior)
+    video_path = video_info.get('video_path', '')
+    if not video_path:
+        return None
+        
+    try:
+        from pathlib import Path
+        full_path = Path(video_path)
+        
+        if not full_path.exists():
+            return None
+            
+        # Use VideoResultsVisualizer to extract thumbnail with config size
+        from core.config import VideoRetrievalConfig
+        config = VideoRetrievalConfig()
+        visualizer = VideoResultsVisualizer(thumbnail_size=config.thumbnail_size)
+        thumbnail = visualizer.extract_thumbnail(full_path)
+        
+        if thumbnail is None:
+            return None
+            
+        import base64
+        import io
+        from PIL import Image
+        
+        # Convert numpy array to PIL if needed
+        if isinstance(thumbnail, np.ndarray):
+            thumbnail_pil = Image.fromarray(thumbnail)
+        else:
+            thumbnail_pil = thumbnail
+        
+        # Convert to base64 with high quality
+        img_buffer = io.BytesIO()
+        thumbnail_pil.save(img_buffer, format='JPEG', quality=95, optimize=True)
+        return base64.b64encode(img_buffer.getvalue()).decode()
+        
+    except Exception as e:
+        logger.warning(f"Failed to extract thumbnail for {video_path}: {e}")
+        return None
+
+
 def preview_video_with_thumbnail(video_info: Dict, height: int = 300) -> None:
     """
     Create a video preview with real thumbnail extraction.
@@ -643,53 +700,22 @@ def preview_video_with_thumbnail(video_info: Dict, height: int = 300) -> None:
     similarity = video_info.get('similarity_score', 0)
     rank = video_info.get('rank', 'N/A')
     
-    # Try to extract real thumbnail
-    try:
-        from pathlib import Path
-        full_path = Path(video_path)
-        
-        
-        # Check if video file exists
-        if full_path.exists():
-            # Use VideoResultsVisualizer to extract thumbnail with config size
-            from core.config import VideoRetrievalConfig
-            config = VideoRetrievalConfig()
-            visualizer = VideoResultsVisualizer(thumbnail_size=config.thumbnail_size)
-            thumbnail = visualizer.extract_thumbnail(full_path)
-            
-            import base64
-            import io
-            from PIL import Image
-            
-            # Convert numpy array to PIL if needed
-            if isinstance(thumbnail, np.ndarray):
-                thumbnail_pil = Image.fromarray(thumbnail)
-            else:
-                thumbnail_pil = thumbnail
-            
-            # Convert to base64 with high quality
-            img_buffer = io.BytesIO()
-            thumbnail_pil.save(img_buffer, format='JPEG', quality=95, optimize=True)
-            img_str = base64.b64encode(img_buffer.getvalue()).decode()
-            
-            # Create a container with 16:9 aspect ratio
-            st.markdown(
-                f"""
-                <div style="position: relative; width: 100%; padding-bottom: 56.25%; /* 16:9 aspect ratio */">
-                    <img src="data:image/jpeg;base64,{img_str}" 
-                         style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 8px;">
-                </div>
-                """, 
-                unsafe_allow_html=True
-            )
-                
-        else:
-            # Video file doesn't exist, show placeholder
-            preview_video_placeholder(video_info, height)
-            
-    except Exception as e:
-        # Fallback to placeholder if thumbnail extraction fails
-        st.warning(f"Could not extract thumbnail: {str(e)}")
+    # Get thumbnail using the new helper function
+    thumbnail_b64 = get_thumbnail_from_result(video_info)
+    
+    if thumbnail_b64:
+        # Create a container with 16:9 aspect ratio
+        st.markdown(
+            f"""
+            <div style="position: relative; width: 100%; padding-bottom: 56.25%; /* 16:9 aspect ratio */">
+                <img src="data:image/jpeg;base64,{thumbnail_b64}" 
+                     style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 8px;">
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
+    else:
+        # Fallback to placeholder if no thumbnail available
         preview_video_placeholder(video_info, height)
 
 
@@ -725,28 +751,24 @@ def create_neighbor_grid(neighbors: List[Dict], num_cols: int = 3) -> None:
     
     for i, neighbor in enumerate(neighbors[:num_cols]):
         with cols[i]:
-            # Try to extract real thumbnail
-            try:
-                from pathlib import Path
-                video_path = neighbor.get('video_path', '')
-                full_path = Path(video_path)
+            # Get thumbnail using the new helper function
+            thumbnail_b64 = get_thumbnail_from_result(neighbor)
+            
+            if thumbnail_b64:
+                # Display thumbnail directly from base64
+                import base64
+                import io
+                from PIL import Image
                 
-                if full_path.exists():
-                    # Use VideoResultsVisualizer to extract thumbnail with config size
-                    from core.config import VideoRetrievalConfig
-                    config = VideoRetrievalConfig()
-                    visualizer = VideoResultsVisualizer(thumbnail_size=config.thumbnail_size)
-                    thumbnail = visualizer.extract_thumbnail(full_path)
-                    
-                    st.image(thumbnail, use_container_width=True)
-                    st.write(f"**{neighbor['video_name']}**")
-                    st.write(f"Score: {neighbor['similarity_score']:.3f}")
-                else:
-                    # Fallback to placeholder
-                    create_neighbor_placeholder(neighbor)
-                    
-            except Exception:
-                # Fallback to placeholder if extraction fails
+                thumbnail_bytes = base64.b64decode(thumbnail_b64)
+                thumbnail_pil = Image.open(io.BytesIO(thumbnail_bytes))
+                thumbnail_array = np.array(thumbnail_pil)
+                
+                st.image(thumbnail_array, use_container_width=True)
+                st.write(f"**{neighbor['video_name']}**")
+                st.write(f"Score: {neighbor['similarity_score']:.3f}")
+            else:
+                # Fallback to placeholder
                 create_neighbor_placeholder(neighbor)
 
 
@@ -806,7 +828,7 @@ def main():
         initial_sidebar_state="expanded"
     )
     
-    # Force sidebar to stay visible
+
     st.markdown("""
     <style>
         /* Force sidebar to always be visible */
@@ -815,19 +837,19 @@ def main():
             min-width: 21rem !important;
         }
         
-        /* Hide sidebar collapse button */
+
         .css-14xtw13.e8zbici0 {
             display: none !important;
         }
         
-        /* Alternative selector for hiding collapse button */
+
         button[data-testid="collapsedControl"] {
             display: none !important;
         }
     </style>
     """, unsafe_allow_html=True)
     
-    # Custom CSS for modern design
+
     st.markdown("""
     <style>
         /* Import Inter font */
@@ -1286,7 +1308,7 @@ def main():
     </style>
     """, unsafe_allow_html=True)
     
-    # Initialize session state
+
     if 'text_selection' not in st.session_state:
         st.session_state.text_selection = SelectedVideo(-1)
     if 'click_selection' not in st.session_state:
@@ -1298,24 +1320,20 @@ def main():
     if 'force_update' not in st.session_state:
         st.session_state.force_update = False
     
-    # Initialize default values for variables used across components
-    top_k = 5  # Changed from hardcoded 3 to 5 as default
+    top_k = 5
     similarity_threshold = 0.5
     viz_method = "umap"
     umap_neighbors = 15
     umap_min_dist = 0.1
     trimap_inliers = 10
-    
-    # Header with modern design
+
     st.markdown("""
     <div class="main-header">
         <h1>ALFA 0.1 - Embedding Search</h1>
     </div>
     """, unsafe_allow_html=True)
-    
-    # Sidebar for configuration (structured like mock interface)
+
     with st.sidebar:
-        # Load search engine (hidden from user)
         with st.spinner("Loading search engine..."):
             try:
                 search_engine = load_search_engine()
@@ -1327,22 +1345,19 @@ def main():
                 st.code(traceback.format_exc())
                 st.stop()
         
-        # 🔍 Settings Header
+
         st.markdown('<div class="section-title">🔍 Settings</div>', unsafe_allow_html=True)
         
-        # Video Search Section
+
         try:
             from pathlib import Path
-            # Get project root and resolve video directory
+
             project_root = Path(__file__).parent.parent
-            # Use configurable path for query videos
-            video_dir = project_root / "data" / "videos" / "user_input"  # TODO: Make this configurable
-            
-            # Get available query videos (includes pre-computed ones)
+            video_dir = project_root / "data" / "videos" / "user_input"
+
             try:
                 available_videos = search_engine.get_query_videos_list()
                 if not available_videos and video_dir.exists():
-                    # Fall back to file system if no pre-computed videos
                     video_files = list(video_dir.glob("*.mp4")) + list(video_dir.glob("*.avi")) + list(video_dir.glob("*.mov"))
                     available_videos = [f.name for f in sorted(video_files)]
             except:
@@ -1353,23 +1368,21 @@ def main():
             
             if available_videos:
                 selected_video = st.selectbox(
-                    "",
+                    "Select Video",
                     available_videos,
-                    help="Select a video file (⚡ = pre-computed embedding)"
+                    help="Select a video file (⚡ = pre-computed embedding)",
+                    label_visibility="collapsed"
                 )
                 
                 if st.button("🎥 Search by Video", use_container_width=True, help="Smart search: uses pre-computed embeddings when available, falls back to real-time processing"):
                     with st.spinner("Searching for similar videos..."):
                         try:
-                            # First try pre-computed embeddings (fast path)
                             results = search_engine.search_by_filename(selected_video, top_k=top_k)
                             st.session_state.search_results = results
                             st.session_state.text_query = f"Similar to: {selected_video}"
                             st.session_state.click_selection = SelectedVideo(0)
                             
-                            # Check if we used pre-computed embedding or fallback
                             try:
-                                # Quick check if the video was in cache
                                 cached_embedding = search_engine.query_manager.get_query_embedding(selected_video)
                                 if cached_embedding is not None:
                                     st.success(f"Found {len(results)} similar videos! ⚡ (Used pre-computed embedding)")
@@ -1384,12 +1397,12 @@ def main():
                 st.info("No video files found. Use CLI to build query database: `python main.py build-query`")
         except Exception as e:
             st.error(f"Error: {e}")
-        
-        # Text Search Section
+
         text_query = st.text_input(
-            "",
+            "Text Query",
             value=st.session_state.text_query,
-            placeholder="car approaching cyclist"
+            placeholder="car approaching cyclist",
+            label_visibility="collapsed"
         )
         
         if st.button("🔍 Search by Text", use_container_width=True):
@@ -1407,18 +1420,13 @@ def main():
                         st.error(f"Search failed: {e}")
             else:
                 st.warning("Please enter a search query")
-        
-        # Top-K Results
-        # st.markdown("**Filtering:**")
+
         top_k = st.slider("Top-K Results", 1, 15, top_k)
-        
-        # Similarity Threshold
+
         similarity_threshold = st.slider("Similarity Threshold", 0.0, 1.0, similarity_threshold, 0.1)
-        
-        # Visualization Method
-        # st.markdown("**Visualization:**")
+
         viz_method = st.selectbox(
-            "",
+            "Visualization Method",
             options=["umap", "pca", "trimap", "tsne", "similarity", "3d_umap"],
             format_func=lambda x: {
                 "umap": "UMAP (Recommended)",
@@ -1431,15 +1439,13 @@ def main():
             index=0,
             label_visibility="collapsed"
         )
-        
-        # Advanced options based on method (minimal)
+
         if viz_method == "umap":
             umap_neighbors = st.slider("Neighbors", 3, 50, umap_neighbors)
             umap_min_dist = st.slider("Min Distance", 0.01, 1.0, umap_min_dist, 0.01)
         elif viz_method == "trimap":
             trimap_inliers = st.slider("Triplet Inliers", 3, 20, trimap_inliers)
-        
-        # Database Stats Section
+
         st.markdown('<div class="section-title">📊 Database Stats</div>', unsafe_allow_html=True)
         st.markdown(f"""
         <div class="stats-container">
@@ -1462,25 +1468,19 @@ def main():
         </div>
         """, unsafe_allow_html=True)
         
-    # Main content area: Full width visualization (like mock interface)
+
     st.markdown('<div class="section-title">Embedding Visualization</div>', unsafe_allow_html=True)
     
-    # Shared legend function for all visualization tabs
+
 
     
-    # Visualization view tabs (2D, 3D, Heatmap)
+
     viz_tab1, viz_tab2, viz_tab3 = st.tabs(["2D View", "3D View", "Heatmap"])
     
     with viz_tab1:
         if st.session_state.search_results:
-            # Add legend for visualization elements
-
-            
-            # Interactive plot - use explicit timestamp comparison
             selected_idx = None
-            # Always use the most recent selection
             if st.session_state.text_selection.is_valid() and st.session_state.click_selection.is_valid():
-                # Compare timestamps to get the most recent
                 if st.session_state.text_selection.timestamp > st.session_state.click_selection.timestamp:
                     selected_idx = st.session_state.text_selection.idx
                 else:
@@ -1490,11 +1490,10 @@ def main():
             elif st.session_state.click_selection.is_valid():
                 selected_idx = st.session_state.click_selection.idx
             
-            # Create 2D visualization with query info
+
             query_info = {
                 'display_text': st.session_state.text_query if st.session_state.text_query else "No query"
             }
-            # Get all videos from database for comprehensive visualization
             all_videos = get_all_videos_from_database(search_engine)
             fig = create_embedding_visualization(
                 st.session_state.search_results, 
@@ -1517,7 +1516,7 @@ def main():
                 key=f"plot_2d_{selected_idx}"
             )
             
-            # Handle plot clicks
+
             if plot_selection and plot_selection.get("selection", {}).get("point_indices"):
                 clicked_idx = plot_selection["selection"]["point_indices"][0]
                 if clicked_idx != st.session_state.click_selection.idx:
@@ -1536,15 +1535,11 @@ def main():
             st.info("👆 Use the search interface in the sidebar to find videos and visualize them here!")
     
     with viz_tab2:
-        if st.session_state.search_results:
-            # Add legend for visualization elements
-
-            
+        if st.session_state.search_results:            
             # Interactive 3D plot - use explicit timestamp comparison
             selected_idx = None
             # Always use the most recent selection
             if st.session_state.text_selection.is_valid() and st.session_state.click_selection.is_valid():
-                # Compare timestamps to get the most recent
                 if st.session_state.text_selection.timestamp > st.session_state.click_selection.timestamp:
                     selected_idx = st.session_state.text_selection.idx
                 else:
@@ -1558,7 +1553,6 @@ def main():
             query_info = {
                 'display_text': st.session_state.text_query if st.session_state.text_query else "No query"
             }
-            # Get all videos from database for comprehensive visualization
             all_videos = get_all_videos_from_database(search_engine)
             fig = create_embedding_visualization(
                 st.session_state.search_results, 
@@ -1608,36 +1602,28 @@ def main():
         else:
             st.info("👆 Use the search interface in the sidebar to find videos and visualize them here!")
     
-    # Reset force_update flag after visualization updates
     if st.session_state.get('force_update', False):
         st.session_state.force_update = False
-    
-    # Bottom section: Top K Results (like mock interface)
+
     if st.session_state.search_results:
         st.markdown('<div class="section-title">Top K Results</div>', unsafe_allow_html=True)
-        
-        # Determine which video to show - use simpler max approach
+
         current_selection = max(
             st.session_state.text_selection.idx if st.session_state.text_selection.is_valid() else -1,
             st.session_state.click_selection.idx if st.session_state.click_selection.is_valid() else -1
         )
         if current_selection == -1:
             current_selection = 0
-        
-        # Layout: Large featured video + Column of top K results
+
         featured_col, results_col = st.columns([2, 1])
-        
+
         with featured_col:
-            # Featured video (top result or selected)
             featured_video = st.session_state.search_results[0]
             if current_selection is not None and current_selection < len(st.session_state.search_results):
                 featured_video = st.session_state.search_results[current_selection]
-            
-            # Large featured video display
-            # st.markdown('<div class="featured-video">', unsafe_allow_html=True)
+
             preview_video_with_thumbnail(featured_video, height=300)
-            
-            # Featured video info - clean and simple
+
             st.markdown(f"""
             <div style="text-align: center; margin-top: 1rem;">
                 <h3 style="color: #1e293b; margin-bottom: 0.5rem; font-size: 1.4rem;">
@@ -1649,46 +1635,17 @@ def main():
         
         with results_col:
             with st.container(height=405):
-                # Display top K results in the scrollable container
                 for i, video in enumerate(st.session_state.search_results[:top_k]):
                     is_selected = (current_selection == i)
-                    
-                    # Create video card
+
                     video_path = video.get('video_path', '')
-                    
-                    # Create compact row layout with 16:9 aspect ratio thumbnail
-                    # Get thumbnail data first
-                    thumbnail_data = None
-                    try:
-                        from pathlib import Path
-                        full_path = Path(video_path)
-                        if full_path.exists():
-                            from core.config import VideoRetrievalConfig
-                            config = VideoRetrievalConfig()
-                            visualizer = VideoResultsVisualizer(thumbnail_size=config.thumbnail_size)
-                            thumbnail_array = visualizer.extract_thumbnail(full_path)
-                            if thumbnail_array is not None:
-                                import base64
-                                import io
-                                from PIL import Image
-                                
-                                if isinstance(thumbnail_array, np.ndarray):
-                                    thumbnail_pil = Image.fromarray(thumbnail_array)
-                                else:
-                                    thumbnail_pil = thumbnail_array
-                                
-                                img_buffer = io.BytesIO()
-                                thumbnail_pil.save(img_buffer, format='JPEG', quality=95, optimize=True)
-                                thumbnail_data = base64.b64encode(img_buffer.getvalue()).decode()
-                    except Exception:
-                        pass
-                    
-                    # Create compact row with proper styling
+
+                    thumbnail_data = get_thumbnail_from_result(video)
+
                     border_style = "2px solid #ff6b6b" if is_selected else "1px solid #e2e8f0"
                     score_color = "#ff6b6b" if is_selected else "#6366f1"
                     
                     if thumbnail_data:
-                        # Real thumbnail with 16:9 aspect ratio (80x45px)
                         st.markdown(f"""
                         <div style="display: flex; align-items: center; gap: 10px; padding: 4px 0; margin-bottom: 2px;">
                             <div style="flex-shrink: 0;">
@@ -1709,7 +1666,6 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                     else:
-                        # Fallback with colored box (16:9 aspect ratio)
                         colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
                         color = colors[i % len(colors)]
                         
@@ -1735,10 +1691,10 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    # Add compact separator
+
                     st.markdown("<hr style='margin: 4px 0; border: none; border-top: 1px solid #e2e8f0;'>", unsafe_allow_html=True)
         
-        # Results table (collapsed by default)
+
         with st.expander("📊 Detailed Results Table"):
             results_df = pd.DataFrame([
                 {

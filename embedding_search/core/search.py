@@ -81,14 +81,14 @@ class VideoSearchEngine:
         self._model_cache = {}
         
         logger.info(f"VideoSearchEngine initialized (GPU FAISS: {use_gpu_faiss})")
-    
+
     def _resolve_path(self, path: Union[str, Path]) -> Path:
         """Resolve path relative to project root if not absolute."""
         path = Path(path)
         if not path.is_absolute():
             return self.project_root / path
         return path
-    
+
     def _get_video_files(self, video_directory: Union[str, Path]) -> List[Path]:
         """
         Get video files either from CSV file or directory scanning.
@@ -109,18 +109,15 @@ class VideoSearchEngine:
         if index_path and index_path.exists():
             try:
                 logger.info(f"Loading video files from index: {index_path}")
-                # Support both CSV and Parquet formats
                 if index_path.suffix.lower() == '.parquet':
                     df = pd.read_parquet(index_path)
                 else:
                     df = pd.read_csv(index_path)
                 
-                # Check for sensor_video_file column
                 if 'sensor_video_file' not in df.columns:
                     logger.warning(f"Column 'sensor_video_file' not found in index file. Available columns: {list(df.columns)}")
                     logger.info("Falling back to directory scanning")
                 else:
-                    # Get unique video file paths from index
                     video_paths = df['sensor_video_file'].drop_duplicates().tolist()
                     video_files = [Path(path) for path in video_paths if Path(path).exists()]
                     
@@ -129,16 +126,14 @@ class VideoSearchEngine:
                         return video_files
                     else:
                         logger.warning("No valid video files found in index, falling back to directory scanning")
-                        
             except Exception as e:
                 logger.warning(f"Error reading index file: {e}")
                 logger.info("Falling back to directory scanning")
         
-        # Fallback to directory scanning
         video_dir = Path(video_directory)
         if not video_dir.exists():
             raise ValueError(f"Video directory not found: {video_dir}")
-            
+        
         logger.info(f"Scanning directory for video files: {video_dir}")
         for ext in self.config.supported_formats:
             video_files.extend(video_dir.glob(f"*{ext}"))
@@ -158,7 +153,6 @@ class VideoSearchEngine:
             force_rebuild: If True, rebuild from scratch
             save_format: Format to save database ("parquet")
         """
-
         if not force_rebuild:
             try:
                 if save_format == "parquet":
@@ -179,7 +173,6 @@ class VideoSearchEngine:
         
         logger.info(f"Found {len(video_files)} video files")
         
-        # Check for new videos only
         if hasattr(self.database, 'metadata'):
             existing_paths = {m.get("video_path") for m in self.database.metadata}
             new_videos = [v for v in video_files if str(v) not in existing_paths]
@@ -192,10 +185,8 @@ class VideoSearchEngine:
             embeddings_data = self._extract_embeddings_optimized(new_videos)
             
             if embeddings_data:
-                # Add to database
                 self.database.add_embeddings(embeddings_data)
                 
-                # Save in specified format
                 if save_format == "parquet":
                     self.database.save_as_parquet()
                 else:
@@ -204,7 +195,7 @@ class VideoSearchEngine:
                 logger.info(f"Database updated with {len(embeddings_data)} videos")
         else:
             logger.info("All videos already in database")
-    
+
     @time_it
     def build_query_database(self, query_video_directory: Union[str, Path] = None,
                            force_rebuild: bool = False) -> Dict[str, Any]:
@@ -218,19 +209,15 @@ class VideoSearchEngine:
         Returns:
             Build statistics
         """
-        # Use query file path if available, otherwise fall back to directory
         if hasattr(self.config, 'query_file_path') and self.config.query_file_path:
-            # Load query videos from file path list
             query_file_path = self._resolve_path(self.config.query_file_path)
             if query_file_path.exists():
                 logger.info(f"Loading query videos from file path list: {query_file_path}")
                 return self.query_manager.build_query_database_from_file_list(query_file_path, force_rebuild)
         
-        # Fallback to directory-based approach (should not be needed with file path lists)
         if query_video_directory:
             query_dir = self._resolve_path(query_video_directory)
         else:
-            # No fallback directory available, require query_file_path
             raise ValueError("No query video directory provided and no query_file_path configured")
         
         if not query_dir.exists():
@@ -239,7 +226,7 @@ class VideoSearchEngine:
         
         logger.info(f"Building query database from: {query_dir}")
         return self.query_manager.build_query_database(query_dir, force_rebuild)
-    
+
     def search_by_filename(self, filename: str, top_k: Optional[int] = None) -> List[Dict]:
         """
         Search using pre-computed query video embedding by filename.
@@ -254,7 +241,6 @@ class VideoSearchEngine:
         top_k = top_k or self.config.default_top_k
         
         try:
-            # Try to get pre-computed embedding
             query_embedding = self.query_manager.get_query_embedding(filename)
             
             if query_embedding is not None:
@@ -264,26 +250,21 @@ class VideoSearchEngine:
                 except Exception as e:
                     logger.error(f"Error during pre-computed search: {e}")
                     logger.info("Falling back to real-time computation...")
-                    # Continue to fallback below
             else:
                 logger.warning(f"No pre-computed embedding found for {filename}")
         except Exception as e:
             logger.error(f"Error accessing query cache: {e}")
         
-        # Fall back to real-time computation
         logger.info(f"Falling back to real-time processing for: {filename}")
         
-        # Try to find the file in query file path list
         if hasattr(self.config, 'query_file_path') and self.config.query_file_path:
             query_file_path = self._resolve_path(self.config.query_file_path)
             if query_file_path.exists():
-                # Load query file paths
                 if query_file_path.suffix.lower() == '.parquet':
                     df = pd.read_parquet(query_file_path)
                 else:
                     df = pd.read_csv(query_file_path)
                 
-                # Find the specific file
                 matching_rows = df[df['video_name'] == filename]
                 if len(matching_rows) > 0:
                     query_path = Path(matching_rows.iloc[0]['sensor_video_file'])
@@ -291,7 +272,7 @@ class VideoSearchEngine:
                         return self.search_by_video(query_path, top_k)
         
         raise VideoNotFoundError(f"Query video not found: {filename}. Please ensure it's listed in query_file_path.")
-    
+
     def _extract_embeddings_optimized(self, video_paths: List[Path]) -> List[Dict[str, Any]]:
         """
         Extract embeddings with optimizations:
@@ -301,7 +282,6 @@ class VideoSearchEngine:
         """
         embeddings_data = []
         
-        # Check cache first
         uncached_paths = []
         for path in video_paths:
             cache_key = str(path)
@@ -319,27 +299,24 @@ class VideoSearchEngine:
         
         logger.info(f"Found {len(embeddings_data)} cached embeddings")
         
-        # Extract uncached embeddings
         if uncached_paths:
             new_embeddings = self.embedder.extract_video_embeddings_batch(
                 uncached_paths,
                 batch_size=self.config.batch_size
             )
             
-            # Normalize embeddings using FAISS (as in official implementation)
             for emb_data in new_embeddings:
                 embedding = emb_data["embedding"].astype('float32')
                 embedding = embedding.reshape(1, -1)
                 batch_normalize_embeddings(embedding)
                 emb_data["embedding"] = embedding[0]
                 
-                # Cache the embedding
                 self.embedding_cache.put(emb_data["video_path"], emb_data["embedding"])
             
             embeddings_data.extend(new_embeddings)
         
         return embeddings_data
-    
+
     @time_it
     def search_by_video(self, query_video_path: Union[str, Path],
                        top_k: Optional[int] = None,
@@ -362,7 +339,6 @@ class VideoSearchEngine:
         top_k = top_k or self.config.default_top_k
         
         try:
-            # Check cache if enabled
             cache_key = str(query_path)
             query_embedding = None
             
@@ -370,22 +346,18 @@ class VideoSearchEngine:
                 query_embedding = self.embedding_cache.get(cache_key)
                 
             if query_embedding is None:
-                # Extract embedding
                 logger.info(f"Extracting embedding for: {query_path.name}")
                 query_embedding = self.embedder.extract_video_embedding(query_path)
                 
-                # Normalize using FAISS
                 query_embedding = query_embedding.astype('float32').reshape(1, -1)
                 batch_normalize_embeddings(query_embedding)
                 query_embedding = query_embedding[0]
                 
-                # Cache it
                 if use_cache:
                     self.embedding_cache.put(cache_key, query_embedding)
             else:
                 logger.info(f"Using cached embedding for: {query_path.name}")
             
-            # Perform search
             return self._search_by_embedding(query_embedding, top_k)
             
         except Exception as e:
@@ -410,16 +382,13 @@ class VideoSearchEngine:
         top_k = top_k or self.config.default_top_k
         
         try:
-            # Extract text embedding (with no_grad as in official implementation)
             with torch.no_grad():
                 text_embedding = self.embedder.extract_text_embedding(query_text)
                 
-            # Normalize
             text_embedding = text_embedding.astype('float32').reshape(1, -1)
             batch_normalize_embeddings(text_embedding)
             text_embedding = text_embedding[0]
             
-            # Search
             return self._search_by_embedding(text_embedding, top_k)
             
         except Exception as e:
@@ -436,13 +405,10 @@ class VideoSearchEngine:
         Returns:
             Formatted search results
         """
-        # Ensure database is loaded
         if not hasattr(self.database, 'embedding_matrix') or self.database.embedding_matrix is None:
-            # Load from parquet format
             db_path = self._resolve_path(self.config.main_embeddings_path)
             self.database.load_from_parquet(db_path)
         
-        # Use FAISS search
         results = self.search_strategy.search(
             query_embedding,
             self.database,
@@ -452,10 +418,8 @@ class VideoSearchEngine:
         if not results:
             raise NoResultsError("No results found")
         
-        # Format results
         formatted_results = []
         for idx, similarity, metadata in results:
-            # Apply threshold
             if similarity < self.config.similarity_threshold:
                 continue
                 
@@ -464,7 +428,9 @@ class VideoSearchEngine:
                 "video_path": metadata.get("video_path", ""),
                 "video_name": metadata.get("video_name", ""),
                 "similarity_score": similarity,
-                "metadata": metadata
+                "metadata": metadata,
+                "thumbnail": metadata.get("thumbnail", ""),
+                "thumbnail_size": metadata.get("thumbnail_size", (0, 0))
             }
             formatted_results.append(result)
         
@@ -488,23 +454,18 @@ class VideoSearchEngine:
         if not hasattr(self.database, 'embedding_matrix') or video_idx >= len(self.database.embedding_matrix):
             return []
         
-        # Get embedding
         query_embedding = self.database.embedding_matrix[video_idx]
         
-        # Adjust k if ignoring self
         search_k = k + 1 if ignore_self else k
         
-        # Search
         results = self.search_strategy.search(
             query_embedding,
             self.database,
             search_k
         )
         
-        # Extract indices
         indices = [r[0] for r in results]
         
-        # Remove self if needed
         if ignore_self and indices and indices[0] == video_idx:
             indices = indices[1:]
         
@@ -525,7 +486,6 @@ class VideoSearchEngine:
         """Get comprehensive statistics."""
         stats = self.database.get_statistics()
         
-        # Add cache statistics
         stats.update({
             "cache_size": len(self.embedding_cache._cache),
             "cache_capacity": self.embedding_cache.cache_size,
@@ -533,7 +493,6 @@ class VideoSearchEngine:
             "search_backend": "FAISS" if self.database.use_faiss else "NumPy"
         })
         
-        # Add query database statistics
         query_stats = self.query_manager.get_statistics()
         stats["query_database"] = query_stats
         
@@ -542,29 +501,24 @@ class VideoSearchEngine:
     def get_database_info(self) -> Dict[str, Any]:
         """Get database information in the format expected by main.py."""
         try:
-            # Get basic statistics
             stats = self.get_statistics()
             
-            # Get video names from metadata
             video_names = []
             if hasattr(self.database, 'metadata') and self.database.metadata:
                 video_names = [meta.get('video_name', '') for meta in self.database.metadata]
             
-            # Calculate database size
             database_size_mb = 0
             if hasattr(self.database, 'embedding_matrix') and self.database.embedding_matrix is not None:
-                # Estimate size based on embedding matrix + metadata
-                matrix_size = self.database.embedding_matrix.nbytes / (1024 * 1024)  # MB
-                metadata_size = len(str(self.database.metadata)) / (1024 * 1024)  # Rough estimate
+                matrix_size = self.database.embedding_matrix.nbytes / (1024 * 1024)
+                metadata_size = len(str(self.database.metadata)) / (1024 * 1024)
                 database_size_mb = matrix_size + metadata_size
             
-            # Format the response as expected by main.py
             info = {
                 'num_videos': stats.get('num_videos', 0),
                 'embedding_dim': stats.get('embedding_dim', 0),
                 'database_size_mb': database_size_mb,
                 'video_names': video_names,
-                'version': '2.0',  # Database version
+                'version': '2.0',
                 'search_backend': stats.get('search_backend', 'Unknown'),
                 'cache_size': stats.get('cache_size', 0),
                 'using_gpu': stats.get('using_gpu', False)
@@ -573,7 +527,6 @@ class VideoSearchEngine:
             return info
             
         except Exception as e:
-            # Return empty info if database not loaded
             return {
                 'num_videos': 0,
                 'embedding_dim': 0,
