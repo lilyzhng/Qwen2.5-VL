@@ -370,13 +370,13 @@ class UnifiedQueryManager:
         
         logger.info("UnifiedQueryManager initialized with Parquet storage")
     
-    def build_query_database_from_file_list(self, query_file_path: Union[str, Path],
+    def build_query_database_from_file_list(self, query_input_path: Union[str, Path],
                                           force_rebuild: bool = False) -> Dict[str, Any]:
         """
         Build query database from file path list (Parquet or CSV).
         
         Args:
-            query_file_path: Path to file containing query video paths
+            query_input_path: Path to file containing query video paths
             force_rebuild: Whether to rebuild from scratch
             
         Returns:
@@ -385,7 +385,7 @@ class UnifiedQueryManager:
         from .embedder import CosmosVideoEmbedder
         from .faiss_backend import batch_normalize_embeddings
         
-        file_path = Path(query_file_path)
+        file_path = Path(query_input_path)
         if not file_path.exists():
             raise ValueError(f"Query file path list not found: {file_path}")
         

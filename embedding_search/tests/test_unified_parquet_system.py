@@ -175,8 +175,8 @@ class TestOptimizedVideoSearchEngine(unittest.TestCase):
         self.config = VideoRetrievalConfig()
         self.config.main_embeddings_path = str(self.test_dir / "main_embeddings.parquet")
         self.config.query_embeddings_path = str(self.test_dir / "query_embeddings.parquet")
-        self.config.main_file_path = str(self.test_dir / "main_file_path.parquet")
-        self.config.query_file_path = str(self.test_dir / "query_file_path.parquet")
+        self.config.main_input_path = str(self.test_dir / "main_input_path.parquet")
+        self.config.query_input_path = str(self.test_dir / "query_input_path.parquet")
         
     def tearDown(self):
         """Clean up test environment."""
@@ -188,8 +188,8 @@ class TestOptimizedVideoSearchEngine(unittest.TestCase):
         # Test without actually initializing the full engine (to avoid model loading)
         self.assertEqual(self.config.main_embeddings_path, str(self.test_dir / "main_embeddings.parquet"))
         self.assertEqual(self.config.query_embeddings_path, str(self.test_dir / "query_embeddings.parquet"))
-        self.assertEqual(self.config.main_file_path, str(self.test_dir / "main_file_path.parquet"))
-        self.assertEqual(self.config.query_file_path, str(self.test_dir / "query_file_path.parquet"))
+        self.assertEqual(self.config.main_input_path, str(self.test_dir / "main_input_path.parquet"))
+        self.assertEqual(self.config.query_input_path, str(self.test_dir / "query_input_path.parquet"))
 
 
 class TestConfigurationSystem(unittest.TestCase):
@@ -202,14 +202,14 @@ class TestConfigurationSystem(unittest.TestCase):
         # Check new paths exist
         self.assertTrue(hasattr(config, 'main_embeddings_path'))
         self.assertTrue(hasattr(config, 'query_embeddings_path'))
-        self.assertTrue(hasattr(config, 'main_file_path'))
-        self.assertTrue(hasattr(config, 'query_file_path'))
+        self.assertTrue(hasattr(config, 'main_input_path'))
+        self.assertTrue(hasattr(config, 'query_input_path'))
         
         # Check default values
         self.assertEqual(config.main_embeddings_path, "data/main_embeddings.parquet")
         self.assertEqual(config.query_embeddings_path, "data/query_embeddings.parquet")
-        self.assertEqual(config.main_file_path, "data/main_file_path.parquet")
-        self.assertEqual(config.query_file_path, "data/query_file_path.parquet")
+        self.assertEqual(config.main_input_path, "data/main_input_path.parquet")
+        self.assertEqual(config.query_input_path, "data/query_input_path.parquet")
     
     def test_config_validation(self):
         """Test configuration validation with new paths."""

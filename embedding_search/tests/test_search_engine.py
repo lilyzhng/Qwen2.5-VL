@@ -32,8 +32,8 @@ class TestVideoSearchEngineUnified(unittest.TestCase):
         # Set test paths
         self.config.main_embeddings_path = str(self.test_dir / "main_embeddings.parquet")
         self.config.query_embeddings_path = str(self.test_dir / "query_embeddings.parquet")
-        self.config.main_file_path = str(self.test_dir / "main_file_path.parquet")
-        self.config.query_file_path = str(self.test_dir / "query_file_path.parquet")
+        self.config.main_input_path = str(self.test_dir / "main_input_path.parquet")
+        self.config.query_input_path = str(self.test_dir / "query_input_path.parquet")
         
     def tearDown(self):
         """Clean up test environment."""
@@ -52,8 +52,8 @@ class TestVideoSearchEngineUnified(unittest.TestCase):
             # Check that engine uses new paths
             self.assertEqual(engine.config.main_embeddings_path, self.config.main_embeddings_path)
             self.assertEqual(engine.config.query_embeddings_path, self.config.query_embeddings_path)
-            self.assertEqual(engine.config.main_file_path, self.config.main_file_path)
-            self.assertEqual(engine.config.query_file_path, self.config.query_file_path)
+            self.assertEqual(engine.config.main_input_path, self.config.main_input_path)
+            self.assertEqual(engine.config.query_input_path, self.config.query_input_path)
             
         except Exception as e:
             self.fail(f"Search engine initialization failed: {e}")
@@ -75,7 +75,7 @@ class TestVideoSearchEngineUnified(unittest.TestCase):
         self.assertEqual(resolved_abs, abs_path)
     
     def test_get_video_files_from_file_list(self):
-        """Test loading video files from main_file_path.parquet."""
+        """Test loading video files from main_input_path.parquet."""
         # Create test file list
         test_videos = [
             {
@@ -96,7 +96,7 @@ class TestVideoSearchEngineUnified(unittest.TestCase):
         
         # Save file list
         df = pd.DataFrame(test_videos)
-        df.to_parquet(self.config.main_file_path, index=False)
+        df.to_parquet(self.config.main_input_path, index=False)
         
         # Test loading
         engine = VideoSearchEngine.__new__(VideoSearchEngine)
@@ -121,8 +121,8 @@ class TestConfigurationValidation(unittest.TestCase):
         required_attrs = [
             'main_embeddings_path',
             'query_embeddings_path', 
-            'main_file_path',
-            'query_file_path'
+            'main_input_path',
+            'query_input_path'
         ]
         
         for attr in required_attrs:

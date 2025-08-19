@@ -19,8 +19,8 @@ class VideoRetrievalConfig:
     num_frames: int = 8
     main_embeddings_path: str = "data/main_embeddings.parquet"      # Main database (reference videos embeddings)
     query_embeddings_path: str = "data/query_embeddings.parquet"    # Query database (user input videos embeddings)
-    main_file_path: str = "data/main_file_path.parquet"             # Main video file paths
-    query_file_path: str = "data/query_file_path.parquet"           # Query video file paths
+    main_input_path: str = "data/main_input_path.parquet"             # Main video file paths
+    query_input_path: str = "data/query_input_path.parquet"           # Query video file paths
     use_safe_serialization: bool = True
     supported_formats: Tuple[str, ...] = ('.mp4', '.avi', '.mov')
     thumbnail_size: Tuple[int, int] = (480, 270)  # 16:9 aspect ratio, higher resolution
@@ -75,7 +75,7 @@ class VideoRetrievalConfig:
         
         
         # Check file path lists if provided
-        for file_path_attr in ['main_file_path', 'query_file_path']:
+        for file_path_attr in ['main_input_path', 'query_input_path']:
             if hasattr(self, file_path_attr):
                 file_path = getattr(self, file_path_attr)
                 if file_path:

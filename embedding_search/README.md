@@ -27,8 +27,8 @@ embedding_search/
 ├── data/                          # Data storage
 │   ├── main_embeddings.parquet    # Main video database embeddings
 │   ├── query_embeddings.parquet   # Query video embeddings
-│   ├── main_file_path.parquet     # Main video file paths
-│   ├── query_file_path.parquet    # Query video file paths
+│   ├── main_input_path.parquet     # Main video file paths
+│   ├── query_input_path.parquet    # Query video file paths
 │   └── videos/                    # Video files
 │       ├── video_database/        # Reference video collection
 │       └── user_input/             # Query videos
@@ -50,14 +50,14 @@ Build the main video database from your reference video collection:
 
 ```bash
 # Using video file list
-python interface/main.py build-main --main-file-path data/main_file_path.parquet
+python interface/main.py build-main --main-input-path data/main_input_path.parquet
 ```
 ### 2. Generate Query Embeddings Database
 Build the query video database for fast similarity search:
 
 ```bash
 # Using query file list
-python interface/main.py build-query --query-file-path data/query_file_path.parquet
+python interface/main.py build-query --query-input-path data/query_input_path.parquet
 ```
 
 ### 3. Launch Streamlit App

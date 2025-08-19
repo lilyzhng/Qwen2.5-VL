@@ -98,8 +98,8 @@ class VideoSearchEngine:
         """
         video_files = []
 
-        if hasattr(self.config, 'main_file_path') and self.config.main_file_path:
-            index_path = self._resolve_path(self.config.main_file_path)
+        if hasattr(self.config, 'main_input_path') and self.config.main_input_path:
+            index_path = self._resolve_path(self.config.main_input_path)
         else:
             index_path = None
             
@@ -169,8 +169,8 @@ class VideoSearchEngine:
         
         # Load slice_id mapping if available
         path_to_slice_id = {}
-        if hasattr(self.config, 'main_file_path') and self.config.main_file_path:
-            index_path = self._resolve_path(self.config.main_file_path)
+        if hasattr(self.config, 'main_input_path') and self.config.main_input_path:
+            index_path = self._resolve_path(self.config.main_input_path)
             if index_path and index_path.exists():
                 try:
                     if index_path.suffix.lower() == '.parquet':
@@ -245,16 +245,16 @@ class VideoSearchEngine:
         Returns:
             Build statistics
         """
-        if hasattr(self.config, 'query_file_path') and self.config.query_file_path:
-            query_file_path = self._resolve_path(self.config.query_file_path)
-            if query_file_path.exists():
-                logger.info(f"Loading query videos from file path list: {query_file_path}")
-                return self.query_manager.build_query_database_from_file_list(query_file_path, force_rebuild)
+        if hasattr(self.config, 'query_input_path') and self.config.query_input_path:
+            query_input_path = self._resolve_path(self.config.query_input_path)
+            if query_input_path.exists():
+                logger.info(f"Loading query videos from file path list: {query_input_path}")
+                return self.query_manager.build_query_database_from_file_list(query_input_path, force_rebuild)
         
         if query_video_directory:
             query_dir = self._resolve_path(query_video_directory)
         else:
-            raise ValueError("No query video directory provided and no query_file_path configured")
+            raise ValueError("No query video directory provided and no query_input_path configured")
         
         if not query_dir.exists():
             logger.warning(f"Query video directory not found: {query_dir}")
@@ -293,13 +293,13 @@ class VideoSearchEngine:
         
         logger.info(f"Falling back to real-time processing for slice_id: {slice_id}")
         
-        if hasattr(self.config, 'query_file_path') and self.config.query_file_path:
-            query_file_path = self._resolve_path(self.config.query_file_path)
-            if query_file_path.exists():
-                if query_file_path.suffix.lower() == '.parquet':
-                    df = pd.read_parquet(query_file_path)
+        if hasattr(self.config, 'query_input_path') and self.config.query_input_path:
+            query_input_path = self._resolve_path(self.config.query_input_path)
+            if query_input_path.exists():
+                if query_input_path.suffix.lower() == '.parquet':
+                    df = pd.read_parquet(query_input_path)
                 else:
-                    df = pd.read_csv(query_file_path)
+                    df = pd.read_csv(query_input_path)
                 
                 matching_rows = df[df['slice_id'] == slice_id]
                 if len(matching_rows) > 0:
@@ -307,7 +307,7 @@ class VideoSearchEngine:
                     if query_path.exists():
                         return self.search_by_video(query_path, top_k)
         
-        raise VideoNotFoundError(f"Query video not found for slice_id: {slice_id}. Please ensure it's listed in query_file_path.")
+        raise VideoNotFoundError(f"Query video not found for slice_id: {slice_id}. Please ensure it's listed in query_input_path.")
 
     def _extract_embeddings(self, video_paths: List[Path]) -> List[Dict[str, Any]]:
         """

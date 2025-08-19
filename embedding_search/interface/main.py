@@ -64,7 +64,7 @@ def main():
         help='Directory containing video files'
     )
     build_parser.add_argument(
-        '--main-file-path',
+        '--main-input-path',
         type=str,
         help='Path to main video index file containing video file paths (column: sensor_video_file)'
     )
@@ -85,7 +85,7 @@ def main():
         help='Directory containing query video files'
     )
     build_query_parser.add_argument(
-        '--query-file-path',
+        '--query-input-path',
         type=str,
         help='Path to query video index file containing video file paths (column: sensor_video_file)'
     )
@@ -163,10 +163,10 @@ def main():
             return 1
     
     # Override config with command line arguments
-    if hasattr(args, 'main_file_path') and args.main_file_path:
-        config.main_file_path = args.main_file_path
-    if hasattr(args, 'query_file_path') and args.query_file_path:
-        config.query_file_path = args.query_file_path
+    if hasattr(args, 'main_input_path') and args.main_input_path:
+        config.main_input_path = args.main_input_path
+    if hasattr(args, 'query_input_path') and args.query_input_path:
+        config.query_input_path = args.query_input_path
     if hasattr(args, 'batch_size') and args.batch_size:
         config.batch_size = args.batch_size
     if hasattr(args, 'top_k') and args.top_k:
@@ -192,7 +192,7 @@ def main():
         
         if args.command == 'build-main':
             logger.info("Building video embeddings database...")
-            video_source = args.video_dir if hasattr(args, 'video_dir') and args.video_dir else "from main_file_path"
+            video_source = args.video_dir if hasattr(args, 'video_dir') and args.video_dir else "from main_input_path"
             search_engine.build_database(video_source, args.force_rebuild)
             
             info = search_engine.get_database_info()
@@ -203,8 +203,8 @@ def main():
             
         elif args.command == 'build-query':
             logger.info("Building query video embeddings database...")
-            # Use query_file_path from config, query_dir argument is optional override
-            query_dir = args.query_dir if hasattr(args, 'query_dir') and args.query_dir else None
+            # Use query_input_path from config, query_dir argument is optional override
+            query_dir = args.query_dir if hasattr(args, 'query_dir') and args.query_dir else "from query_input_path"
             stats = search_engine.build_query_database(query_dir, args.force_rebuild)
             
             logger.info(f"Query database built successfully!")
@@ -317,7 +317,7 @@ def main():
             db_info = search_engine.get_database_info()
             if db_info['num_videos'] == 0:
                 logger.info("Building database first...")
-                search_engine.build_database("from main_file_path")
+                search_engine.build_database("from main_input_path")
             
             # Demo text search
             print("\n" + "="*80)

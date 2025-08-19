@@ -82,7 +82,7 @@ def load_database_info(_engine: VideoSearchEngine) -> Dict:
             "num_videos": 0,
             "categories": 0,
             "embedding_dim": 768,
-            "search_backend": "Mock",
+            "search_backend": "FAISS",
             "using_gpu": False,
             "cache_size": 0,
             "error": str(e)
@@ -1327,9 +1327,15 @@ def main():
         st.session_state.search_results = []
     if 'force_update' not in st.session_state:
         st.session_state.force_update = False
+    if 'input_video_info' not in st.session_state:
+        st.session_state.input_video_info = None
+    if 'similarity_threshold' not in st.session_state:
+        st.session_state.similarity_threshold = 0.5
+    if 'top_k' not in st.session_state:
+        st.session_state.top_k = 5
     
-    top_k = 5
-    similarity_threshold = 0.5
+    top_k = st.session_state.top_k
+    similarity_threshold = st.session_state.similarity_threshold
     viz_method = "umap"
     umap_neighbors = 15
     umap_min_dist = 0.1
@@ -1385,10 +1391,27 @@ def main():
                 if st.button("🎥 Search by Video", use_container_width=True, help="Smart search: uses pre-computed embeddings when available, falls back to real-time processing"):
                     with st.spinner("Searching for similar videos..."):
                         try:
-                            results = search_engine.search_by_filename(selected_video, top_k=top_k)
+                            # Update the search engine's similarity threshold
+                            search_engine.config.similarity_threshold = st.session_state.similarity_threshold
+                            results = search_engine.search_by_filename(selected_video, top_k=st.session_state.top_k)
                             st.session_state.search_results = results
                             st.session_state.text_query = f"Similar to: {selected_video}"
                             st.session_state.click_selection = SelectedVideo(0)
+                            
+                            # Store input video info with thumbnail from query database
+                            video_path = str(video_dir / selected_video)
+                            input_thumbnail = None
+                            try:
+                                input_thumbnail = search_engine.query_manager.query_db.get_thumbnail_base64(selected_video)
+                            except:
+                                pass
+                            
+                            st.session_state.input_video_info = {
+                                'slice_id': selected_video,
+                                'video_path': video_path,
+                                'type': 'video',
+                                'thumbnail': input_thumbnail or ''
+                            }
                             
                             try:
                                 cached_embedding = search_engine.query_manager.get_query_embedding(selected_video)
@@ -1417,10 +1440,19 @@ def main():
             if text_query:
                 with st.spinner("Searching..."):
                     try:
-                        results = search_engine.search_by_text(text_query, top_k=top_k)
+                        # Update the search engine's similarity threshold
+                        search_engine.config.similarity_threshold = st.session_state.similarity_threshold
+                        results = search_engine.search_by_text(text_query, top_k=st.session_state.top_k)
                         st.session_state.search_results = results
                         st.session_state.text_query = text_query
                         st.session_state.text_selection = SelectedVideo(0)
+                        
+                        # Store text query as input
+                        st.session_state.input_video_info = {
+                            'slice_id': text_query,
+                            'type': 'text'
+                        }
+                        
                         st.success(f"Found {len(results)} results!")
                     except NoResultsError:
                         st.warning("No results found above similarity threshold")
@@ -1429,9 +1461,9 @@ def main():
             else:
                 st.warning("Please enter a search query")
 
-        top_k = st.slider("Top-K Results", 1, 15, top_k)
+        st.session_state.top_k = st.slider("Top-K Results", 1, 15, st.session_state.top_k)
 
-        similarity_threshold = st.slider("Similarity Threshold", 0.0, 1.0, similarity_threshold, 0.1)
+        st.session_state.similarity_threshold = st.slider("Similarity Threshold", 0.0, 1.0, st.session_state.similarity_threshold, 0.1)
 
         viz_method = st.selectbox(
             "Visualization Method",
@@ -1508,7 +1540,7 @@ def main():
                 viz_method, 
                 selected_idx,
                 query_info=query_info,
-                top_k=top_k,
+                top_k=st.session_state.top_k,
                 all_videos=all_videos,
                 **({
                     'neighbors': umap_neighbors,
@@ -1567,7 +1599,7 @@ def main():
                 "3d_umap", 
                 selected_idx,
                 query_info=query_info,
-                top_k=top_k,
+                top_k=st.session_state.top_k,
                 all_videos=all_videos
             )
             
@@ -1614,9 +1646,6 @@ def main():
         st.session_state.force_update = False
 
     if st.session_state.search_results:
-        st.markdown('<div class="section-title">Top K Results</div>', unsafe_allow_html=True)
-
-        # Removed thumbnail loading summary as requested
 
         current_selection = max(
             st.session_state.text_selection.idx if st.session_state.text_selection.is_valid() else -1,
@@ -1625,84 +1654,238 @@ def main():
         if current_selection == -1:
             current_selection = 0
 
-        featured_col, results_col = st.columns([2, 1])
-
-        with featured_col:
-            featured_video = st.session_state.search_results[0]
-            if current_selection is not None and current_selection < len(st.session_state.search_results):
-                featured_video = st.session_state.search_results[current_selection]
-
-            preview_video_with_thumbnail(featured_video, height=300)
-
-            st.markdown(f"""
-            <div style="text-align: center; margin-top: 1rem;">
-                <h3 style="color: #1e293b; margin-bottom: 0.5rem; font-size: 1.4rem;">
-                    {featured_video['slice_id']} <span style="color: #6366f1; margin-left: 20px;">Score: {featured_video['similarity_score']:.3f}</span>
-                </h3>
-            </div>
-            """, unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+        # Display results with improved styling
+        st.markdown("""
+        <div style="text-align: center; margin-bottom: 1.5rem;">
+            <h3 style="color: #1e293b; font-size: 1.5rem; font-weight: 700; margin: 0;">Top K Results</h3>
+        </div>
+        """, unsafe_allow_html=True)
         
-        with results_col:
-            with st.container(height=405):
-                for i, video in enumerate(st.session_state.search_results[:top_k]):
-                    is_selected = (current_selection == i)
-
-                    video_path = video.get('video_path', '')
-
-                    thumbnail_data = get_thumbnail_from_result(video)
-
-                    border_style = "2px solid #ff6b6b" if is_selected else "1px solid #e2e8f0"
-                    score_color = "#ff6b6b" if is_selected else "#6366f1"
-                    
-                    if thumbnail_data:
+        # Use Streamlit columns with better styling - display exactly top_k results up to 5 max
+        num_display_results = min(st.session_state.top_k, 5, len(st.session_state.search_results))
+        result_columns = st.columns(num_display_results)
+        
+        for i, video in enumerate(st.session_state.search_results[:num_display_results]):
+            with result_columns[i]:
+                is_selected = (current_selection == i)
+                thumbnail_data = get_thumbnail_from_result(video)
+                
+                # Single rank button with consistent styling
+                if st.button(f"Rank {i+1}", key=f"select_result_{i}", 
+                           use_container_width=True, 
+                           type="primary" if is_selected else "secondary"):
+                    st.session_state.text_selection = SelectedVideo(i)
+                    st.rerun()
+                
+                # Display thumbnail with consistent aspect ratio
+                if thumbnail_data:
+                    try:
+                        import base64
+                        import io
+                        from PIL import Image
+                        
+                        thumbnail_bytes = base64.b64decode(thumbnail_data)
+                        thumbnail_pil = Image.open(io.BytesIO(thumbnail_bytes))
+                        thumbnail_array = np.array(thumbnail_pil)
+                        
+                        st.image(thumbnail_array, use_container_width=True)
+                    except Exception as e:
+                        logger.warning(f"Failed to display thumbnail for {video['slice_id']}: {e}")
                         st.markdown(f"""
-                        <div style="display: flex; align-items: center; gap: 10px; padding: 4px 0; margin-bottom: 2px;">
-                            <div style="flex-shrink: 0;">
-                                <img src="data:image/jpeg;base64,{thumbnail_data}" 
-                                     style="width: 80px; height: 45px; object-fit: cover; border: {border_style}; border-radius: 4px;">
+                        <div style="width: 100%; aspect-ratio: 16/9; background: #6366f1; border-radius: 8px;
+                             display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
+                            🎬
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    # Placeholder with consistent styling
+                    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
+                    color = colors[i % len(colors)]
+                    st.markdown(f"""
+                    <div style="width: 100%; aspect-ratio: 16/9; background: {color}; border-radius: 8px;
+                         display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
+                        🎬
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Video info with consistent typography
+                st.markdown(f"""
+                <div style="text-align: center; margin-top: 0.75rem;">
+                    <div style="font-size: 0.9rem; font-weight: 600; color: #1e293b; margin-bottom: 0.25rem;">
+                        {video['slice_id'][:8]}...
+                    </div>
+                    <div style="font-size: 0.85rem; color: #6366f1; font-weight: 600;">
+                        Score: {video['similarity_score']:.3f}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        # Display input and selected result side by side with improved styling
+        if current_selection is not None and current_selection < len(st.session_state.search_results):
+            st.markdown("""
+            <hr style="margin: 2rem 0; border: none; border-top: 2px solid #e2e8f0; opacity: 0.6;">
+            """, unsafe_allow_html=True)
+            
+            featured_video = st.session_state.search_results[current_selection]
+            
+            # Create two equal columns for side-by-side comparison with better spacing
+            input_preview_col, selected_preview_col = st.columns(2, gap="large")
+            
+            with input_preview_col:
+                st.markdown("""
+                <div style="text-align: center; margin-bottom: 1.5rem;">
+                    <h3 style="color: #1e293b; font-size: 1.4rem; font-weight: 700; margin: 0;">Input</h3>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Display input based on type
+                if st.session_state.input_video_info:
+                    if st.session_state.input_video_info['type'] == 'video':
+                        # Try to get thumbnail for input video
+                        input_video_path = st.session_state.input_video_info.get('video_path', '')
+                        input_slice_id = st.session_state.input_video_info.get('slice_id', '')
+                        
+                        # Get thumbnail from stored info or query database
+                        input_thumbnail = st.session_state.input_video_info.get('thumbnail', '')
+                        
+                        if not input_thumbnail:
+                            try:
+                                # Use the query database to get pre-stored thumbnail
+                                input_thumbnail = search_engine.query_manager.query_db.get_thumbnail_base64(input_slice_id)
+                                logger.info(f"Input thumbnail from query DB: {'Success' if input_thumbnail else 'Not found'}")
+                                
+                                # Fallback to on-the-fly extraction if not in query database
+                                if not input_thumbnail and input_video_path and Path(input_video_path).exists():
+                                    logger.info(f"Falling back to on-the-fly extraction for {input_slice_id}")
+                                    input_video_info = {
+                                        'video_path': input_video_path,
+                                        'slice_id': input_slice_id,
+                                        'thumbnail': ''  # Force on-the-fly extraction
+                                    }
+                                    input_thumbnail = get_thumbnail_from_result(input_video_info)
+                                    logger.info(f"On-the-fly extraction result: {'Success' if input_thumbnail else 'Failed'}")
+                            except Exception as e:
+                                logger.error(f"Failed to get input thumbnail: {e}")
+                                import traceback
+                                logger.error(traceback.format_exc())
+                        
+                        # Display input thumbnail
+                        if input_thumbnail:
+                            try:
+                                import base64
+                                import io
+                                from PIL import Image
+                                
+                                thumbnail_bytes = base64.b64decode(input_thumbnail)
+                                thumbnail_pil = Image.open(io.BytesIO(thumbnail_bytes))
+                                thumbnail_array = np.array(thumbnail_pil)
+                                
+                                st.image(thumbnail_array, use_container_width=True)
+                            except Exception as e:
+                                logger.warning(f"Failed to display input thumbnail: {e}")
+                                st.markdown("""
+                                <div style="width: 100%; aspect-ratio: 16/9; background: #1e293b; border-radius: 8px;
+                                     display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
+                                    🎬
+                                </div>
+                                """, unsafe_allow_html=True)
+                        else:
+                            # Placeholder for input video
+                            st.markdown("""
+                            <div style="width: 100%; aspect-ratio: 16/9; background: #1e293b; border-radius: 8px;
+                                 display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
+                                🎬
                             </div>
-                            <div style="flex: 1; min-width: 0; padding-left: 4px;">
-                                <div style="color: #1e293b; font-weight: 600; font-size: 0.75rem; line-height: 1.0; margin-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                    {video['slice_id']}
-                                </div>
-                                <div style="color: {score_color}; font-weight: 600; font-size: 0.65rem; line-height: 1.0; margin-bottom: 1px;">
-                                    Score: {video['similarity_score']:.3f} {'✓' if is_selected else ''}
-                                </div>
-                                <div style="color: #64748b; font-size: 0.6rem; line-height: 1.0; margin-bottom: 1px;">
-                                    Rank #{video.get('rank', i+1)}
-                                </div>
+                            """, unsafe_allow_html=True)
+                        
+                        # Input video info with consistent styling
+                        st.markdown(f"""
+                        <div style="text-align: center; margin-top: 0.75rem;">
+                            <div style="font-size: 0.95rem; font-weight: 600; color: #1e293b; margin-bottom: 0.25rem;">
+                                {input_slice_id}
+                            </div>
+                            <div style="font-size: 0.8rem; color: #64748b;">
+                                Input Video
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
                     else:
-                        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
-                        color = colors[i % len(colors)]
-                        
+                        # Text query
                         st.markdown(f"""
-                        <div style="display: flex; align-items: center; gap: 10px; padding: 4px 0; margin-bottom: 2px;">
-                            <div style="flex-shrink: 0;">
-                                <div style="width: 80px; height: 45px; background: {color}; border: {border_style}; border-radius: 4px; 
-                                     display: flex; align-items: center; justify-content: center; color: white; font-size: 1.0rem;">
-                                    🎬
-                                </div>
-                            </div>
-                            <div style="flex: 1; min-width: 0; padding-left: 4px;">
-                                <div style="color: #1e293b; font-weight: 600; font-size: 0.75rem; line-height: 1.0; margin-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                    {video['slice_id']}
-                                </div>
-                                <div style="color: {score_color}; font-weight: 600; font-size: 0.65rem; line-height: 1.0; margin-bottom: 1px;">
-                                    Score: {video['similarity_score']:.3f} {'✓' if is_selected else ''}
-                                </div>
-                                <div style="color: #64748b; font-size: 0.6rem; line-height: 1.0;">
-                                    Rank #{video.get('rank', i+1)}
+                        <div style="width: 100%; aspect-ratio: 16/9; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); 
+                             border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 20px;">
+                            <div style="color: white; text-align: center;">
+                                <div style="font-size: 2.5rem; margin-bottom: 12px;">🔍</div>
+                                <div style="font-size: 1rem; font-weight: 500; word-wrap: break-word; line-height: 1.4;">
+                                    "{st.session_state.input_video_info['slice_id']}"
                                 </div>
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
-                    
-
-                    st.markdown("<hr style='margin: 4px 0; border: none; border-top: 1px solid #e2e8f0;'>", unsafe_allow_html=True)
+                        
+                        # Text query info
+                        st.markdown("""
+                        <div style="text-align: center; margin-top: 0.75rem;">
+                            <div style="font-size: 0.95rem; font-weight: 600; color: #1e293b; margin-bottom: 0.25rem;">
+                                Text Query
+                            </div>
+                            <div style="font-size: 0.8rem; color: #64748b;">
+                                Search Input
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+            
+            with selected_preview_col:
+                st.markdown("""
+                <div style="text-align: center; margin-bottom: 1.5rem;">
+                    <h3 style="color: #1e293b; font-size: 1.4rem; font-weight: 700; margin: 0;">Selected Result</h3>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Display selected video thumbnail
+                thumbnail_data = get_thumbnail_from_result(featured_video)
+                if thumbnail_data:
+                    try:
+                        import base64
+                        import io
+                        from PIL import Image
+                        
+                        thumbnail_bytes = base64.b64decode(thumbnail_data)
+                        thumbnail_pil = Image.open(io.BytesIO(thumbnail_bytes))
+                        thumbnail_array = np.array(thumbnail_pil)
+                        
+                        st.image(thumbnail_array, use_container_width=True)
+                    except Exception as e:
+                        st.markdown("""
+                        <div style="width: 100%; aspect-ratio: 16/9; background: #10b981; border-radius: 8px;
+                             display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
+                            🎬
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.markdown("""
+                    <div style="width: 100%; aspect-ratio: 16/9; background: #10b981; border-radius: 8px;
+                         display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
+                        🎬
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Display selected video info with compact styling
+                st.markdown(f"""
+                <div style="text-align: center; margin-top: 0.75rem;">
+                    <div style="font-size: 0.95rem; font-weight: 600; color: #1e293b; margin-bottom: 0.5rem;">
+                        {featured_video['slice_id']}
+                    </div>
+                    <div style="font-size: 0.85rem; color: #64748b; margin-bottom: 0.25rem;">
+                        <span style="font-weight: 500;">Rank:</span> 
+                        <span style="color: #10b981; font-weight: 700;">#{featured_video.get('rank', current_selection + 1)}</span>
+                    </div>
+                    <div style="font-size: 0.85rem; color: #64748b;">
+                        <span style="font-weight: 500;">Score:</span> 
+                        <span style="color: #6366f1; font-weight: 700;">{featured_video['similarity_score']:.4f}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
         
 
         with st.expander("📊 Detailed Results Table"):
