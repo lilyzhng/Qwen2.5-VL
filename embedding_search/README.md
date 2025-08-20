@@ -76,7 +76,36 @@ Test embedding model performance:
 
 ```bash
 python benchmarks/inference_benchmark.py --video-dir data/videos/video_database/ --max-videos 5
+
+python benchmarks/cosmos_cpu_benchmark.py --max-videos 2 --output my_results.json
 ```
+Performance
+🤖 MODEL CONFIGURATION:
+   Model: /Users/lilyzhang/Desktop/Qwen2.5-VL/cookbooks/nvidia_cosmos_embed_1
+   Device: CPU (forced)
+   Load Time: 0.71s
+
+📊 PERFORMANCE SUMMARY:
+   Total Videos: 5
+   Successful: 5
+   Failed: 0
+
+⏱️  INFERENCE PERFORMANCE:
+   Average Time: 23.049s per video
+   Range: 22.736s - 23.351s
+   Std Dev: 0.245s
+   Average FPS: 0.04
+
+🚀 THROUGHPUT:
+   Videos per minute: 2.6
+   Videos per hour: 156
+
+💻 CPU UTILIZATION:
+   Peak Usage: 30.2%
+   Average Usage: 27.6%
+
+🧠 MEMORY USAGE:
+   Peak RAM: 17967.0 MB (17.5 GB)
 
 ## Search Commands
 
@@ -106,3 +135,40 @@ Run the test suite:
 ```bash
 python -m pytest tests/ -v
 ```
+
+## CPU-only Performance
+
+🖥️  DARWIN SYSTEM CONFIGURATION:
+   Model: Unknown
+   CPU: 12 logical cores (12 physical)
+   RAM: 36.0 GB
+   OS: 14.4
+   PyTorch Threads: 6
+
+🤖 MODEL CONFIGURATION:
+   Model: /Users/lilyzhang/Desktop/Qwen2.5-VL/cookbooks/nvidia_cosmos_embed_1
+   Device: CPU (forced)
+   Load Time: 0.69s
+   
+📊 PERFORMANCE SUMMARY:
+   Total Videos: 5
+   Successful: 5
+   Failed: 0
+
+⏱️  INFERENCE PERFORMANCE:
+   Average Time: 23.049s per video
+   Range: 22.736s - 23.351s
+   Std Dev: 0.245s
+   Average FPS: 0.04
+
+🚀 THROUGHPUT:
+   Videos per minute: 2.6
+   Videos per hour: 156
+
+💻 CPU UTILIZATION:
+   Peak Usage: 30.2%
+   Average Usage: 27.6%
+
+🧠 MEMORY USAGE:
+   Peak RAM: 17967.0 MB (17.5 GB)
+   Average RAM: 17796.7 MB (17.4 GB)
