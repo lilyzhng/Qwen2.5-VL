@@ -156,9 +156,13 @@ class CosmosVideoEmbedder(EmbeddingModel):
         if self.device != self.config.device:
             logger.warning(f"CUDA not available, using CPU instead of {self.config.device}")
         
-        # Use float32 for compatibility (avoids bfloat16 issues)
-        self.dtype = torch.float32
-        logger.info(f"Using float32 precision on {self.device}")
+        # Use bfloat16 when available for better performance, fallback to float32
+        if self.device == "cuda" and torch.cuda.is_available() and torch.cuda.is_bf16_supported():
+            self.dtype = torch.bfloat16
+            logger.info(f"Using bfloat16 precision on {self.device} (optimal for Cosmos model)")
+        else:
+            self.dtype = torch.float32
+            logger.info(f"Using float32 precision on {self.device} (bfloat16 not supported)")
         
         logger.info(f"Initializing CosmosVideoEmbedder on {self.device} with dtype {self.dtype}")
         
@@ -267,6 +271,41 @@ class CosmosVideoEmbedder(EmbeddingModel):
             
         except Exception as e:
             raise EmbeddingExtractionError(f"Failed to extract text embedding: {str(e)}")
+    
+    def extract_dense_features(self, video_path: Path) -> Optional[torch.Tensor]:
+        """
+        Extract dense per-frame features for visualization (from official demo).
+        
+        Args:
+            video_path: Path to the video file
+            
+        Returns:
+            Dense features tensor or None if not available
+        """
+        try:
+            frames = self.video_processor.load_frames(video_path)
+            
+            # Prepare batch for model (BTCHW format)
+            batch = np.transpose(np.expand_dims(frames, 0), (0, 1, 4, 2, 3))
+            
+            with torch.no_grad():
+                video_inputs = self.preprocess(videos=batch).to(
+                    self.device, 
+                    dtype=self.dtype
+                )
+                video_out = self.model.get_video_embeddings(**video_inputs)
+                
+                # Extract dense features if available (as in official demo)
+                if hasattr(video_out, 'visual_embs'):
+                    dense_features = video_out.visual_embs[0]  # Remove batch dimension
+                    return dense_features.to("cpu", dtype=torch.float32)
+                else:
+                    logger.debug("Model doesn't provide visual_embs for dense feature extraction")
+                    return None
+                    
+        except Exception as e:
+            logger.error(f"Failed to extract dense features from {video_path}: {str(e)}")
+            return None
     
     def extract_video_embeddings_batch(self, 
                                      video_paths: List[Path], 

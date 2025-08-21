@@ -77,6 +77,15 @@ class VideoSearchEngine:
         
         self._model_cache = {}
         
+        # Initialize feature visualizer for advanced analysis
+        try:
+            from .feature_visualizer import FeatureVisualizer
+            self.feature_visualizer = FeatureVisualizer(self.embedder, self.config)
+            logger.info("Feature visualizer initialized")
+        except ImportError as e:
+            logger.warning(f"Feature visualizer not available: {e}")
+            self.feature_visualizer = None
+        
         logger.info(f"VideoSearchEngine initialized (GPU FAISS: {use_gpu_faiss})")
 
     def _resolve_path(self, path: Union[str, Path]) -> Path:
@@ -488,9 +497,39 @@ class VideoSearchEngine:
         except Exception as e:
             raise SearchError(f"Joint search failed: {str(e)}")
     
+    def _calculate_similarity_with_logit_scale(self, query_emb: np.ndarray, db_embeddings: np.ndarray) -> np.ndarray:
+        """
+        Calculate similarity using model's logit scale for more accurate scoring.
+        
+        Args:
+            query_emb: Query embedding (1D)
+            db_embeddings: Database embeddings (2D: num_videos x embedding_dim)
+            
+        Returns:
+            Similarity scores
+        """
+        try:
+            if hasattr(self.embedder.model, 'logit_scale'):
+                # Convert to torch tensors
+                query_tensor = torch.from_numpy(query_emb).to(self.embedder.device, dtype=self.embedder.dtype)
+                db_tensor = torch.from_numpy(db_embeddings).to(self.embedder.device, dtype=self.embedder.dtype)
+                
+                with torch.no_grad():
+                    # Use logit scale for better similarity calculation (as in official demo)
+                    logit_scale = self.embedder.model.logit_scale.exp()
+                    similarities = torch.softmax(logit_scale * query_tensor @ db_tensor.T, dim=-1)
+                    return similarities.cpu().numpy()
+            else:
+                logger.debug("Model has no logit_scale, using standard cosine similarity")
+                # Fallback to standard cosine similarity
+                return query_emb @ db_embeddings.T
+        except Exception as e:
+            logger.warning(f"Failed to use logit_scale similarity, falling back to cosine: {e}")
+            return query_emb @ db_embeddings.T
+
     def _search_by_embedding(self, query_embedding: np.ndarray, top_k: int) -> List[Dict]:
         """
-        Internal search method using FAISS.
+        Internal search method using FAISS with enhanced similarity calculation.
         
         Args:
             query_embedding: Normalized query embedding
@@ -503,11 +542,37 @@ class VideoSearchEngine:
         if self.database.embedding_matrix is None:
             logger.warning("No embeddings in database for search")
         
-        results = self.search_strategy.search(
-            query_embedding,
-            self.database,
-            top_k
-        )
+        # Try using enhanced similarity calculation first
+        try:
+            if hasattr(self.embedder.model, 'logit_scale') and self.database.embedding_matrix is not None:
+                # Use logit scale similarity for better results
+                similarities = self._calculate_similarity_with_logit_scale(
+                    query_embedding, 
+                    self.database.embedding_matrix
+                )
+                
+                # Get top-k indices
+                top_indices = np.argsort(similarities)[::-1][:top_k]
+                
+                results = []
+                for i, idx in enumerate(top_indices):
+                    similarity = float(similarities[idx])
+                    metadata = self.database.metadata[idx] if hasattr(self.database, 'metadata') else {}
+                    results.append((idx, similarity, metadata))
+            else:
+                # Fallback to FAISS search
+                results = self.search_strategy.search(
+                    query_embedding,
+                    self.database,
+                    top_k
+                )
+        except Exception as e:
+            logger.warning(f"Enhanced similarity failed, using FAISS: {e}")
+            results = self.search_strategy.search(
+                query_embedding,
+                self.database,
+                top_k
+            )
         
         if not results:
             raise NoResultsError("No results found")
@@ -620,7 +685,10 @@ class VideoSearchEngine:
                 'version': '2.0',
                 'search_backend': stats.get('search_backend', 'Unknown'),
                 'cache_size': stats.get('cache_size', 0),
-                'using_gpu': stats.get('using_gpu', False)
+                'using_gpu': stats.get('using_gpu', False),
+                'has_feature_visualizer': self.feature_visualizer is not None,
+                'supports_logit_scale': hasattr(self.embedder.model, 'logit_scale'),
+                'precision': str(self.embedder.dtype)
             }
             
             return info
@@ -635,5 +703,49 @@ class VideoSearchEngine:
                 'search_backend': 'Unknown',
                 'cache_size': 0,
                 'using_gpu': False,
+                'has_feature_visualizer': False,
+                'supports_logit_scale': False,
+                'precision': 'unknown',
                 'error': str(e)
             }
+    
+    def create_pca_visualization(self, video_path: Union[str, Path], output_path: Optional[Union[str, Path]] = None) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+        """
+        Create PCA feature visualization for a video (from official demo).
+        
+        Args:
+            video_path: Path to input video
+            output_path: Optional path to save visualization
+            
+        Returns:
+            Tuple of (original_frames, pca_frames) or None if feature visualizer not available
+        """
+        if self.feature_visualizer is None:
+            logger.warning("Feature visualizer not available")
+            return None
+        
+        try:
+            return self.feature_visualizer.create_pca_visualization(video_path, output_path)
+        except Exception as e:
+            logger.error(f"Failed to create PCA visualization: {e}")
+            return None
+    
+    def analyze_temporal_stability(self, video_path: Union[str, Path]) -> Optional[Dict[str, Any]]:
+        """
+        Analyze temporal stability of video features.
+        
+        Args:
+            video_path: Path to video file
+            
+        Returns:
+            Temporal stability metrics or None if not available
+        """
+        if self.feature_visualizer is None:
+            logger.warning("Feature visualizer not available")
+            return None
+        
+        try:
+            return self.feature_visualizer.analyze_temporal_stability(video_path)
+        except Exception as e:
+            logger.error(f"Failed to analyze temporal stability: {e}")
+            return None
