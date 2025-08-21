@@ -22,7 +22,7 @@ class VideoRetrievalConfig:
     main_input_path: str = "data/main_input_path.parquet"             # Main video file paths
     query_input_path: str = "data/query_input_path.parquet"           # Query video file paths
     use_safe_serialization: bool = True
-    supported_formats: Tuple[str, ...] = ('.mp4', '.avi', '.mov')
+    supported_formats: Tuple[str, ...] = ('.mp4', '.avi', '.mov', '.mkv', '.webm')
     thumbnail_size: Tuple[int, int] = (480, 270)  # 16:9 aspect ratio, higher resolution
     resolution: Tuple[int, int] = (448, 448)
     default_top_k: int = 5

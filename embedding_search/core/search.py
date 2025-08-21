@@ -542,6 +542,11 @@ class VideoSearchEngine:
         if self.database.embedding_matrix is None:
             logger.warning("No embeddings in database for search")
         
+        # Get more results initially to account for threshold filtering
+        # Use max of top_k*3 or 50 to ensure we have enough candidates
+        search_k = max(top_k * 3, 50)
+        search_k = min(search_k, len(self.database.embedding_matrix) if self.database.embedding_matrix is not None else top_k)
+        
         # Try using enhanced similarity calculation first
         try:
             if hasattr(self.embedder.model, 'logit_scale') and self.database.embedding_matrix is not None:
@@ -551,8 +556,8 @@ class VideoSearchEngine:
                     self.database.embedding_matrix
                 )
                 
-                # Get top-k indices
-                top_indices = np.argsort(similarities)[::-1][:top_k]
+                # Get more candidates for threshold filtering
+                top_indices = np.argsort(similarities)[::-1][:search_k]
                 
                 results = []
                 for i, idx in enumerate(top_indices):
@@ -560,30 +565,30 @@ class VideoSearchEngine:
                     metadata = self.database.metadata[idx] if hasattr(self.database, 'metadata') else {}
                     results.append((idx, similarity, metadata))
             else:
-                # Fallback to FAISS search
+                # Fallback to FAISS search with more candidates
                 results = self.search_strategy.search(
                     query_embedding,
                     self.database,
-                    top_k
+                    search_k
                 )
         except Exception as e:
             logger.warning(f"Enhanced similarity failed, using FAISS: {e}")
             results = self.search_strategy.search(
                 query_embedding,
                 self.database,
-                top_k
+                search_k
             )
         
         if not results:
             raise NoResultsError("No results found")
         
+        # Apply threshold filtering and limit to top_k
         formatted_results = []
+        threshold_filtered_results = []
+        
         for idx, similarity, metadata in results:
-            if similarity < self.config.similarity_threshold:
-                continue
-                
             result = {
-                "rank": len(formatted_results) + 1,
+                "rank": len(threshold_filtered_results) + 1,
                 "video_path": metadata.get("video_path", ""),
                 "slice_id": metadata.get("slice_id", ""),
                 "similarity_score": similarity,
@@ -591,12 +596,24 @@ class VideoSearchEngine:
                 "thumbnail": metadata.get("thumbnail", ""),
                 "thumbnail_size": metadata.get("thumbnail_size", (0, 0))
             }
-            formatted_results.append(result)
+            
+            if similarity >= self.config.similarity_threshold:
+                threshold_filtered_results.append(result)
+            
+            # Always keep top results for display, even if below threshold
+            if len(formatted_results) < top_k:
+                formatted_results.append(result)
         
-        if not formatted_results:
-            raise NoResultsError(f"No results above threshold {self.config.similarity_threshold}")
+        # If we have enough results above threshold, use those
+        if len(threshold_filtered_results) >= top_k:
+            return threshold_filtered_results[:top_k]
         
-        return formatted_results
+        # Otherwise, return top_k results regardless of threshold
+        # but log a warning about low similarity scores
+        if len(threshold_filtered_results) < top_k and self.config.similarity_threshold > 0:
+            logger.warning(f"Only {len(threshold_filtered_results)} results above threshold {self.config.similarity_threshold:.3f}. Returning top {top_k} results.")
+        
+        return formatted_results[:top_k]
     
     def get_neighbors(self, video_idx: int, k: int = 5, ignore_self: bool = True) -> List[int]:
         """
