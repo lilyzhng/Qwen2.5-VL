@@ -156,9 +156,13 @@ class CosmosVideoEmbedder(EmbeddingModel):
         if self.device != self.config.device:
             logger.warning(f"CUDA not available, using CPU instead of {self.config.device}")
         
-        # Use float32 for compatibility (avoids bfloat16 issues)
-        self.dtype = torch.float32
-        logger.info(f"Using float32 precision on {self.device}")
+        # Use bfloat16 when available for better performance, fallback to float32
+        if self.device == "cuda" and torch.cuda.is_available() and torch.cuda.is_bf16_supported():
+            self.dtype = torch.bfloat16
+            logger.info(f"Using bfloat16 precision on {self.device} (optimal for Cosmos model)")
+        else:
+            self.dtype = torch.float32
+            logger.info(f"Using float32 precision on {self.device} (bfloat16 not supported)")
         
         logger.info(f"Initializing CosmosVideoEmbedder on {self.device} with dtype {self.dtype}")
         
