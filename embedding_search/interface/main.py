@@ -12,9 +12,12 @@ sys.path.insert(0, str(project_root))
 
 import argparse
 import logging
+import numpy as np
+import pandas as pd
 from core.search import VideoSearchEngine
 from core.visualizer import VideoResultsVisualizer
 from core.config import VideoRetrievalConfig
+from core.cluster import EmbeddingClusterer
 from core.exceptions import (
     VideoRetrievalError, VideoNotFoundError, NoResultsError
 )
@@ -148,6 +151,50 @@ def main():
     list_query_parser = subparsers.add_parser('list-queries', help='List available query videos')
     
     demo_parser = subparsers.add_parser('demo', help='Run demo with example query')
+    
+    cluster_parser = subparsers.add_parser('cluster', help='Generate clustering and 2D coordinates for embeddings')
+    cluster_parser.add_argument(
+        '--database-type', '-dt',
+        type=str,
+        choices=['main', 'query', 'both'],
+        default='main',
+        help='Which database to cluster (default: main)'
+    )
+    cluster_parser.add_argument(
+        '--pca-components', '-pc',
+        type=int,
+        default=50,
+        help='Number of PCA components for dimensionality reduction (default: 50)'
+    )
+    cluster_parser.add_argument(
+        '--umap-neighbors', '-un',
+        type=int,
+        default=15,
+        help='Number of neighbors for UMAP (default: 15)'
+    )
+    cluster_parser.add_argument(
+        '--umap-min-dist', '-umd',
+        type=float,
+        default=0.1,
+        help='Minimum distance for UMAP (default: 0.1)'
+    )
+    cluster_parser.add_argument(
+        '--dbscan-eps', '-de',
+        type=float,
+        default=0.5,
+        help='DBSCAN epsilon parameter (default: 0.5)'
+    )
+    cluster_parser.add_argument(
+        '--dbscan-min-samples', '-dms',
+        type=int,
+        default=5,
+        help='DBSCAN minimum samples parameter (default: 5)'
+    )
+    cluster_parser.add_argument(
+        '--visualize', '-v',
+        action='store_true',
+        help='Generate visualization of clusters'
+    )
     
     config_parser = subparsers.add_parser('config', help='Generate example configuration file')
     config_parser.add_argument(
@@ -399,6 +446,88 @@ def main():
                 print(f"  Similarity Score: {result['similarity_score']:.4f}")
             
             logger.info("Demo completed successfully!")
+        
+        elif args.command == 'cluster':
+            logger.info(f"Generating clusters for {args.database_type} database(s)...")
+            
+            databases_to_process = []
+            if args.database_type in ['main', 'both']:
+                databases_to_process.append(('main', config.main_embeddings_path))
+            if args.database_type in ['query', 'both']:
+                databases_to_process.append(('query', config.query_embeddings_path))
+            
+            for db_type, db_path in databases_to_process:
+                db_path = Path(db_path)
+                if not db_path.exists():
+                    logger.warning(f"{db_type.capitalize()} database not found at {db_path}. Skipping...")
+                    continue
+                
+                logger.info(f"Processing {db_type} database: {db_path}")
+                
+                # Load parquet file
+                df = pd.read_parquet(db_path)
+                logger.info(f"Loaded {len(df)} embeddings from {db_type} database")
+                
+                # Extract embeddings
+                embeddings = np.vstack(df['embedding'].values)
+                logger.info(f"Embeddings shape: {embeddings.shape}")
+                
+                # Initialize clusterer with command line arguments
+                clusterer = EmbeddingClusterer(
+                    pca_components=args.pca_components,
+                    umap_n_neighbors=args.umap_neighbors,
+                    umap_min_dist=args.umap_min_dist,
+                    dbscan_eps=args.dbscan_eps,
+                    dbscan_min_samples=args.dbscan_min_samples
+                )
+                
+                # Perform clustering
+                coords_2d, cluster_labels = clusterer.fit_transform(embeddings)
+                
+                # Add cluster information to dataframe
+                df['cluster_id'] = cluster_labels
+                df['x'] = coords_2d[:, 0]
+                df['y'] = coords_2d[:, 1]
+                
+                # Save updated parquet file
+                df.to_parquet(db_path, index=False)
+                logger.info(f"Updated {db_path} with cluster information")
+                
+                # Get and display statistics
+                stats = clusterer.get_cluster_statistics()
+                print(f"\n{db_type.upper()} DATABASE CLUSTERING RESULTS")
+                print("="*50)
+                print(f"Total points: {len(df)}")
+                print(f"Number of clusters: {stats['n_clusters']}")
+                print(f"Noise points: {stats['n_noise_points']}")
+                print(f"PCA explained variance: {stats['pca_explained_variance']:.2%}")
+                print("\nCluster sizes:")
+                for cluster, size in stats['cluster_sizes'].items():
+                    print(f"  {cluster}: {size} points")
+                
+                # Save detailed results as JSON
+                json_path = db_path.parent / f"{db_path.stem}_cluster_results.json"
+                metadata = [{'slice_id': row['slice_id'], 'video_path': row['video_path']} 
+                           for _, row in df.iterrows()]
+                clusterer.save_results(json_path, metadata=metadata)
+                logger.info(f"Saved detailed clustering results to {json_path}")
+                
+                # Generate visualization if requested
+                if args.visualize:
+                    try:
+                        from core.cluster import visualize_clusters
+                        viz_path = db_path.parent / f"{db_path.stem}_cluster_visualization.png"
+                        visualize_clusters(
+                            coords_2d, 
+                            cluster_labels,
+                            save_path=viz_path,
+                            point_names=df['slice_id'].tolist()
+                        )
+                        logger.info(f"Saved visualization to {viz_path}")
+                    except ImportError:
+                        logger.warning("Visualization requires matplotlib. Install it to generate plots.")
+            
+            logger.info("Clustering completed successfully!")
     
     except Exception as e:
         return handle_error(e)

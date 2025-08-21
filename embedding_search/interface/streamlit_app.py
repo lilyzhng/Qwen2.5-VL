@@ -86,6 +86,27 @@ def load_database_info(_engine: VideoSearchEngine) -> Dict:
 def get_all_videos_from_database(search_engine) -> List[Dict]:
     """Get all videos from the database for visualization."""
     try:
+        # Try to get data directly from the parquet file for better cluster info
+        from pathlib import Path
+        project_root = Path(__file__).parent.parent
+        main_embeddings_path = project_root / "data" / "main_embeddings.parquet"
+        
+        if main_embeddings_path.exists():
+            import pandas as pd
+            df = pd.read_parquet(main_embeddings_path)
+            all_videos = []
+            for _, row in df.iterrows():
+                video_info = {
+                    'slice_id': row['slice_id'],
+                    'video_path': row.get('video_path', ''),
+                    'similarity_score': 0.1,  # Default low similarity
+                    'rank': 1000,  # High rank for non-search results
+                    'metadata': row.to_dict()
+                }
+                all_videos.append(video_info)
+            return all_videos
+        
+        # Fallback to original method
         if hasattr(search_engine, 'database') and hasattr(search_engine.database, 'metadata'):
             all_videos = []
             for i, metadata in enumerate(search_engine.database.metadata):
@@ -108,34 +129,64 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
     if not results:
         return go.Figure()
     
+    # Load the actual cluster data from the main embeddings parquet file
+    try:
+        from pathlib import Path
+        project_root = Path(__file__).parent.parent
+        main_embeddings_path = project_root / "data" / "main_embeddings.parquet"
+        
+        if main_embeddings_path.exists():
+            cluster_df = pd.read_parquet(main_embeddings_path)
+            # Create a mapping from slice_id to coordinates and cluster
+            coord_mapping = {
+                row['slice_id']: {
+                    'x': row['x'],
+                    'y': row['y'],
+                    'cluster_id': row['cluster_id']
+                }
+                for _, row in cluster_df.iterrows()
+                if 'x' in cluster_df.columns and 'y' in cluster_df.columns
+            }
+            has_real_coords = len(coord_mapping) > 0
+        else:
+            coord_mapping = {}
+            has_real_coords = False
+    except Exception as e:
+        logger.warning(f"Could not load cluster data: {e}")
+        coord_mapping = {}
+        has_real_coords = False
+    
     # Use all videos from database if provided, otherwise use just search results
-    if all_videos and len(all_videos) > len(results):
-        df_all = pd.DataFrame([
-            {
-                'slice_id': r.get('slice_id', f"Video {i+1}"),
-                'similarity': 0.1,  # Default low similarity for non-search results
-                'rank': i + len(results) + 1,  # Rank after search results
-                'category': getattr(r, 'category', 'unknown'),
-                'idx': i + len(results),
-                'is_search_result': False
-            }
-            for i, r in enumerate(all_videos[len(results):])  # Videos not in search results
-        ])
+    if all_videos:
+        # Create a set of search result slice_ids for quick lookup
+        search_result_ids = {r['slice_id'] for r in results}
         
-        df_search = pd.DataFrame([
-            {
-                'slice_id': r['slice_id'],
-                'similarity': r['similarity_score'],
-                'rank': r['rank'],
-                'category': getattr(r, 'category', 'unknown'),
+        # Create dataframe for all videos
+        all_video_data = []
+        for i, video in enumerate(all_videos):
+            is_search_result = video['slice_id'] in search_result_ids
+            
+            # Find the corresponding search result if this is one
+            if is_search_result:
+                matching_result = next((r for r in results if r['slice_id'] == video['slice_id']), None)
+                similarity = matching_result['similarity_score'] if matching_result else 0.1
+                rank = matching_result['rank'] if matching_result else 1000
+            else:
+                similarity = 0.1
+                rank = 1000 + i
+                
+            all_video_data.append({
+                'slice_id': video['slice_id'],
+                'similarity': similarity,
+                'rank': rank,
+                'category': video.get('metadata', {}).get('category', 'unknown'),
                 'idx': i,
-                'is_search_result': True
-            }
-            for i, r in enumerate(results)
-        ])
+                'is_search_result': is_search_result
+            })
         
-        df = pd.concat([df_search, df_all], ignore_index=True)
+        df = pd.DataFrame(all_video_data)
     else:
+        # Just use search results if no database videos provided
         df = pd.DataFrame([
             {
                 'slice_id': r['slice_id'],
@@ -148,49 +199,136 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             for i, r in enumerate(results)
         ])
     
+    # Add real coordinates and cluster info if available
+    if has_real_coords:
+        df['x'] = df['slice_id'].map(lambda sid: coord_mapping.get(sid, {}).get('x', np.nan))
+        df['y'] = df['slice_id'].map(lambda sid: coord_mapping.get(sid, {}).get('y', np.nan))
+        df['cluster_id'] = df['slice_id'].map(lambda sid: coord_mapping.get(sid, {}).get('cluster_id', -1))
+        
+        # For any missing coordinates (e.g., query videos), we'll generate them later
+        has_coords = ~df['x'].isna()
+    else:
+        has_coords = pd.Series([False] * len(df))
+    
     # Generate coordinates based on visualization method
     np.random.seed(42)
     
-    query_x, query_y, query_z = 0, 0, 0
+    # Calculate query position - place it at the center of the coordinate space
+    if has_real_coords and has_coords.any() and viz_method in ["umap", "pca", "trimap", "tsne"]:
+        # Get the center of all points (not just search results)
+        all_points_with_coords = df[has_coords]
+        if len(all_points_with_coords) > 0:
+            # Place query at the center of all data points
+            query_x = all_points_with_coords['x'].mean()
+            query_y = all_points_with_coords['y'].mean()
+            query_z = 0
+        else:
+            query_x, query_y, query_z = 0, 0, 0
+    else:
+        query_x, query_y, query_z = 0, 0, 0
     
     if viz_method == "umap":
-        # Position vectors based on distance from query (higher similarity = closer)
-        distances = (1 - df['similarity']) * 8  # Convert similarity to distance
-        angles = np.random.uniform(0, 2*np.pi, len(df))
-        df['x'] = query_x + distances * np.cos(angles) + np.random.randn(len(df)) * 0.5
-        df['y'] = query_y + distances * np.sin(angles) + np.random.randn(len(df)) * 0.5
-        title = "2D Embedding Space - UMAP"
+        # Use real coordinates if available, otherwise fall back to synthetic
+        if not has_real_coords or not has_coords.any():
+            # Position vectors based on distance from query (higher similarity = closer)
+            distances = (1 - df['similarity']) * 8  # Convert similarity to distance
+            angles = np.random.uniform(0, 2*np.pi, len(df))
+            df['x'] = query_x + distances * np.cos(angles) + np.random.randn(len(df)) * 0.5
+            df['y'] = query_y + distances * np.sin(angles) + np.random.randn(len(df)) * 0.5
+        else:
+            # For any points without coordinates (like query videos), place them near similar points
+            missing_coords = df['x'].isna()
+            if missing_coords.any():
+                # Place missing points based on similarity to existing points
+                for idx in df[missing_coords].index:
+                    # Find most similar point with coordinates
+                    point_similarity = df.loc[idx, 'similarity']
+                    distances = (1 - point_similarity) * 2
+                    angle = np.random.uniform(0, 2*np.pi)
+                    df.loc[idx, 'x'] = query_x + distances * np.cos(angle)
+                    df.loc[idx, 'y'] = query_y + distances * np.sin(angle)
+        title = "2D Embedding Space - UMAP (Real Clusters)"
         x_title, y_title = "UMAP Dimension 1", "UMAP Dimension 2"
     elif viz_method == "pca":
-        distances = (1 - df['similarity']) * 6
-        angles = np.random.uniform(0, 2*np.pi, len(df))
-        df['x'] = query_x + distances * np.cos(angles) + np.random.randn(len(df)) * 0.3
-        df['y'] = query_y + distances * np.sin(angles) + np.random.randn(len(df)) * 0.3
-        title = "2D Embedding Space - PCA"
-        x_title, y_title = "PCA Dimension 1", "PCA Dimension 2"
+        # For other methods, use the real coordinates if available (they're from UMAP but still meaningful)
+        if not has_real_coords or not has_coords.any():
+            distances = (1 - df['similarity']) * 6
+            angles = np.random.uniform(0, 2*np.pi, len(df))
+            df['x'] = query_x + distances * np.cos(angles) + np.random.randn(len(df)) * 0.3
+            df['y'] = query_y + distances * np.sin(angles) + np.random.randn(len(df)) * 0.3
+        else:
+            # Use real coordinates even for PCA view
+            missing_coords = df['x'].isna()
+            if missing_coords.any():
+                for idx in df[missing_coords].index:
+                    point_similarity = df.loc[idx, 'similarity']
+                    distances = (1 - point_similarity) * 2
+                    angle = np.random.uniform(0, 2*np.pi)
+                    df.loc[idx, 'x'] = query_x + distances * np.cos(angle)
+                    df.loc[idx, 'y'] = query_y + distances * np.sin(angle)
+        title = "2D Embedding Space - PCA View"
+        x_title, y_title = "Component 1", "Component 2"
     elif viz_method == "trimap":
-        distances = (1 - df['similarity']) * 7
-        angles = np.random.uniform(0, 2*np.pi, len(df))
-        df['x'] = query_x + distances * np.cos(angles) + np.random.randn(len(df)) * 0.4
-        df['y'] = query_y + distances * np.sin(angles) + np.random.randn(len(df)) * 0.4
-        title = "2D Embedding Space - TriMAP"
+        if not has_real_coords or not has_coords.any():
+            distances = (1 - df['similarity']) * 7
+            angles = np.random.uniform(0, 2*np.pi, len(df))
+            df['x'] = query_x + distances * np.cos(angles) + np.random.randn(len(df)) * 0.4
+            df['y'] = query_y + distances * np.sin(angles) + np.random.randn(len(df)) * 0.4
+        else:
+            # Use real coordinates
+            missing_coords = df['x'].isna()
+            if missing_coords.any():
+                for idx in df[missing_coords].index:
+                    point_similarity = df.loc[idx, 'similarity']
+                    distances = (1 - point_similarity) * 2
+                    angle = np.random.uniform(0, 2*np.pi)
+                    df.loc[idx, 'x'] = query_x + distances * np.cos(angle)
+                    df.loc[idx, 'y'] = query_y + distances * np.sin(angle)
+        title = "2D Embedding Space - TriMAP View"
         x_title, y_title = "TriMAP Dimension 1", "TriMAP Dimension 2"
     elif viz_method == "tsne":
-        distances = (1 - df['similarity']) * 5
-        angles = np.random.uniform(0, 2*np.pi, len(df))
-        df['x'] = query_x + distances * np.cos(angles) + np.random.randn(len(df)) * 0.3
-        df['y'] = query_y + distances * np.sin(angles) + np.random.randn(len(df)) * 0.3
-        title = "2D Embedding Space - t-SNE"
+        if not has_real_coords or not has_coords.any():
+            distances = (1 - df['similarity']) * 5
+            angles = np.random.uniform(0, 2*np.pi, len(df))
+            df['x'] = query_x + distances * np.cos(angles) + np.random.randn(len(df)) * 0.3
+            df['y'] = query_y + distances * np.sin(angles) + np.random.randn(len(df)) * 0.3
+        else:
+            # Use real coordinates
+            missing_coords = df['x'].isna()
+            if missing_coords.any():
+                for idx in df[missing_coords].index:
+                    point_similarity = df.loc[idx, 'similarity']
+                    distances = (1 - point_similarity) * 2
+                    angle = np.random.uniform(0, 2*np.pi)
+                    df.loc[idx, 'x'] = query_x + distances * np.cos(angle)
+                    df.loc[idx, 'y'] = query_y + distances * np.sin(angle)
+        title = "2D Embedding Space - t-SNE View"
         x_title, y_title = "t-SNE Dimension 1", "t-SNE Dimension 2"
     elif viz_method == "3d_umap":
-        distances = (1 - df['similarity']) * 6
-        # Generate random 3D directions
-        theta = np.random.uniform(0, 2*np.pi, len(df))  # azimuthal angle
-        phi = np.random.uniform(0, np.pi, len(df))      # polar angle
-        df['x'] = query_x + distances * np.sin(phi) * np.cos(theta) + np.random.randn(len(df)) * 0.3
-        df['y'] = query_y + distances * np.sin(phi) * np.sin(theta) + np.random.randn(len(df)) * 0.3
-        df['z'] = query_z + distances * np.cos(phi) + np.random.randn(len(df)) * 0.3
-        title = "3D Embedding Space - UMAP"
+        if not has_real_coords or not has_coords.any():
+            distances = (1 - df['similarity']) * 6
+            # Generate random 3D directions
+            theta = np.random.uniform(0, 2*np.pi, len(df))  # azimuthal angle
+            phi = np.random.uniform(0, np.pi, len(df))      # polar angle
+            df['x'] = query_x + distances * np.sin(phi) * np.cos(theta) + np.random.randn(len(df)) * 0.3
+            df['y'] = query_y + distances * np.sin(phi) * np.sin(theta) + np.random.randn(len(df)) * 0.3
+            df['z'] = query_z + distances * np.cos(phi) + np.random.randn(len(df)) * 0.3
+        else:
+            # Use real 2D coordinates and add a synthetic z based on cluster
+            missing_coords = df['x'].isna()
+            if missing_coords.any():
+                for idx in df[missing_coords].index:
+                    point_similarity = df.loc[idx, 'similarity']
+                    distances = (1 - point_similarity) * 2
+                    angle = np.random.uniform(0, 2*np.pi)
+                    df.loc[idx, 'x'] = query_x + distances * np.cos(angle)
+                    df.loc[idx, 'y'] = query_y + distances * np.sin(angle)
+            # Add z coordinate based on cluster with some variation
+            if 'cluster_id' in df.columns:
+                df['z'] = df['cluster_id'] * 0.5 + np.random.randn(len(df)) * 0.1
+            else:
+                df['z'] = query_z + (1 - df['similarity']) * np.random.randn(len(df)) * 0.3
+        title = "3D Embedding Space - UMAP (Real Clusters)"
     else:  # similarity heatmap
         n = len(df)
         similarity_matrix = np.random.rand(n, n) * 0.5 + 0.3
@@ -252,50 +390,135 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             # Separate traces: grayed out background videos vs highlighted search results
             traces = []
             if len(df_other) > 0:
-                traces.append(go.Scatter3d(
-                    x=df_other['x'],
-                    y=df_other['y'], 
-                    z=df_other['z'],
-                    mode='markers',
-                    marker=dict(
-                        size=8,  # Smaller size for non-results
-                        color='lightgray',
-                        opacity=0.3
-                    ),
-                    text=df_other['slice_id'],
-                    hovertemplate='<b>%{text}</b><br>Database Video<extra></extra>',
-                    name='Videos',
-                    showlegend=True
-                ))
+                if 'cluster_id' in df_other.columns and has_real_coords:
+                    # Show clusters for non-search results in 3D too
+                    cluster_colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85929E']
+                    
+                    # Add each cluster separately
+                    for cluster_id in sorted(df_other['cluster_id'].unique()):
+                        if cluster_id >= 0:  # Skip noise points
+                            cluster_data = df_other[df_other['cluster_id'] == cluster_id]
+                            traces.append(go.Scatter3d(
+                                x=cluster_data['x'],
+                                y=cluster_data['y'], 
+                                z=cluster_data['z'],
+                                mode='markers',
+                                marker=dict(
+                                    size=8,  # Smaller size for non-results
+                                    color=cluster_colors[cluster_id % len(cluster_colors)],
+                                    opacity=0.3,
+                                    line=dict(width=0)
+                                ),
+                                text=cluster_data['slice_id'],
+                                hovertemplate='<b>%{text}</b><br>Cluster: %{customdata}<br>Database Video<extra></extra>',
+                                customdata=cluster_data['cluster_id'],
+                                name=f'Cluster {cluster_id}',
+                                showlegend=True
+                            ))
+                    
+                    # Add noise points if any
+                    noise_data = df_other[df_other['cluster_id'] == -1]
+                    if len(noise_data) > 0:
+                        traces.append(go.Scatter3d(
+                            x=noise_data['x'],
+                            y=noise_data['y'], 
+                            z=noise_data['z'],
+                            mode='markers',
+                            marker=dict(
+                                size=8,
+                                color='lightgray',
+                                opacity=0.2
+                            ),
+                            text=noise_data['slice_id'],
+                            hovertemplate='<b>%{text}</b><br>Noise Point<extra></extra>',
+                            name='Noise',
+                            showlegend=True
+                        ))
+                else:
+                    # Original gray markers if no cluster info
+                    traces.append(go.Scatter3d(
+                        x=df_other['x'],
+                        y=df_other['y'], 
+                        z=df_other['z'],
+                        mode='markers',
+                        marker=dict(
+                            size=8,  # Smaller size for non-results
+                            color='lightgray',
+                            opacity=0.3
+                        ),
+                        text=df_other['slice_id'],
+                        hovertemplate='<b>%{text}</b><br>Database Video<extra></extra>',
+                        name='Videos',
+                        showlegend=True
+                    ))
             
             if len(df_search) > 0:
-                traces.append(go.Scatter3d(
-                    x=df_search['x'],
-                    y=df_search['y'], 
-                    z=df_search['z'],
-                    mode='markers',
-                    marker=dict(
-                        size=df_search['similarity'] * 15 + 10,
-                        color=df_search['similarity'],
-                        colorscale='Viridis',
-                        showscale=True,
-                        colorbar=dict(
-                            title="Similarity",
-                            title_side="right",
-                            x=1.01,
-                            len=0.6,
-                            thickness=10,
-                            title_font=dict(size=10),
-                            tickfont=dict(size=9),
-                            outlinewidth=0
-                        )
-                    ),
-                    text=df_search['slice_id'],
-                    hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<extra></extra>',
-                    customdata=df_search[['rank', 'similarity']].values,
-                    name='Search Results',
-                    showlegend=True
-                ))
+                # Check if we have cluster information
+                if 'cluster_id' in df_search.columns and has_real_coords:
+                    # Use cluster-based coloring
+                    cluster_colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85929E']
+                    traces.append(go.Scatter3d(
+                        x=df_search['x'],
+                        y=df_search['y'], 
+                        z=df_search['z'],
+                        mode='markers',
+                        marker=dict(
+                            size=df_search['similarity'] * 15 + 10,
+                            color=df_search['cluster_id'],
+                            colorscale=[[i/(len(cluster_colors)-1), cluster_colors[i]] for i in range(len(cluster_colors))],
+                            showscale=True,
+                            colorbar=dict(
+                                title="Cluster",
+                                title_side="right",
+                                x=1.01,
+                                len=0.6,
+                                thickness=10,
+                                title_font=dict(size=10),
+                                tickfont=dict(size=9),
+                                outlinewidth=0,
+                                tick0=0,
+                                dtick=1
+                            ),
+                            line=dict(
+                                color='white',
+                                width=1
+                            )
+                        ),
+                        text=df_search['slice_id'],
+                        hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<br>Cluster: %{customdata[2]}<extra></extra>',
+                        customdata=df_search[['rank', 'similarity', 'cluster_id']].values,
+                        name='Search Results',
+                        showlegend=True
+                    ))
+                else:
+                    # Original similarity-based coloring
+                    traces.append(go.Scatter3d(
+                        x=df_search['x'],
+                        y=df_search['y'], 
+                        z=df_search['z'],
+                        mode='markers',
+                        marker=dict(
+                            size=df_search['similarity'] * 15 + 10,
+                            color=df_search['similarity'],
+                            colorscale='Viridis',
+                            showscale=True,
+                            colorbar=dict(
+                                title="Similarity",
+                                title_side="right",
+                                x=1.01,
+                                len=0.6,
+                                thickness=10,
+                                title_font=dict(size=10),
+                                tickfont=dict(size=9),
+                                outlinewidth=0
+                            )
+                        ),
+                        text=df_search['slice_id'],
+                        hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<extra></extra>',
+                        customdata=df_search[['rank', 'similarity']].values,
+                        name='Search Results',
+                        showlegend=True
+                    ))
             
             fig = go.Figure(data=traces)
         else:
@@ -445,51 +668,133 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             # Create figure with traces
             fig = go.Figure()
             
-            # Add non-search-result videos (grayed out)
+            # Add non-search-result videos (grayed out but show clusters if available)
             if len(df_other) > 0:
-                fig.add_trace(go.Scatter(
-                    x=df_other['x'],
-                    y=df_other['y'],
-                    mode='markers',
-                    marker=dict(
-                        size=8,  # Smaller size for non-results
-                        color='lightgray',
-                        opacity=0.3
-                    ),
-                    text=df_other['slice_id'],
-                    hovertemplate='<b>%{text}</b><br>Database Video<extra></extra>',
-                    name='Videos',
-                    showlegend=True
-                ))
+                if 'cluster_id' in df_other.columns and has_real_coords:
+                    # Show clusters for non-search results too, but with lower opacity
+                    cluster_colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85929E']
+                    
+                    # Add each cluster separately for better legend control
+                    for cluster_id in sorted(df_other['cluster_id'].unique()):
+                        if cluster_id >= 0:  # Skip noise points
+                            cluster_data = df_other[df_other['cluster_id'] == cluster_id]
+                            fig.add_trace(go.Scatter(
+                                x=cluster_data['x'],
+                                y=cluster_data['y'],
+                                mode='markers',
+                                marker=dict(
+                                    size=8,  # Smaller size for non-results
+                                    color=cluster_colors[cluster_id % len(cluster_colors)],
+                                    opacity=0.3,
+                                    line=dict(width=0)
+                                ),
+                                text=cluster_data['slice_id'],
+                                hovertemplate='<b>%{text}</b><br>Cluster: %{customdata}<br>Database Video<extra></extra>',
+                                customdata=cluster_data['cluster_id'],
+                                name=f'Cluster {cluster_id}',
+                                showlegend=True
+                            ))
+                    
+                    # Add noise points if any
+                    noise_data = df_other[df_other['cluster_id'] == -1]
+                    if len(noise_data) > 0:
+                        fig.add_trace(go.Scatter(
+                            x=noise_data['x'],
+                            y=noise_data['y'],
+                            mode='markers',
+                            marker=dict(
+                                size=8,
+                                color='lightgray',
+                                opacity=0.2
+                            ),
+                            text=noise_data['slice_id'],
+                            hovertemplate='<b>%{text}</b><br>Noise Point<extra></extra>',
+                            name='Noise',
+                            showlegend=True
+                        ))
+                else:
+                    # Original gray markers if no cluster info
+                    fig.add_trace(go.Scatter(
+                        x=df_other['x'],
+                        y=df_other['y'],
+                        mode='markers',
+                        marker=dict(
+                            size=8,  # Smaller size for non-results
+                            color='lightgray',
+                            opacity=0.3
+                        ),
+                        text=df_other['slice_id'],
+                        hovertemplate='<b>%{text}</b><br>Database Video<extra></extra>',
+                        name='Videos',
+                        showlegend=True
+                    ))
             
             # Add search results (colorful)
             if len(df_search) > 0:
-                fig.add_trace(go.Scatter(
-                    x=df_search['x'],
-                    y=df_search['y'],
-                    mode='markers',
-                    marker=dict(
-                        size=df_search['similarity'] * 15 + 10,
-                        color=df_search['similarity'],
-                        colorscale='Viridis',
-                        showscale=True,
-                        colorbar=dict(
-                            title="Similarity",
-                            title_side="right",
-                            x=1.01,
-                            len=0.6,
-                            thickness=10,
-                            title_font=dict(size=10),
-                            tickfont=dict(size=9),
-                            outlinewidth=0
-                        )
-                    ),
-                    text=df_search['slice_id'],
-                    hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<extra></extra>',
-                    customdata=df_search[['rank', 'similarity']].values,
-                    name='Search Results',
-                    showlegend=True
-                ))
+                # Check if we have cluster information
+                if 'cluster_id' in df_search.columns and has_real_coords:
+                    # Use cluster-based coloring
+                    cluster_colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85929E']
+                    fig.add_trace(go.Scatter(
+                        x=df_search['x'],
+                        y=df_search['y'],
+                        mode='markers',
+                        marker=dict(
+                            size=df_search['similarity'] * 15 + 10,
+                            color=df_search['cluster_id'],
+                            colorscale=[[i/(len(cluster_colors)-1), cluster_colors[i]] for i in range(len(cluster_colors))],
+                            showscale=True,
+                            colorbar=dict(
+                                title="Cluster",
+                                title_side="right",
+                                x=1.01,
+                                len=0.6,
+                                thickness=10,
+                                title_font=dict(size=10),
+                                tickfont=dict(size=9),
+                                outlinewidth=0,
+                                tick0=0,
+                                dtick=1
+                            ),
+                            line=dict(
+                                color='white',
+                                width=1
+                            )
+                        ),
+                        text=df_search['slice_id'],
+                        hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<br>Cluster: %{customdata[2]}<extra></extra>',
+                        customdata=df_search[['rank', 'similarity', 'cluster_id']].values,
+                        name='Search Results',
+                        showlegend=True
+                    ))
+                else:
+                    # Original similarity-based coloring
+                    fig.add_trace(go.Scatter(
+                        x=df_search['x'],
+                        y=df_search['y'],
+                        mode='markers',
+                        marker=dict(
+                            size=df_search['similarity'] * 15 + 10,
+                            color=df_search['similarity'],
+                            colorscale='Viridis',
+                            showscale=True,
+                            colorbar=dict(
+                                title="Similarity",
+                                title_side="right",
+                                x=1.01,
+                                len=0.6,
+                                thickness=10,
+                                title_font=dict(size=10),
+                                tickfont=dict(size=9),
+                                outlinewidth=0
+                            )
+                        ),
+                        text=df_search['slice_id'],
+                        hovertemplate='<b>%{text}</b><br>Rank: #%{customdata[0]}<br>Score: %{customdata[1]:.3f}<extra></extra>',
+                        customdata=df_search[['rank', 'similarity']].values,
+                        name='Search Results',
+                        showlegend=True
+                    ))
         else:
             # Original behavior for backward compatibility
             fig = px.scatter(
