@@ -102,14 +102,27 @@ def main():
         help='Path to query video file'
     )
     search_parser.add_argument(
-        '--query-filename', '-qf',
+        '--query-slice-id', '-qid',
         type=str,
-        help='Query video filename (uses pre-computed embeddings)'
+        help='Query video slice ID (8 digits, uses pre-computed embeddings)'
     )
     search_parser.add_argument(
         '--query-text', '-t',
         type=str,
-        help='Text query for video search'
+        help='Text query for search'
+    )
+    search_parser.add_argument(
+        '--search-mode', '-m',
+        type=str,
+        choices=['video', 'text', 'joint'],
+        default='auto',
+        help='Search mode: video, text, joint, or auto (default: auto - infers from inputs)'
+    )
+    search_parser.add_argument(
+        '--text-weight-alpha', '-a',
+        type=float,
+        default=0.5,
+        help='Text weight for joint search (0.0=video only, 1.0=text only, default=0.5)'
     )
     search_parser.add_argument(
         '--top-k', '-k',
@@ -215,19 +228,64 @@ def main():
                 logger.info(f"Cleaned up: {stats['orphaned_cleaned']} orphaned files")
             
         elif args.command == 'search':
-            if not args.query_video and not args.query_text and not args.query_filename:
-                logger.error("Please provide --query-video, --query-text, or --query-filename")
-                return 1
+            # Determine search mode
+            search_mode = args.search_mode
             
-            if args.query_filename:
-                logger.info(f"Searching by filename (pre-computed): {args.query_filename}")
-                results = search_engine.search_by_filename(args.query_filename)
-            elif args.query_video:
-                logger.info(f"Searching by video: {args.query_video}")
-                results = search_engine.search_by_video(args.query_video)
-            else:
+            # Auto-detect search mode if not specified
+            if search_mode == 'auto':
+                if args.query_slice_id:
+                    search_mode = 'video'
+                elif args.query_video:
+                    search_mode = 'video'
+                elif args.query_text and (args.query_video or args.query_slice_id):
+                    search_mode = 'joint'
+                elif args.query_text:
+                    search_mode = 'text'
+                else:
+                    logger.error("Please provide --query-video, --query-text, --query-slice-id, or both text and video for joint search")
+                    return 1
+            
+            # Execute search based on mode
+            if search_mode == 'joint':
+                if not args.query_text:
+                    logger.error("Joint search requires --query-text")
+                    return 1
+                if not (args.query_video or args.query_slice_id):
+                    logger.error("Joint search requires --query-video or --query-slice-id")
+                    return 1
+                
+                # Use slice_id or extract from video path for joint search
+                video_identifier = args.query_slice_id if args.query_slice_id else Path(args.query_video).name
+                
+                logger.info(f"Joint search: text='{args.query_text}', video={video_identifier}, alpha={args.text_weight_alpha}")
+                results = search_engine.search_by_joint(
+                    args.query_text, 
+                    video_identifier,
+                    alpha=args.text_weight_alpha,
+                    top_k=args.top_k
+                )
+                
+            elif search_mode == 'video':
+                if args.query_slice_id:
+                    logger.info(f"Searching by slice_id (pre-computed): {args.query_slice_id}")
+                    results = search_engine.search_by_filename(args.query_slice_id)
+                elif args.query_video:
+                    logger.info(f"Searching by video: {args.query_video}")
+                    results = search_engine.search_by_video(args.query_video)
+                else:
+                    logger.error("Video search requires --query-video or --query-slice-id")
+                    return 1
+                    
+            elif search_mode == 'text':
+                if not args.query_text:
+                    logger.error("Text search requires --query-text")
+                    return 1
                 logger.info(f"Searching by text: '{args.query_text}'")
                 results = search_engine.search_by_text(args.query_text)
+                
+            else:
+                logger.error(f"Invalid search mode: {search_mode}")
+                return 1
             
             print("\n" + "="*80)
             print("SEARCH RESULTS")
@@ -242,14 +300,24 @@ def main():
             if args.visualize:
                 visualizer = VideoResultsVisualizer()
                 
-                if args.query_video:
+                if search_mode == 'joint':
+                    # Joint search visualization - use text visualization with joint info
+                    video_identifier = args.query_slice_id if args.query_slice_id else Path(args.query_video).name
+                    joint_query_text = f"Joint: '{args.query_text}' + {video_identifier} (α={args.text_weight_alpha})"
+                    vis_path = visualizer.visualize_text_search_results(
+                        joint_query_text, results[:5], 
+                        show_interactive=True, keep_open=True
+                    )
+                elif search_mode == 'video' and args.query_video:
                     vis_path = visualizer.visualize_video_search_results(
                         args.query_video, results[:5],  # Top 5 for visualization
                         show_interactive=True, keep_open=True
                     )
                 else:
+                    # Text search or video search by slice_id
+                    query_display = args.query_text if args.query_text else args.query_slice_id
                     vis_path = visualizer.visualize_text_search_results(
-                        args.query_text, results[:5], 
+                        query_display, results[:5], 
                         show_interactive=True, keep_open=True
                     )
                 

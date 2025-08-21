@@ -430,6 +430,64 @@ class VideoSearchEngine:
         except Exception as e:
             raise SearchError(f"Text search failed: {str(e)}")
     
+    @time_it
+    def search_by_joint(self, query_text: str, query_video_slice_id: str,
+                       alpha: float = 0.5, top_k: Optional[int] = None) -> List[Dict]:
+        """
+        Joint search combining text and video embeddings with alpha weighting.
+        Uses precomputed video embeddings by default.
+        
+        Formula: q = normalize(alpha * E_text + (1 - alpha) * E_video)
+        
+        Args:
+            query_text: Text query
+            query_video_slice_id: Slice ID of query video (uses precomputed embedding)
+            alpha: Weight for text embedding (0.0 = video only, 1.0 = text only)
+            top_k: Number of results
+            
+        Returns:
+            Search results
+        """
+        if not query_text or not query_text.strip():
+            raise ValueError("Text query cannot be empty")
+        
+        if not query_video_slice_id or not query_video_slice_id.strip():
+            raise ValueError("Video slice_id cannot be empty")
+        
+        if not (0.0 <= alpha <= 1.0):
+            raise ValueError("Alpha must be between 0.0 and 1.0")
+        
+        top_k = top_k or self.config.default_top_k
+        
+        try:
+            # Extract text embedding
+            with torch.no_grad():
+                text_embedding = self.embedder.extract_text_embedding(query_text)
+            
+            text_embedding = text_embedding.astype('float32').reshape(1, -1)
+            batch_normalize_embeddings(text_embedding)
+            text_embedding = text_embedding[0]
+            
+            # Get precomputed video embedding
+            video_embedding = self.query_manager.get_query_embedding(query_video_slice_id)
+            if video_embedding is None:
+                raise VideoNotFoundError(f"No precomputed embedding found for slice_id: {query_video_slice_id}. Please build query database first.")
+            
+            logger.info(f"Using precomputed embedding for joint search: {query_video_slice_id}")
+            
+            # Combine embeddings with alpha weighting
+            joint_embedding = alpha * text_embedding + (1 - alpha) * video_embedding
+            
+            # Normalize the combined embedding to unit vector
+            joint_embedding = joint_embedding / np.linalg.norm(joint_embedding)
+            
+            logger.info(f"Joint search: alpha={alpha:.2f}, text_weight={alpha:.2f}, video_weight={1-alpha:.2f}")
+            
+            return self._search_by_embedding(joint_embedding, top_k)
+            
+        except Exception as e:
+            raise SearchError(f"Joint search failed: {str(e)}")
+    
     def _search_by_embedding(self, query_embedding: np.ndarray, top_k: int) -> List[Dict]:
         """
         Internal search method using FAISS.

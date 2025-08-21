@@ -59,14 +59,8 @@ def load_search_engine() -> VideoSearchEngine:
         config = VideoRetrievalConfig()
         search_engine = VideoSearchEngine(config=config)
         
-        # Try to load existing database, if it fails, we'll work with empty database
-        try:
-            search_engine.database.load_from_parquet(config.main_embeddings_path)
-        except:
-            try:
-                search_engine.database.load()
-            except:
-                pass
+        # Database loads automatically in ParquetVectorDatabase.__init__
+        # No need to explicitly load
                 
         return search_engine
     except Exception as e:
@@ -1156,6 +1150,8 @@ def main():
         st.session_state.similarity_threshold = 0.3  # Lower default for better text search compatibility
     if 'top_k' not in st.session_state:
         st.session_state.top_k = 5
+    if 'text_weight_alpha' not in st.session_state:
+        st.session_state.text_weight_alpha = 0.5  # Default alpha for joint search
     
     top_k = st.session_state.top_k
     similarity_threshold = st.session_state.similarity_threshold
@@ -1285,6 +1281,66 @@ def main():
                         st.error(f"Search failed: {e}")
             else:
                 st.warning("Please enter a search query")
+
+        # Alpha slider for joint search
+        st.session_state.text_weight_alpha = st.slider(
+            "Text Weight (α)", 
+            0.0, 
+            1.0, 
+            st.session_state.text_weight_alpha, 
+            0.1,
+            help="Weight for text in joint search: 0.0 = video only, 1.0 = text only, 0.5 = balanced"
+        )
+
+        # Joint search button
+        if st.button("🔗 Joint Search (Text + Video)", use_container_width=True):
+            if text_query and available_videos and selected_video:
+                with st.spinner("Performing joint search..."):
+                    try:
+                        # Update the search engine's similarity threshold
+                        search_engine.config.similarity_threshold = st.session_state.similarity_threshold
+                        results = search_engine.search_by_joint(
+                            text_query, 
+                            selected_video, 
+                            alpha=st.session_state.text_weight_alpha,
+                            top_k=st.session_state.top_k
+                        )
+                        st.session_state.search_results = results
+                        st.session_state.text_query = f"Joint: \"{text_query}\" + {selected_video}"
+                        st.session_state.text_selection = SelectedVideo(0)
+                        
+                        # Store joint search info
+                        video_path = str(video_dir / selected_video)
+                        input_thumbnail = None
+                        try:
+                            input_thumbnail = search_engine.query_manager.query_db.get_thumbnail_base64(selected_video)
+                        except:
+                            pass
+                        
+                        st.session_state.input_video_info = {
+                            'slice_id': f"Joint: \"{text_query}\" + {selected_video}",
+                            'video_path': video_path,
+                            'type': 'joint',
+                            'text_query': text_query,
+                            'video_slice_id': selected_video,
+                            'alpha': st.session_state.text_weight_alpha,
+                            'thumbnail': input_thumbnail or ''
+                        }
+                        
+                        st.success(f"Found {len(results)} results! (α={st.session_state.text_weight_alpha:.1f}: {st.session_state.text_weight_alpha*100:.0f}% text, {(1-st.session_state.text_weight_alpha)*100:.0f}% video)")
+                    except NoResultsError:
+                        st.warning(f"No results found above similarity threshold ({st.session_state.similarity_threshold:.2f})")
+                        if st.session_state.similarity_threshold > 0.3:
+                            st.info("💡 **Tip:** Try reducing the similarity threshold for better results.")
+                    except Exception as e:
+                        st.error(f"Joint search failed: {e}")
+            else:
+                missing_items = []
+                if not text_query:
+                    missing_items.append("text query")
+                if not available_videos or not selected_video:
+                    missing_items.append("video selection")
+                st.warning(f"Please provide: {', '.join(missing_items)}")
 
         st.session_state.top_k = st.slider("Top-K Results", 1, 15, st.session_state.top_k)
 
@@ -1609,7 +1665,57 @@ def main():
                 
                 # Display input based on type
                 if st.session_state.input_video_info:
-                    if st.session_state.input_video_info['type'] == 'video':
+                    if st.session_state.input_video_info['type'] == 'joint':
+                        # Joint search display
+                        joint_text = st.session_state.input_video_info.get('text_query', '')
+                        joint_video = st.session_state.input_video_info.get('video_slice_id', '')
+                        joint_alpha = st.session_state.input_video_info.get('alpha', 0.5)
+                        
+                        # Try to get thumbnail for joint video
+                        input_thumbnail = st.session_state.input_video_info.get('thumbnail', '')
+                        
+                        if input_thumbnail:
+                            try:
+                                thumbnail_bytes = base64.b64decode(input_thumbnail)
+                                thumbnail_pil = Image.open(io.BytesIO(thumbnail_bytes))
+                                thumbnail_array = np.array(thumbnail_pil)
+                                
+                                st.image(thumbnail_array, use_container_width=True)
+                            except Exception as e:
+                                logger.warning(f"Failed to display joint input thumbnail: {e}")
+                                st.markdown("""
+                                <div style="width: 100%; aspect-ratio: 16/9; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%); border-radius: 8px;
+                                     display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
+                                    🔗
+                                </div>
+                                """, unsafe_allow_html=True)
+                        else:
+                            # Placeholder for joint search
+                            st.markdown("""
+                            <div style="width: 100%; aspect-ratio: 16/9; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%); border-radius: 8px;
+                                 display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
+                                🔗
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        # Joint search info with alpha display
+                        st.markdown(f"""
+                        <div style="text-align: center; margin-top: 0.75rem;">
+                            <div style="font-size: 0.95rem; font-weight: 600; color: #1e293b; margin-bottom: 0.5rem;">
+                                Joint Search
+                            </div>
+                            <div style="font-size: 0.8rem; color: #64748b; margin-bottom: 0.25rem;">
+                                Text: "{joint_text}"
+                            </div>
+                            <div style="font-size: 0.8rem; color: #64748b; margin-bottom: 0.25rem;">
+                                Video: {joint_video}
+                            </div>
+                            <div style="font-size: 0.8rem; color: #6366f1; font-weight: 600;">
+                                α = {joint_alpha:.1f} ({joint_alpha*100:.0f}% text, {(1-joint_alpha)*100:.0f}% video)
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    elif st.session_state.input_video_info['type'] == 'video':
                         # Try to get thumbnail for input video
                         input_video_path = st.session_state.input_video_info.get('video_path', '')
                         input_slice_id = st.session_state.input_video_info.get('slice_id', '')
