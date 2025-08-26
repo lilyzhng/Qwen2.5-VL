@@ -571,7 +571,7 @@ def display_text_search_analysis(ground_truth: GroundTruthProcessor, quality_thr
     )
     
     # Set default search parameters
-    top_k = 10  # Search for more results to ensure we have 5 after quality filtering
+    top_k = 5  # Search for more results to ensure we have 5 after quality filtering
     similarity_threshold = 0.0
     semantic_threshold = 0.5
     
@@ -836,7 +836,7 @@ def display_video_analysis(ground_truth: GroundTruthProcessor, quality_threshold
             with st.spinner("Searching for similar videos..."):
                 search_results = search_engine.search_by_video(
                     video_info['video_path'],
-                    top_k=10,  # Search for more results to ensure we have enough after filtering
+                    top_k=5,  # Search for more results to ensure we have enough after filtering
                     use_cache=True
                 )
             
@@ -1062,8 +1062,8 @@ def main():
     
     This means:
     - **Recall@1 = 100%** when the top result is relevant
-    - **Recall@3 = 33%** when 1 out of 3 top results is relevant
-    - **Recall@5 = 40%** when 2 out of 5 top results are relevant
+    - **Recall@3 = 40%** when 2 out of 5 top results are relevant
+    - **Recall@5 = 33%** when 1 out of 3 top results is relevant 
     
     Note: When qualifying results < K, this is indicated in the recall details.
     """)
@@ -1267,7 +1267,7 @@ def main():
             custom_k_values = st.text_input(
                 "Enter K values (comma-separated):",
                 value="1,3,5",
-                placeholder="1,3,5,10"
+                placeholder="1,3,5"
             )
         
         if st.button("🚀 Run Custom Evaluation"):
