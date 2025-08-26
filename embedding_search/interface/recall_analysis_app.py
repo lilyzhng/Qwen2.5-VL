@@ -34,6 +34,237 @@ from core.search import VideoSearchEngine
 from core.config import VideoRetrievalConfig
 
 
+class KeywordMapper:
+    """Maps query text to fixed keywords using KeyBERT with preprocessing."""
+    
+    def __init__(self, fixed_keywords: List[str]):
+        self.fixed_keywords = fixed_keywords
+        self.kw_model = None
+        self.keyword_variations = {}
+        self._initialize_model()
+        self._build_keyword_variations()
+    
+    def _initialize_model(self):
+        """Initialize the KeyBERT model."""
+        try:
+            from keybert import KeyBERT
+            self.kw_model = KeyBERT('all-MiniLM-L6-v2')
+        except ImportError:
+            st.warning("⚠️ KeyBERT not installed. Install with: pip install keybert")
+            self.kw_model = None
+        except Exception as e:
+            st.warning(f"⚠️ Could not load KeyBERT model: {e}")
+            self.kw_model = None
+    
+    def _build_keyword_variations(self):
+        """Create variations of fixed keywords for better matching."""
+        import re
+        
+        for kw in self.fixed_keywords:
+            variations = [
+                kw,
+                kw.replace('_', ' '),  # turning_left -> turning left
+                kw.replace('-', ' '),  # real-time -> real time
+                ' '.join(kw.split('_')),  # handle multi_word_keywords
+                re.sub(r'(\d+)', r' \1 ', kw).strip(),  # car2pedestrian -> car 2 pedestrian
+            ]
+            # Add variations without numbers for car2pedestrian -> car pedestrian
+            if any(char.isdigit() for char in kw):
+                clean_version = re.sub(r'\d+', '', kw).replace('_', ' ').strip()
+                if clean_version:
+                    variations.append(clean_version)
+            
+            for v in variations:
+                if v.strip():  # Only add non-empty variations
+                    self.keyword_variations[v.lower().strip()] = kw
+    
+    def preprocess_query(self, query: str) -> str:
+        """Remove punctuation and extra spaces."""
+        import re
+        import string
+        
+        query = query.lower()
+        query = re.sub(f'[{re.escape(string.punctuation)}]', ' ', query)
+        query = ' '.join(query.split())
+        return query
+    
+    def extract_and_map(self, query: str, threshold: float = 0.5) -> List[tuple]:
+        """
+        Extract and map keywords from query to fixed vocabulary.
+        
+        Args:
+            query: Input text query
+            threshold: Minimum similarity score (0-1)
+            
+        Returns:
+            List of (keyword, similarity_score) tuples, sorted by similarity
+        """
+        if self.kw_model is None:
+            return self._simple_word_matching(query)
+        
+        try:
+            # Preprocess query
+            clean_query = self.preprocess_query(query)
+            
+            # Extract keywords/keyphrases using KeyBERT
+            extracted_keywords = self.kw_model.extract_keywords(
+                clean_query,
+                keyphrase_ngram_range=(1, 3),  # 1-3 word phrases
+                stop_words='english',
+                top_n=15,  # Increased to get more candidates
+                use_mmr=True,  # Use Maximal Marginal Relevance for diversity
+                diversity=0.5  # Diversity parameter for MMR
+            )
+            
+            # Add manual phrase detection for common patterns
+            import re
+            manual_phrases = []
+            
+            # Detect common traffic/driving patterns
+            traffic_patterns = [
+                # Turning patterns
+                (r'\b(turning|turn)\s+(left|right)\b', lambda m: f"{m[0]} {m[1]}"),
+                (r'\b(left|right)\s+(turn|turning)\b', lambda m: f"{m[1]} {m[0]}"),
+                
+                # Car interaction patterns  
+                (r'\bcar\s*2?\s*(pedestrian|cyclist|motorcyclist|car)\b', lambda m: f"car2{m[0]}"),
+                (r'\b(pedestrian|cyclist|motorcyclist)\s+crossing\b', lambda m: f"{m[0]} crossing"),
+                
+                # Lane patterns
+                (r'\blane\s+(merge|change)\b', lambda m: f"lane_{m[0]}"),
+                (r'\b(merge|change)\s+lane\b', lambda m: f"lane_{m[0]}"),
+                
+                # Traffic light patterns
+                (r'\btraffic\s+light\b', lambda m: "traffic_light"),
+            ]
+            
+            for pattern, formatter in traffic_patterns:
+                matches = re.findall(pattern, clean_query.lower())
+                for match in matches:
+                    try:
+                        if isinstance(match, tuple):
+                            phrase = formatter(match)
+                        else:
+                            phrase = formatter([match])
+                        # Add with high score since it's a direct pattern match
+                        manual_phrases.append((phrase, 0.85))
+                    except Exception:
+                        continue
+            
+            # Combine KeyBERT results with manual phrases
+            all_extracted = list(extracted_keywords) + manual_phrases
+            extracted_keywords = all_extracted
+            
+            mapped_keywords = {}
+            
+            for keyword, score in extracted_keywords:
+                keyword_lower = keyword.lower().strip()
+                
+                # Direct match check first
+                if keyword_lower in self.keyword_variations:
+                    fixed_kw = self.keyword_variations[keyword_lower]
+                    if fixed_kw not in mapped_keywords or score > mapped_keywords[fixed_kw]:
+                        mapped_keywords[fixed_kw] = score
+                else:
+                    # Use KeyBERT to find similar keywords from fixed list
+                    try:
+                        similarities = self.kw_model.extract_keywords(
+                            keyword,
+                            candidates=self.fixed_keywords,
+                            top_n=3,
+                            use_mmr=True,  # Use Maximal Marginal Relevance
+                            diversity=0.5
+                        )
+                        
+                        for similar_kw, sim_score in similarities:
+                            # Combine the extraction score with similarity score
+                            combined_score = score * sim_score
+                            if combined_score >= threshold:
+                                if similar_kw not in mapped_keywords or combined_score > mapped_keywords[similar_kw]:
+                                    mapped_keywords[similar_kw] = combined_score
+                    except Exception as e:
+                        # Skip this keyword if similarity calculation fails
+                        continue
+            
+            # Convert to list of tuples and sort by score
+            result = [(kw, score) for kw, score in mapped_keywords.items()]
+            return sorted(result, key=lambda x: x[1], reverse=True)
+            
+        except Exception as e:
+            st.warning(f"KeyBERT mapping failed: {e}. Using fallback method.")
+            return self._simple_word_matching(query)
+    
+    def _simple_word_matching(self, query_text: str) -> List[tuple]:
+        """Fallback method using simple word overlap matching."""
+        query_words = set(self.preprocess_query(query_text).split())
+        matched = []
+        
+        for keyword in self.fixed_keywords:
+            # Handle keywords with underscores and numbers
+            keyword_words = set(keyword.lower().replace('_', ' ').replace('2', ' ').split())
+            overlap = len(query_words.intersection(keyword_words))
+            if overlap > 0:
+                # Simple overlap score
+                score = overlap / len(keyword_words)
+                matched.append((keyword, score))
+        
+        return sorted(matched, key=lambda x: x[1], reverse=True)
+
+
+def _get_keyword_match_status(video_id: str, primary_keywords: List[str], ground_truth: GroundTruthProcessor) -> str:
+    """
+    Determine if a video matches the keyword criteria.
+    Returns ✅ Yes only if ALL N keywords match.
+    """
+    if not primary_keywords:
+        return '❌ No keywords'
+    
+    video_keywords = set(ground_truth.get_video_info(video_id)['keywords'])
+    matched_keywords = [kw for kw in primary_keywords if kw in video_keywords]
+    
+    # Require ALL keywords to match for ✅ Yes
+    if len(matched_keywords) == len(primary_keywords):
+        return f'✅ Yes ({len(matched_keywords)}/{len(primary_keywords)})'
+    else:
+        return f'❌ Partial ({len(matched_keywords)}/{len(primary_keywords)})'
+
+
+def extract_keybert_keywords_from_query(query_text: str, ground_truth: GroundTruthProcessor, 
+                                       similarity_threshold: float = 0.5) -> tuple:
+    """
+    Extract semantically relevant keywords from query text using KeyBERT.
+    
+    Returns:
+        (keybert_keywords, relevant_videos)
+    """
+    # Get all available keywords from ground truth
+    all_keywords = ground_truth.get_all_keywords()
+    
+    # Initialize KeyBERT mapper
+    mapper = KeywordMapper(all_keywords)
+    
+    # Extract and map semantic keywords
+    keybert_keywords = mapper.extract_and_map(query_text, similarity_threshold)
+    
+    # Find relevant videos using KeyBERT keywords
+    # FIXED: Use intersection logic - videos must match ALL keywords to be considered relevant
+    relevant_videos = None
+    for keyword, score in keybert_keywords:
+        videos_for_keyword = ground_truth.get_relevant_videos_for_text(keyword)
+        if relevant_videos is None:
+            # First keyword - initialize with its videos
+            relevant_videos = videos_for_keyword.copy()
+        else:
+            # Subsequent keywords - keep only videos that also have this keyword
+            relevant_videos = relevant_videos.intersection(videos_for_keyword)
+    
+    # If no keywords found, return empty set
+    if relevant_videos is None:
+        relevant_videos = set()
+    
+    return keybert_keywords, relevant_videos
+
+
 # Page configuration
 st.set_page_config(
     page_title="Recall Analysis Dashboard",
@@ -68,8 +299,8 @@ st.markdown("""
 
 
 @st.cache_data
-def load_ground_truth_data():
-    """Load and cache ground truth data."""
+def load_ground_truth_data(_annotation_file_mtime=None):
+    """Load and cache ground truth data. Cache invalidates when file is modified."""
     annotation_path = project_root / "data" / "annotation" / "video_annotation.csv"
     if not annotation_path.exists():
         st.error(f"Annotation file not found: {annotation_path}")
@@ -78,36 +309,63 @@ def load_ground_truth_data():
     processor = GroundTruthProcessor(str(annotation_path))
     return processor
 
+def get_ground_truth_data():
+    """Get ground truth data with automatic cache invalidation on file changes."""
+    annotation_path = project_root / "data" / "annotation" / "video_annotation.csv"
+    if annotation_path.exists():
+        import os
+        file_mtime = os.path.getmtime(annotation_path)
+        return load_ground_truth_data(_annotation_file_mtime=file_mtime)
+    return None
+
 
 @st.cache_data
-def load_evaluation_results():
-    """Load and cache evaluation results."""
+def load_evaluation_results(_annotation_file_mtime=None, quality_threshold=0.0):
+    """Load and cache evaluation results. Cache invalidates when annotation file changes."""
     try:
         with st.spinner("Running comprehensive recall evaluation..."):
-            results = run_recall_evaluation()
+            results = run_recall_evaluation(quality_threshold=quality_threshold)
         return results
     except Exception as e:
         st.error(f"Failed to load evaluation results: {e}")
         return None
 
+def get_evaluation_results(quality_threshold=0.0):
+    """Get evaluation results with automatic cache invalidation on annotation file changes."""
+    annotation_path = project_root / "data" / "annotation" / "video_annotation.csv"
+    if annotation_path.exists():
+        import os
+        file_mtime = os.path.getmtime(annotation_path)
+        return load_evaluation_results(_annotation_file_mtime=file_mtime, quality_threshold=quality_threshold)
+    return None
+
 
 @st.cache_data
-def load_keyword_evaluation(keywords: List[str], mode: str):
-    """Load keyword-specific evaluation results."""
+def load_keyword_evaluation(keywords: List[str], mode: str, _annotation_file_mtime=None, quality_threshold=0.0):
+    """Load keyword-specific evaluation results. Cache invalidates when annotation file changes."""
     try:
         with st.spinner(f"Evaluating {mode} recall for keywords: {', '.join(keywords)}..."):
             if mode == "text":
-                return run_text_to_video_evaluation(keywords=keywords)
+                return run_text_to_video_evaluation(keywords=keywords, quality_threshold=quality_threshold)
             elif mode == "video":
                 return run_video_to_video_evaluation(keywords=keywords)
             else:
                 return {
-                    "text": run_text_to_video_evaluation(keywords=keywords),
+                    "text": run_text_to_video_evaluation(keywords=keywords, quality_threshold=quality_threshold),
                     "video": run_video_to_video_evaluation(keywords=keywords)
                 }
     except Exception as e:
         st.error(f"Failed to evaluate keywords: {e}")
         return None
+
+def get_keyword_evaluation(keywords: List[str], mode: str, quality_threshold=0.0):
+    """Get keyword evaluation results with automatic cache invalidation."""
+    annotation_path = project_root / "data" / "annotation" / "video_annotation.csv"
+    if annotation_path.exists():
+        import os
+        file_mtime = os.path.getmtime(annotation_path)
+        return load_keyword_evaluation(keywords, mode, _annotation_file_mtime=file_mtime, quality_threshold=quality_threshold)
+    return None
 
 
 def create_recall_metrics_chart(results: Dict[str, Any]):
@@ -301,6 +559,262 @@ def display_detailed_results(results: Dict[str, Any], result_type: str):
         st.success("✅ All queries have non-zero Recall@1!")
 
 
+def display_text_search_analysis(ground_truth: GroundTruthProcessor, quality_threshold: float = 0.15):
+    """Display Text Search Triage and triaging tools."""
+    st.subheader("📝 Text Search Triage")
+    
+    # Text query input
+    text_query = st.text_input(
+        "Enter a text query to analyze:",
+        placeholder="e.g., car turning left at intersection, pedestrian crossing street",
+        help="Enter a descriptive text query to search for similar videos"
+    )
+    
+    # Set default search parameters
+    top_k = 10  # Search for more results to ensure we have 5 after quality filtering
+    similarity_threshold = 0.0
+    semantic_threshold = 0.5
+    
+    if text_query and st.button(f"🔍 Search for: '{text_query}'", key=f"text_search_{hash(text_query)}"):
+            try:
+                config = VideoRetrievalConfig()
+                search_engine = VideoSearchEngine(config=config)
+                
+                with st.spinner("Searching for videos matching your text query..."):
+                    search_results = search_engine.search_by_text(
+                        text_query,
+                        top_k=top_k
+                    )
+                
+                # Filter by similarity threshold if specified
+                if similarity_threshold > 0:
+                    search_results = [r for r in search_results if r.get('similarity_score', r.get('similarity', 0)) >= similarity_threshold]
+                
+                # Apply quality threshold filtering
+                original_count = len(search_results)
+                search_results = [r for r in search_results if r.get('similarity_score', r.get('similarity', 0)) >= quality_threshold]
+                filtered_count = original_count - len(search_results)
+                
+                # Check if top result has very low similarity
+                if search_results:
+                    top_similarity = search_results[0].get('similarity_score', search_results[0].get('similarity', 0))
+                    if top_similarity < quality_threshold:
+                        st.error(f"❌ **No Results Found**")
+                        st.write(f"Top similarity score ({top_similarity:.3f}) is below quality threshold ({quality_threshold:.3f})")
+                        st.write("This suggests the database doesn't contain relevant videos for this query.")
+                        st.write("**Suggestions:**")
+                        st.write("- Try a different query with more common terms")
+                        st.write("- Lower the quality threshold")
+                        st.write("- The database may be too small for this specific query")
+                        return
+                
+                if not search_results:
+                    st.error(f"❌ **No Results Found**")
+                    st.write(f"No results found for query: '{text_query}' with similarity >= {quality_threshold:.3f}")
+                    if filtered_count > 0:
+                        st.write(f"({filtered_count} results were filtered out due to low quality)")
+                    st.write("**Suggestions:**")
+                    st.write("- Try lowering the quality threshold")
+                    st.write("- Use simpler or more common terms")
+                    st.write("- The database may be too small for this specific query")
+                    return
+                
+                if filtered_count > 0:
+                    st.info(f"ℹ️ Filtered out {filtered_count} low-quality results (similarity < {quality_threshold:.3f})")
+                
+                # Extract KeyBERT keywords
+                keybert_keywords, relevant_videos = extract_keybert_keywords_from_query(
+                    text_query, ground_truth, semantic_threshold
+                )
+                
+                # Use KeyBERT keywords only
+                if keybert_keywords:
+                    primary_keywords = [kw for kw, score in keybert_keywords]
+                else:
+                    primary_keywords = []
+                
+                # Calculate recall metrics (Standard: Recall@K = relevant_found_in_top_K / K)
+                retrieved_ids = [r['slice_id'] for r in search_results]
+                
+                # Calculate TP (True Positives) for each K
+                tp_1 = len(set(retrieved_ids[:1]).intersection(relevant_videos)) if len(retrieved_ids) >= 1 else 0
+                tp_3 = len(set(retrieved_ids[:3]).intersection(relevant_videos)) if len(retrieved_ids) >= 1 else 0
+                tp_5 = len(set(retrieved_ids[:5]).intersection(relevant_videos)) if len(retrieved_ids) >= 1 else 0
+                
+                # Standard Recall@K = TP / K
+                recall_1 = tp_1 / 1 if retrieved_ids else 0
+                recall_3 = tp_3 / 3 if retrieved_ids else 0
+                recall_5 = tp_5 / 5 if retrieved_ids else 0
+                
+                # Track qualifying results count
+                qualifying_results = len(retrieved_ids)
+                
+                # Display search performance metrics
+                st.subheader("Text Search Performance")
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("Top-K", len(search_results))
+                with col2:
+                    st.metric("Recall@1", f"{recall_1:.3f}")
+                    if qualifying_results < 1:
+                        st.caption(f"TP: {tp_1}, FP: {1 - tp_1}")
+                        st.caption(f"Qualifying results: {qualifying_results} < 1")
+                    else:
+                        fp_1 = 1 - tp_1
+                        st.caption(f"TP: {tp_1}, FP: {fp_1}")
+                with col3:
+                    st.metric("Recall@3", f"{recall_3:.3f}")
+                    if qualifying_results < 3:
+                        fp_3 = qualifying_results - tp_3  # FP = qualifying_results - TP when results < K
+                        st.caption(f"TP: {tp_3}, FP: {fp_3}")
+                        st.caption(f"Qualifying results: {qualifying_results} < 3")
+                    else:
+                        fp_3 = 3 - tp_3
+                        st.caption(f"TP: {tp_3}, FP: {fp_3}")
+                with col4:
+                    st.metric("Recall@5", f"{recall_5:.3f}")
+                    if qualifying_results < 5:
+                        fp_5 = qualifying_results - tp_5  # FP = qualifying_results - TP when results < K
+                        st.caption(f"TP: {tp_5}, FP: {fp_5}")
+                        st.caption(f"Qualifying results: {qualifying_results} < 5")
+                    else:
+                        fp_5 = 5 - tp_5
+                        st.caption(f"TP: {tp_5}, FP: {fp_5}")
+                
+                
+                # Check alignment between search results and keyword matching
+                high_sim_results = [r for r in search_results[:5] if r.get('similarity_score', r.get('similarity', 0)) > 0.7]
+                high_sim_relevant = [r for r in high_sim_results if r['slice_id'] in relevant_videos]
+                
+                if high_sim_results:
+                    semantic_precision = len(high_sim_relevant) / len(high_sim_results)
+                    
+                    if semantic_precision < 0.5:
+                        st.warning(f"⚠️ **Low Alignment** ({semantic_precision:.1%}): Search results don't match keyword expectations")
+                    else:
+                        st.success(f"✅ **Good Alignment** ({semantic_precision:.1%}): Search results match keyword expectations")
+                
+                # Display text query vs top results comparison
+                st.subheader("Query vs Retrieved Results")
+                
+                # Create columns for layout: Query + Top 5 results
+                cols = st.columns(6)
+                
+                # Column 1: Text Query
+                with cols[0]:
+                    st.markdown("**Input Query**")
+                    st.markdown(f"*\"{text_query}\"*")
+                    
+                    # Show KeyBERT keywords
+                    st.markdown("**Input Keywords (KeyBERT)**")
+                    if keybert_keywords:
+                        for keyword, score in keybert_keywords:
+                            st.markdown(f"- {keyword} ({score:.2f})")
+                    else:
+                        st.markdown("❌ No keywords found")
+                
+                # Columns 2-6: Top 5 results
+                for i in range(5):
+                    with cols[i + 1]:
+                        if i < len(search_results):
+                            result = search_results[i]
+                            result_id = result['slice_id']
+                            similarity = result.get('similarity_score', result.get('similarity', result.get('score', 0.0)))
+                            is_relevant = result_id in relevant_videos
+                            
+                            # Success/failure indicator
+                            status_icon = "✅" if is_relevant else "❌"
+                            
+                            st.markdown(f"**{status_icon} RANK #{i+1}**")
+                            st.markdown(f"**{result_id}**")
+                            st.markdown(f"*Similarity: {similarity:.3f}*")
+                            
+                            # Get result video info and display GIF
+                            try:
+                                result_info = ground_truth.get_video_info(result_id)
+                                result_gif_path = Path(result_info['gif_path'])
+                                
+                                # Display result GIF
+                                if result_gif_path.exists():
+                                    try:
+                                        st.image(str(result_gif_path), width=180, use_container_width=True)
+                                    except Exception as e:
+                                        st.write("❌ GIF not available")
+                                else:
+                                    st.write("❌ GIF not available")
+                                
+                                # Show result keywords with matching indicators
+                                st.markdown("**Video Keywords:**")
+                                result_keywords = result_info['keywords']
+                                
+                                for keyword in result_keywords:
+                                    # Check if keyword matches KeyBERT keywords
+                                    is_keybert_match = keyword in primary_keywords
+                                    
+                                    if is_keybert_match:
+                                        st.markdown(f"✅ {keyword}")  # Match
+                                    else:
+                                        st.markdown(f"🔸 {keyword}")  # No match
+                                
+                            except Exception as e:
+                                st.write(f"❌ Error: {e}")
+                        else:
+                            st.write("No result")
+                
+
+                
+                # Detailed results table
+                st.subheader("Detailed Text Search Results")
+                results_df = pd.DataFrame([
+                    {
+                        'Rank': i+1,
+                        'Video ID': result['slice_id'],
+                        'Similarity': f"{result.get('similarity_score', result.get('similarity', 0.0)):.3f}",
+                        'Keyword Match': _get_keyword_match_status(result['slice_id'], primary_keywords, ground_truth),
+                        'Keyword Matches': len([kw for kw in ground_truth.get_video_info(result['slice_id'])['keywords'] 
+                                               if kw in primary_keywords]),
+                        'Video Keywords': ', '.join(ground_truth.get_video_info(result['slice_id'])['keywords'][:3]) + 
+                                        ('...' if len(ground_truth.get_video_info(result['slice_id'])['keywords']) > 3 else '')
+                    }
+                    for i, result in enumerate(search_results[:5])
+                ])
+                
+                # Color code the dataframe
+                def highlight_text_results(row):
+                    if '✅' in row['Keyword Match']:
+                        return ['background-color: #d4edda'] * len(row)
+                    else:
+                        return ['background-color: #f8d7da'] * len(row)
+                
+                st.dataframe(
+                    results_df.style.apply(highlight_text_results, axis=1),
+                    use_container_width=True
+                )
+                
+                # Improvement suggestions in expandable section
+                with st.expander("💡 Improvement Suggestions"):
+                    if recall_1 == 0 or recall_3 < 0.3:
+                        st.markdown("**Why might performance be low?**")
+                        if recall_1 == 0:
+                            st.write("• Query might be too specific or use uncommon terminology")
+                            st.write("• Try breaking down complex queries into simpler terms")
+                        if recall_3 < 0.3:
+                            st.write("• Query might describe concepts not well represented in the dataset")
+                            st.write("• Consider using synonyms or alternative phrasings")
+                    
+                    # Suggest related keywords from the dataset
+                    st.markdown("**Tips for better queries:**")
+                    st.write("• Use concrete actions: 'car turning left' vs 'vehicle maneuvering'")
+                    st.write("• Include spatial relationships: 'pedestrian crossing street'")
+                    st.write("• Keep queries concise but descriptive")
+                
+            except Exception as e:
+                st.error(f"Text search failed: {e}")
+                import traceback
+                st.code(traceback.format_exc())
+
+
 def display_video_analysis(ground_truth: GroundTruthProcessor):
     """Display video-level analysis and triaging tools."""
     st.subheader("🎬 Video Analysis & Triaging")
@@ -311,37 +825,14 @@ def display_video_analysis(ground_truth: GroundTruthProcessor):
     
     if selected_video:
         video_info = ground_truth.get_video_info(selected_video)
+        relevant_videos = ground_truth.get_relevant_videos(selected_video, include_self=False)
         
-        col1, col2 = st.columns([1, 2])
-        
-        with col1:
-            st.write("**Video Information:**")
-            st.write(f"**ID:** {selected_video}")
-            st.write(f"**Keywords:** {', '.join(video_info['keywords'])}")
-            st.write(f"**Path:** {video_info['video_path']}")
-            
-            # Show relevant videos
-            relevant_videos = ground_truth.get_relevant_videos(selected_video, include_self=False)
-            st.write(f"**Relevant Videos ({len(relevant_videos)}):**")
-            for vid in list(relevant_videos)[:5]:  # Show first 5
-                st.write(f"- {vid}")
-            if len(relevant_videos) > 5:
-                st.write(f"... and {len(relevant_videos) - 5} more")
-        
-        with col2:
-            # Try to display GIF if available
-            gif_path = Path(video_info['gif_path'])
-            if gif_path.exists():
-                st.write("**Video Preview:**")
-                try:
-                    st.image(str(gif_path), caption=selected_video, width=400)
-                except Exception as e:
-                    st.write(f"Could not display GIF: {e}")
-            else:
-                st.write("**Video Preview:** Not available")
+        # Display basic video information
+        st.write(f"**Selected Video:** {selected_video}")
+        st.write(f"**Keywords:** {', '.join(video_info['keywords'])}")
         
         # Run search for this specific video
-        if st.button(f"🔍 Search Similar to {selected_video}"):
+        if st.button(f"🔍 Search Similar to {selected_video}", key=f"search_{selected_video}"):
             try:
                 config = VideoRetrievalConfig()
                 search_engine = VideoSearchEngine(config=config)
@@ -353,57 +844,234 @@ def display_video_analysis(ground_truth: GroundTruthProcessor):
                         use_cache=True
                     )
                 
-                st.write("**Search Results:**")
+                # Calculate recall metrics (Standard: Recall@K = relevant_found_in_top_K / K)
+                retrieved_ids = [r['slice_id'] for r in search_results]
+                
+                # Calculate TP (True Positives) for each K
+                tp_1 = len(set(retrieved_ids[:1]).intersection(relevant_videos)) if len(retrieved_ids) >= 1 else 0
+                tp_3 = len(set(retrieved_ids[:3]).intersection(relevant_videos)) if len(retrieved_ids) >= 1 else 0
+                tp_5 = len(set(retrieved_ids[:5]).intersection(relevant_videos)) if len(retrieved_ids) >= 1 else 0
+                
+                # Standard Recall@K = TP / K
+                recall_1 = tp_1 / 1 if retrieved_ids else 0
+                recall_3 = tp_3 / 3 if retrieved_ids else 0
+                recall_5 = tp_5 / 5 if retrieved_ids else 0
+                
+                # Track qualifying results count
+                qualifying_results_video = len(retrieved_ids)
+                
+                # Display recall metrics (Standard Formula)
+                st.subheader("📊 Search Performance")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Recall@1", f"{recall_1:.3f}")
+                    if qualifying_results_video < 1:
+                        st.caption(f"TP: {tp_1}, FP: {1 - tp_1}")
+                        st.caption(f"Qualifying results: {qualifying_results_video} < 1")
+                    else:
+                        fp_1 = 1 - tp_1
+                        st.caption(f"TP: {tp_1}, FP: {fp_1}")
+                with col2:
+                    st.metric("Recall@3", f"{recall_3:.3f}")
+                    if qualifying_results_video < 3:
+                        fp_3 = qualifying_results_video - tp_3  # FP = qualifying_results - TP when results < K
+                        st.caption(f"TP: {tp_3}, FP: {fp_3}")
+                        st.caption(f"Qualifying results: {qualifying_results_video} < 3")
+                    else:
+                        fp_3 = 3 - tp_3
+                        st.caption(f"TP: {tp_3}, FP: {fp_3}")
+                with col3:
+                    st.metric("Recall@5", f"{recall_5:.3f}")
+                    if qualifying_results_video < 5:
+                        fp_5 = qualifying_results_video - tp_5  # FP = qualifying_results - TP when results < K
+                        st.caption(f"TP: {tp_5}, FP: {fp_5}")
+                        st.caption(f"Qualifying results: {qualifying_results_video} < 5")
+                    else:
+                        fp_5 = 5 - tp_5
+                        st.caption(f"TP: {tp_5}, FP: {fp_5}")
+                
+                # Display side-by-side comparison with GIFs
+                st.subheader("Input vs Retrieved Results")
+                
+                # Create 6 columns: Input + Top 5 results
+                cols = st.columns(6)
+                
+                # Column 1: Input video
+                with cols[0]:
+                    st.markdown("**INPUT**")
+                    st.markdown(f"**{selected_video}**")
+                    
+                    # Display input video GIF
+                    query_gif_path = Path(video_info['gif_path'])
+                    if query_gif_path.exists():
+                        try:
+                            st.image(str(query_gif_path), width=180, use_container_width=True)
+                        except Exception as e:
+                            st.write("❌ GIF not available")
+                    else:
+                        st.write("❌ GIF not available")
+                    
+                    # Show input keywords
+                    st.markdown("**Keywords:**")
+                    for keyword in video_info['keywords']:
+                        st.markdown(f"🏷️ {keyword}")
+                
+                # Columns 2-6: Top 5 results
+                for i in range(5):
+                    with cols[i + 1]:
+                        if i < len(search_results):
+                            result = search_results[i]
+                            result_id = result['slice_id']
+                            # Handle different possible similarity key names
+                            similarity = result.get('similarity_score', result.get('similarity', result.get('score', 0.0)))
+                            is_relevant = result_id in relevant_videos
+                            
+                            # Success/failure indicator
+                            status_icon = "✅" if is_relevant else "❌"
+                            
+                            st.markdown(f"**{status_icon} RANK #{i+1}**")
+                            st.markdown(f"**{result_id}**")
+                            st.markdown(f"*Similarity: {similarity:.3f}*")
+                            
+                            # Get result video info and display GIF
+                            try:
+                                result_info = ground_truth.get_video_info(result_id)
+                                result_gif_path = Path(result_info['gif_path'])
+                                
+                                # Display result GIF
+                                if result_gif_path.exists():
+                                    try:
+                                        st.image(str(result_gif_path), width=180, use_container_width=True)
+                                    except Exception as e:
+                                        st.write("❌ GIF not available")
+                                else:
+                                    st.write("❌ GIF not available")
+                                
+                                # Show result keywords with matching indicators
+                                st.markdown("**Keywords:**")
+                                result_keywords = result_info['keywords']
+                                query_keywords_set = set(video_info['keywords'])
+                                
+                                for keyword in result_keywords:
+                                    if keyword in query_keywords_set:
+                                        st.markdown(f"✅ {keyword}")  # Matching keyword
+                                    else:
+                                        st.markdown(f"🔸 {keyword}")  # Non-matching keyword
+                                
+                            except Exception as e:
+                                st.write(f"❌ Error: {e}")
+                        else:
+                            st.write("No result")
+                
+                # Analysis summary
+                st.subheader("🔍 Analysis Summary")
+                
+                if recall_1 > 0:
+                    st.success(f"✅ **Good Performance**: Found relevant video in top-1 result (Recall@1 = {recall_1:.3f})")
+                else:
+                    st.error(f"❌ **Poor Performance**: No relevant videos in top-1 result")
+                
+                if recall_3 > 0.5:
+                    st.success(f"✅ **Good Recall@3**: {recall_3:.1%} of relevant videos found in top-3")
+                elif recall_3 > 0:
+                    st.warning(f"⚠️ **Moderate Recall@3**: {recall_3:.1%} of relevant videos found in top-3")
+                else:
+                    st.error(f"❌ **Poor Recall@3**: No relevant videos found in top-3")
+                
+                # Detailed results table
+                st.subheader("📋 Detailed Search Results")
                 results_df = pd.DataFrame([
                     {
                         'Rank': i+1,
                         'Video ID': result['slice_id'],
-                        'Similarity': f"{result['similarity']:.3f}",
-                        'Is Relevant': result['slice_id'] in relevant_videos
+                        'Similarity': f"{result.get('similarity_score', result.get('similarity', 0.0)):.3f}",
+                        'Status': '✅ Relevant' if result['slice_id'] in relevant_videos else '❌ Not Relevant',
+                        'Shared Keywords': len(set(ground_truth.get_video_info(result['slice_id'])['keywords']).intersection(set(video_info['keywords'])))
                     }
-                    for i, result in enumerate(search_results)
+                    for i, result in enumerate(search_results[:10])
                 ])
                 
-                # Color code relevant vs irrelevant
-                def highlight_relevant(row):
-                    if row['Is Relevant']:
+                # Color code the dataframe
+                def highlight_results(row):
+                    if '✅' in row['Status']:
                         return ['background-color: #d4edda'] * len(row)
                     else:
                         return ['background-color: #f8d7da'] * len(row)
                 
                 st.dataframe(
-                    results_df.style.apply(highlight_relevant, axis=1),
+                    results_df.style.apply(highlight_results, axis=1),
                     use_container_width=True
                 )
                 
-                # Calculate recall for this query
-                retrieved_ids = [r['slice_id'] for r in search_results]
-                recall_1 = len(set(retrieved_ids[:1]).intersection(relevant_videos)) / len(relevant_videos) if relevant_videos else 0
-                recall_3 = len(set(retrieved_ids[:3]).intersection(relevant_videos)) / len(relevant_videos) if relevant_videos else 0
-                recall_5 = len(set(retrieved_ids[:5]).intersection(relevant_videos)) / len(relevant_videos) if relevant_videos else 0
+                # Improvement suggestions
+                st.subheader("💡 Improvement Suggestions")
                 
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Recall@1", f"{recall_1:.3f}")
-                with col2:
-                    st.metric("Recall@3", f"{recall_3:.3f}")
-                with col3:
-                    st.metric("Recall@5", f"{recall_5:.3f}")
+                if recall_1 == 0:
+                    st.write("**Why might Recall@1 be low?**")
+                    st.write("- The embedding model may not capture the semantic meaning of the keywords")
+                    st.write("- Visual features might not align with the keyword annotations")
+                    st.write("- The query video might be an outlier in its category")
+                    st.write("- Consider reviewing the keyword annotations for accuracy")
+                
+                if recall_3 < 0.3:
+                    st.write("**Why might Recall@3 be low?**")
+                    st.write("- Limited training data for this type of scenario")
+                    st.write("- The embedding space might not cluster similar scenarios well")
+                    st.write("- Consider data augmentation or fine-tuning the model")
+                
+                # Show what was expected vs what was retrieved
+                expected_but_missing = relevant_videos - set(retrieved_ids[:5])
+                if expected_but_missing:
+                    st.write("**Expected but missing in top-5:**")
+                    for vid in list(expected_but_missing)[:3]:
+                        st.write(f"- {vid}")
                 
             except Exception as e:
                 st.error(f"Search failed: {e}")
+                import traceback
+                st.code(traceback.format_exc())
 
 
 def main():
     """Main Streamlit app."""
-    st.title("🎯 Recall Analysis Dashboard")
-    st.markdown("Interactive analysis of video search recall performance")
+    st.title("Recall Analysis Dashboard")
+
+    # Show recall formula info
+    st.info("""
+    **Standard Recall@K = relevant_found_in_top_K / K** 
+    
+    This means:
+    - **Recall@1 = 100%** when the top result is relevant
+    - **Recall@3 = 33%** when 1 out of 3 top results is relevant
+    - **Recall@5 = 40%** when 2 out of 5 top results are relevant
+    
+    📝 Note: When qualifying results < K, this is indicated in the recall details.
+    """)
     
     # Sidebar for navigation and controls
     st.sidebar.title("🔧 Controls")
     
+    # Quality threshold control
+    st.sidebar.subheader("⚙️ Quality Settings")
+    global_quality_threshold = st.sidebar.slider(
+        "Similarity Threshold", 
+        min_value=0.0, 
+        max_value=0.3, 
+        value=0.15, 
+        step=0.01,
+        help="Filter out results below this similarity score globally. Higher values = stricter filtering."
+    )
+    
+    # Cache management
+    if st.sidebar.button("🔄 Clear Cache & Reload Data"):
+        st.cache_data.clear()
+        st.rerun()
+    
+    
+    st.sidebar.markdown("---")
+    
     # Load ground truth data
-    ground_truth = load_ground_truth_data()
+    ground_truth = get_ground_truth_data()
     if ground_truth is None:
         st.error("Failed to load ground truth data. Please check the annotation file.")
         return
@@ -411,34 +1079,46 @@ def main():
     # Navigation
     analysis_mode = st.sidebar.selectbox(
         "Analysis Mode",
-        ["📊 Overall Performance", "🏷️ Keyword Analysis", "🎬 Video Triaging", "📈 Custom Evaluation"]
+        ["📊 Overall Performance", "🏷️ Keyword Analysis", "🎬 Video Search Triage", "📝 Text Search Triage", "📈 Custom Evaluation"]
     )
     
     if analysis_mode == "📊 Overall Performance":
         st.header("📊 Overall Recall Performance")
         
         # Load comprehensive results
-        results = load_evaluation_results()
+        results = get_evaluation_results(quality_threshold=global_quality_threshold)
         if results is None:
             return
         
-        # Display key metrics
+        # Display quality threshold info if active
+        if global_quality_threshold > 0.0:
+            st.info(f"🔍 **Quality Filtering Active**: Results below {global_quality_threshold:.2f} similarity are excluded from evaluation")
+            if 'text_to_video' in results and 'filtered_queries' in results['text_to_video']:
+                filtered_count = results['text_to_video']['filtered_queries']
+                if filtered_count > 0:
+                    st.warning(f"⚠️ {filtered_count} text queries were filtered out due to low quality")
+        
+        # Display key metrics with fixed calculation context
+        st.markdown("### 📊 Key Performance Metrics (Fixed Formula)")
         col1, col2, col3 = st.columns(3)
         
         if 'video_to_video' in results and 'average_recalls' in results['video_to_video']:
             v2v_r1 = results['video_to_video']['average_recalls'].get('recall@1', 0)
             with col1:
-                st.metric("Video-to-Video R@1", f"{v2v_r1:.3f}")
+                st.metric("Video-to-Video R@1", f"{v2v_r1:.3f}", 
+                         help="% of queries where top result is relevant")
         
         if 'text_to_video' in results and 'average_recalls' in results['text_to_video']:
             t2v_r1 = results['text_to_video']['average_recalls'].get('recall@1', 0)
             with col2:
-                st.metric("Text-to-Video R@1", f"{t2v_r1:.3f}")
+                st.metric("Text-to-Video R@1", f"{t2v_r1:.3f}",
+                         help="% of text queries where top result is relevant")
         
         if 'evaluation_config' in results:
             total_videos = results['evaluation_config']['total_annotated_videos']
             with col3:
-                st.metric("Total Videos", total_videos)
+                st.metric("Total Videos", total_videos,
+                         help="Total annotated videos in ground truth")
         
         # Charts
         col1, col2 = st.columns(2)
@@ -485,7 +1165,7 @@ def main():
         
         if selected_keywords:
             # Load keyword-specific results
-            keyword_results = load_keyword_evaluation(selected_keywords, eval_mode)
+            keyword_results = get_keyword_evaluation(selected_keywords, eval_mode, quality_threshold=global_quality_threshold)
             
             if keyword_results:
                 if eval_mode == "both":
@@ -546,8 +1226,11 @@ def main():
                         )
                         st.plotly_chart(fig, use_container_width=True)
     
-    elif analysis_mode == "🎬 Video Triaging":
+    elif analysis_mode == "🎬 Video Search Triage":
         display_video_analysis(ground_truth)
+    
+    elif analysis_mode == "📝 Text Search Triage":
+        display_text_search_analysis(ground_truth, quality_threshold=global_quality_threshold)
     
     elif analysis_mode == "📈 Custom Evaluation":
         st.header("📈 Custom Evaluation")
@@ -574,7 +1257,7 @@ def main():
                 
                 try:
                     with st.spinner("Running custom evaluation..."):
-                        text_results = run_text_to_video_evaluation(keywords=keywords, k_values=k_values)
+                        text_results = run_text_to_video_evaluation(keywords=keywords, k_values=k_values, quality_threshold=global_quality_threshold)
                         video_results = run_video_to_video_evaluation(keywords=keywords, k_values=k_values)
                     
                     col1, col2 = st.columns(2)

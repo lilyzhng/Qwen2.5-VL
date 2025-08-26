@@ -156,6 +156,7 @@ def main():
         "residential",
         "commercial",
         "freeway",
+        "parked_bicycle",
         "other"
     ]
     

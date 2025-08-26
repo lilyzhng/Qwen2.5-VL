@@ -26,6 +26,8 @@ class VideoRetrievalConfig:
     resolution: Tuple[int, int] = (448, 448)
     default_top_k: int = 5
     similarity_threshold: float = 0.0
+    # Threshold for filtering out low-quality results (e.g., 0.1 means results below 0.1 similarity are filtered)
+    quality_threshold: float = 0.1
     enable_caching: bool = True
     cache_size: int = 1000
     log_level: str = "INFO"
@@ -68,6 +70,9 @@ class VideoRetrievalConfig:
         
         if self.similarity_threshold < 0 or self.similarity_threshold > 1:
             raise ValueError("similarity_threshold must be between 0 and 1")
+        
+        if self.quality_threshold < 0 or self.quality_threshold > 1:
+            raise ValueError("quality_threshold must be between 0 and 1")
         
         # Get project root (parent of core directory)
         project_root = Path(__file__).parent.parent

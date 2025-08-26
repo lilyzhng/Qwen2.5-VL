@@ -89,12 +89,14 @@ class GroundTruthProcessor:
         environments = ['urban', 'highway', 'freeway', 'intersection', 'crosswalk']
         conditions = ['night', 'daytime', 'rain', 'parking', 'tunnel']
         actions = ['turning_left', 'turning_right', 'lane_merge']
+        critical_objects = ['bicyclist', 'motorcyclist', 'parked bicycle', 'parked motorcycle', 'truck', 'pedestrian']
         
         self.semantic_groups = {
             'interactions': interaction_types,
             'environments': environments,
             'conditions': conditions,
-            'actions': actions
+            'actions': actions,
+            'critical_objects': critical_objects
         }
     
     def get_relevant_videos(self, query_video_id: str, include_self: bool = False) -> Set[str]:
@@ -142,9 +144,25 @@ class GroundTruthProcessor:
         if query_text in self.keyword_to_videos:
             relevant_videos.update(self.keyword_to_videos[query_text])
         
-        # Partial matches and semantic similarity
+        # More precise partial matching to avoid false positives
+        # Only match if the query is a meaningful substring (not just contained within)
         for keyword in self.keyword_to_videos:
-            if query_text in keyword.lower() or keyword.lower() in query_text:
+            keyword_lower = keyword.lower()
+            
+            # Skip if exact match already handled
+            if keyword_lower == query_text:
+                continue
+                
+            # Allow partial matches only in specific cases:
+            # 1. Query is at the start of keyword (e.g., "car" matches "car2pedestrian")
+            # 2. Query is at the end of keyword (e.g., "pedestrian" matches "car2pedestrian") 
+            # 3. Query is separated by underscore/number (e.g., "car" matches "car_merge")
+            if (keyword_lower.startswith(query_text + '_') or 
+                keyword_lower.startswith(query_text + '2') or
+                keyword_lower.endswith('_' + query_text) or
+                keyword_lower.endswith('2' + query_text) or
+                ('_' + query_text + '_' in keyword_lower) or
+                ('2' + query_text + '2' in keyword_lower)):
                 relevant_videos.update(self.keyword_to_videos[keyword])
         
         return relevant_videos
@@ -294,7 +312,8 @@ class RecallEvaluator:
                 for k in k_values:
                     retrieved_k = set(retrieved_ids[:k])
                     relevant_retrieved = retrieved_k.intersection(relevant_videos)
-                    recall_k = len(relevant_retrieved) / len(relevant_videos)
+                    # Fixed: Recall@K = relevant_found_in_top_k / k
+                    recall_k = len(relevant_retrieved) / k
                     recalls_for_query[k] = recall_k
                     all_recalls[k].append(recall_k)
                 
@@ -324,12 +343,13 @@ class RecallEvaluator:
             'total_queries': len(detailed_results)
         }
     
-    def evaluate_text_to_video_recall(self, k_values: List[int] = [1, 3, 5]) -> Dict[str, Any]:
+    def evaluate_text_to_video_recall(self, k_values: List[int] = [1, 3, 5], quality_threshold: float = 0.0) -> Dict[str, Any]:
         """
         Evaluate text-to-video recall performance.
         
         Args:
             k_values: List of K values for Recall@K evaluation
+            quality_threshold: Minimum similarity score to consider results valid
             
         Returns:
             Dictionary containing recall metrics
@@ -338,6 +358,7 @@ class RecallEvaluator:
         
         all_recalls = {k: [] for k in k_values}
         detailed_results = []
+        filtered_queries = 0  # Track queries filtered out due to low quality
         
         # Test with all unique keywords
         keywords_to_test = self.ground_truth.get_all_keywords()
@@ -357,6 +378,17 @@ class RecallEvaluator:
                     top_k=max_k
                 )
                 
+                # Apply quality threshold filtering
+                if quality_threshold > 0.0:
+                    # Check if top result meets quality threshold
+                    if not search_results or search_results[0].get('similarity_score', search_results[0].get('similarity', 0)) < quality_threshold:
+                        filtered_queries += 1
+                        logger.debug(f"Filtered out query '{keyword}' due to low similarity (< {quality_threshold})")
+                        continue
+                    
+                    # Filter all results by quality threshold
+                    search_results = [r for r in search_results if r.get('similarity_score', r.get('similarity', 0)) >= quality_threshold]
+                
                 # Extract retrieved video IDs
                 retrieved_ids = [result['slice_id'] for result in search_results]
                 
@@ -365,7 +397,8 @@ class RecallEvaluator:
                 for k in k_values:
                     retrieved_k = set(retrieved_ids[:k])
                     relevant_retrieved = retrieved_k.intersection(relevant_videos)
-                    recall_k = len(relevant_retrieved) / len(relevant_videos)
+                    # Standard Recall@K = relevant_found_in_top_k / k
+                    recall_k = len(relevant_retrieved) / k
                     recalls_for_query[k] = recall_k
                     all_recalls[k].append(recall_k)
                 
@@ -391,7 +424,9 @@ class RecallEvaluator:
         return {
             'average_recalls': avg_recalls,
             'detailed_results': detailed_results,
-            'total_queries': len(detailed_results)
+            'total_queries': len(detailed_results),
+            'filtered_queries': filtered_queries,
+            'quality_threshold': quality_threshold
         }
     
     def evaluate_category_specific_recall(self, k_values: List[int] = [1, 3, 5]) -> Dict[str, Any]:
@@ -448,7 +483,8 @@ class RecallEvaluator:
                         for k in k_values:
                             retrieved_k = set(retrieved_ids[:k])
                             relevant_retrieved = retrieved_k.intersection(relevant_videos)
-                            recall_k = len(relevant_retrieved) / len(relevant_videos)
+                            # Standard Recall@K = relevant_found_in_top_k / k
+                            recall_k = len(relevant_retrieved) / k
                             category_recalls[k].append(recall_k)
                     
                     except Exception as e:
@@ -473,7 +509,7 @@ class RecallEvaluator:
         
         return category_results
     
-    def generate_comprehensive_report(self, k_values: List[int] = [1, 3, 5]) -> Dict[str, Any]:
+    def generate_comprehensive_report(self, k_values: List[int] = [1, 3, 5], quality_threshold: float = 0.0) -> Dict[str, Any]:
         """
         Generate a comprehensive recall evaluation report.
         
@@ -504,7 +540,7 @@ class RecallEvaluator:
         
         # Text-to-video recall
         try:
-            t2v_results = self.evaluate_text_to_video_recall(k_values)
+            t2v_results = self.evaluate_text_to_video_recall(k_values, quality_threshold)
             report['text_to_video'] = t2v_results
         except Exception as e:
             logger.error(f"Text-to-video evaluation failed: {e}")
@@ -521,7 +557,7 @@ class RecallEvaluator:
         return report
 
 
-def run_recall_evaluation(annotation_csv_path: str = None, search_engine: VideoSearchEngine = None) -> Dict[str, Any]:
+def run_recall_evaluation(annotation_csv_path: str = None, search_engine: VideoSearchEngine = None, quality_threshold: float = 0.0) -> Dict[str, Any]:
     """
     Run complete recall evaluation and return results.
     
@@ -547,13 +583,14 @@ def run_recall_evaluation(annotation_csv_path: str = None, search_engine: VideoS
     evaluator = RecallEvaluator(search_engine, ground_truth)
     
     # Generate comprehensive report
-    report = evaluator.generate_comprehensive_report(k_values=[1, 3, 5])
+    report = evaluator.generate_comprehensive_report(k_values=[1, 3, 5], quality_threshold=quality_threshold)
     
     return report
 
 
 def run_text_to_video_evaluation(keywords: List[str] = None, k_values: List[int] = [1, 3, 5], 
-                                annotation_csv_path: str = None, search_engine: VideoSearchEngine = None) -> Dict[str, Any]:
+                                annotation_csv_path: str = None, search_engine: VideoSearchEngine = None,
+                                quality_threshold: float = 0.0) -> Dict[str, Any]:
     """
     Run text-to-video recall evaluation for specific keywords.
     
@@ -584,7 +621,7 @@ def run_text_to_video_evaluation(keywords: List[str] = None, k_values: List[int]
         evaluator.ground_truth.keyword_to_videos = filtered_keywords
     
     try:
-        results = evaluator.evaluate_text_to_video_recall(k_values)
+        results = evaluator.evaluate_text_to_video_recall(k_values, quality_threshold)
         
         # Add keyword-specific breakdown
         if keywords is not None:
@@ -596,19 +633,32 @@ def run_text_to_video_evaluation(keywords: List[str] = None, k_values: List[int]
                         try:
                             max_k = max(k_values)
                             search_results = search_engine.search_by_text(keyword, top_k=max_k)
+                            
+                            # Apply quality threshold filtering
+                            if quality_threshold > 0.0:
+                                # Check if top result meets quality threshold
+                                if not search_results or search_results[0].get('similarity_score', search_results[0].get('similarity', 0)) < quality_threshold:
+                                    # Skip this keyword due to low quality
+                                    continue
+                                
+                                # Filter all results by quality threshold
+                                search_results = [r for r in search_results if r.get('similarity_score', r.get('similarity', 0)) >= quality_threshold]
+                            
                             retrieved_ids = [result['slice_id'] for result in search_results]
                             
                             keyword_recalls = {}
                             for k in k_values:
                                 retrieved_k = set(retrieved_ids[:k])
                                 relevant_retrieved = retrieved_k.intersection(relevant_videos)
-                                recall_k = len(relevant_retrieved) / len(relevant_videos)
+                                # Standard Recall@K = relevant_found_in_top_k / k
+                                recall_k = len(relevant_retrieved) / k
                                 keyword_recalls[f'recall@{k}'] = recall_k
                             
                             keyword_breakdown[keyword] = {
                                 'recalls': keyword_recalls,
                                 'relevant_count': len(relevant_videos),
-                                'retrieved_ids': retrieved_ids[:max(k_values)]
+                                'retrieved_ids': retrieved_ids[:max(k_values)],
+                                'quality_threshold': quality_threshold
                             }
                         except Exception as e:
                             logger.error(f"Error evaluating keyword '{keyword}': {e}")
