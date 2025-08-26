@@ -25,13 +25,8 @@ embedding_search/
 │   ├── launch_streamlit.sh        # Streamlit launcher
 │   └── mock/                      # Mock interfaces for testing
 ├── data/                          # Data storage
-│   ├── main_embeddings.parquet    # Main video database embeddings
-│   ├── query_embeddings.parquet   # Query video embeddings
-│   ├── main_input_path.parquet     # Main video file paths
-│   ├── query_input_path.parquet    # Query video file paths
-│   └── videos/                    # Video files
-│       ├── video_database/        # Reference video collection
-│       └── user_input/             # Query videos
+│   ├── unified_embeddings.parquet    # video database embeddings
+│   ├── unified_input_path.parquet     # video file paths
 ├── tests/                         # Unit tests
 ├── benchmarks/                    # Performance testing
 │   ├── inference_benchmark.py     # Model inference benchmarks
@@ -45,22 +40,19 @@ pip install -r requirements.txt
 ```
 
 ## Commands
-### 1. Generate Main Embeddings Database
-Build the main video database from your reference video collection:
+### 1. Generate Unified Embeddings Database
+Build the unified video database for fast similarity search:
 
 ```bash
-# Using video file list
-python interface/main.py build-main --main-input-path data/main_input_path.parquet
-```
-### 2. Generate Query Embeddings Database
-Build the query video database for fast similarity search:
-
-```bash
-# Using query file list
-python interface/main.py build-query --query-input-path data/query_input_path.parquet
+# Build from unified parquet input file (required)
+python interface/main.py build --input-path data/unified_input_path.parquet
 ```
 
-### 3. Launch Streamlit App
+**Requirements:**
+- Input must be a parquet file with columns: `slice_id`, `sensor_video_file`, `category`, `gif_file`
+- All video files referenced in the parquet must exist on disk
+
+### 2. Launch Streamlit App
 ALFA 0.1 -  Similarity Search Interface:
 
 ```bash

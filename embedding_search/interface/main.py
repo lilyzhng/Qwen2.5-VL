@@ -60,16 +60,12 @@ def main():
     
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
     
-    build_parser = subparsers.add_parser('build-main', help='Build video embeddings database')
+    build_parser = subparsers.add_parser('build', help='Build unified video embeddings database')
     build_parser.add_argument(
-        '--video-dir', '-d',
+        '--input-path',
         type=str,
-        help='Directory containing video files'
-    )
-    build_parser.add_argument(
-        '--main-input-path',
-        type=str,
-        help='Path to main video index file containing video file paths (column: sensor_video_file)'
+        required=True,
+        help='Path to unified input parquet file containing video file paths (column: sensor_video_file)'
     )
     build_parser.add_argument(
         '--force-rebuild', '-f',
@@ -80,22 +76,6 @@ def main():
         '--batch-size', '-b',
         type=int,
         help='Batch size for processing videos'
-    )
-    build_query_parser = subparsers.add_parser('build-query', help='Build query video embeddings database')
-    build_query_parser.add_argument(
-        '--query-dir', '-qd',
-        type=str,
-        help='Directory containing query video files'
-    )
-    build_query_parser.add_argument(
-        '--query-input-path',
-        type=str,
-        help='Path to query video index file containing video file paths (column: sensor_video_file)'
-    )
-    build_query_parser.add_argument(
-        '--force-rebuild', '-f',
-        action='store_true',
-        help='Force rebuild query database from scratch'
     )
     
     search_parser = subparsers.add_parser('search', help='Search for similar videos')
@@ -145,10 +125,6 @@ def main():
 
     
     info_parser = subparsers.add_parser('info', help='Show database information')
-    
-    query_info_parser = subparsers.add_parser('query-info', help='Show query database information')
-    
-    list_query_parser = subparsers.add_parser('list-queries', help='List available query videos')
     
     demo_parser = subparsers.add_parser('demo', help='Run demo with example query')
     
@@ -223,10 +199,8 @@ def main():
             return 1
     
     # Override config with command line arguments
-    if hasattr(args, 'main_input_path') and args.main_input_path:
-        config.main_input_path = args.main_input_path
-    if hasattr(args, 'query_input_path') and args.query_input_path:
-        config.query_input_path = args.query_input_path
+    if hasattr(args, 'input_path') and args.input_path:
+        config.input_path = args.input_path
     if hasattr(args, 'batch_size') and args.batch_size:
         config.batch_size = args.batch_size
     if hasattr(args, 'top_k') and args.top_k:
@@ -250,29 +224,19 @@ def main():
     try:
         search_engine = VideoSearchEngine(config=config)
         
-        if args.command == 'build-main':
-            logger.info("Building video embeddings database...")
-            video_source = args.video_dir if hasattr(args, 'video_dir') and args.video_dir else "from main_input_path"
-            search_engine.build_database(video_source, args.force_rebuild)
+        if args.command == 'build':
+            logger.info("Building unified video embeddings database from parquet input...")
+            # Override config input_path with command line argument
+            if args.input_path:
+                config.input_path = args.input_path
+            
+            search_engine.build_database_from_parquet(args.force_rebuild)
             
             info = search_engine.get_database_info()
             logger.info(f"Database built successfully!")
             logger.info(f"Total videos: {info['num_videos']}")
             logger.info(f"Embedding dimension: {info['embedding_dim']}")
             logger.info(f"Database size: {info.get('database_size_mb', 0):.2f} MB")
-            
-        elif args.command == 'build-query':
-            logger.info("Building query video embeddings database...")
-            # Use query_input_path from config, query_dir argument is optional override
-            query_dir = args.query_dir if hasattr(args, 'query_dir') and args.query_dir else "from query_input_path"
-            stats = search_engine.build_query_database(query_dir, args.force_rebuild)
-            
-            logger.info(f"Query database built successfully!")
-            logger.info(f"Processed: {stats['processed']} videos")
-            logger.info(f"Already cached: {stats['cached']} videos")
-            logger.info(f"Errors: {stats['errors']} videos")
-            if stats.get('orphaned_cleaned', 0) > 0:
-                logger.info(f"Cleaned up: {stats['orphaned_cleaned']} orphaned files")
             
         elif args.command == 'search':
             # Determine search mode
@@ -390,41 +354,7 @@ def main():
                 if len(info['slice_ids']) > 10:
                     print(f"  ... and {len(info['slice_ids']) - 10} more")
         
-        elif args.command == 'query-info':
-            stats = search_engine.get_statistics()
-            query_stats = stats.get('query_database', {})
-            
-            print("\n" + "="*80)
-            print("QUERY DATABASE INFORMATION")
-            print("="*80)
-            
-            if 'cache' in query_stats:
-                cache_info = query_stats['cache']
-                print(f"Cached videos: {cache_info.get('total_videos', 0)}")
-                print(f"Cache size: {cache_info.get('cache_size_mb', 0):.2f} MB")
-                print(f"Total accesses: {cache_info.get('total_accesses', 0)}")
-                print(f"Average accesses per video: {cache_info.get('avg_accesses', 0):.1f}")
-            
-            if 'database' in query_stats:
-                db_info = query_stats['database']
-                print(f"Database videos: {db_info.get('num_videos', 0)}")
-                print(f"Database size: {db_info.get('database_size_mb', 0):.2f} MB")
-            
-            print(f"Total available: {query_stats.get('total_available', 0)}")
-        
-        elif args.command == 'list-queries':
-            available_videos = search_engine.get_query_videos_list()
-            
-            print("\n" + "="*80)
-            print("AVAILABLE QUERY VIDEOS")
-            print("="*80)
-            
-            if available_videos:
-                for i, filename in enumerate(available_videos, 1):
-                    print(f"  {i}. {filename}")
-                print(f"\nTotal: {len(available_videos)} query videos available")
-            else:
-                print("No query videos found. Use 'build-query' command to process query videos.")
+
         
         elif args.command == 'demo':
             logger.info("Running demo...")
@@ -432,7 +362,7 @@ def main():
             db_info = search_engine.get_database_info()
             if db_info['num_videos'] == 0:
                 logger.info("Building database first...")
-                search_engine.build_database("from main_input_path")
+                search_engine.build_unified_database_from_file_list(config.input_path)
             
             # Demo text search
             print("\n" + "="*80)
@@ -448,13 +378,16 @@ def main():
             logger.info("Demo completed successfully!")
         
         elif args.command == 'cluster':
-            logger.info(f"Generating clusters for {args.database_type} database(s)...")
+            logger.info("Generating clusters for unified database...")
             
-            databases_to_process = []
-            if args.database_type in ['main', 'both']:
-                databases_to_process.append(('main', config.main_embeddings_path))
-            if args.database_type in ['query', 'both']:
-                databases_to_process.append(('query', config.query_embeddings_path))
+            # Use unified embeddings path
+            db_path = search_engine._resolve_path(config.embeddings_path)
+            
+            if not db_path.exists():
+                logger.error(f"Unified database not found at {db_path}. Please run 'build' command first.")
+                return 1
+            
+            databases_to_process = [('unified', db_path)]
             
             for db_type, db_path in databases_to_process:
                 db_path = Path(db_path)

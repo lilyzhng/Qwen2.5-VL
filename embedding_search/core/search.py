@@ -19,7 +19,7 @@ from .faiss_backend import (
 )
 from .config import VideoRetrievalConfig
 from .exceptions import VideoNotFoundError, SearchError, NoResultsError
-from .database import UnifiedQueryManager, ParquetVectorDatabase
+from .database import ParquetVectorDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +60,10 @@ class VideoSearchEngine:
         
         self.project_root = Path(__file__).parent.parent
         
-        db_path = self._resolve_path(self.config.main_embeddings_path)
+        # Use unified embeddings path
+        db_path = self._resolve_path(self.config.embeddings_path)
         
-        # Use ParquetVectorDatabase for main database to support thumbnails
+        # Use ParquetVectorDatabase for unified database to support thumbnails
         self.database = ParquetVectorDatabase(db_path, self.config)
         
         # FAISS provides faster similarity search with optional GPU acceleration
@@ -73,7 +74,7 @@ class VideoSearchEngine:
             cache_size=self.config.cache_size if hasattr(self.config, 'cache_size') else 1000
         )
         
-        self.query_manager = UnifiedQueryManager(self.config)
+        # No need for separate query manager with unified system
         
         self._model_cache = {}
         
@@ -86,69 +87,62 @@ class VideoSearchEngine:
             return self.project_root / path
         return path
 
-    def _get_video_files(self, video_directory: Union[str, Path]) -> List[Path]:
+    def _get_video_files_from_parquet(self) -> List[Path]:
         """
-        Get video files either from CSV file or directory scanning.
+        Get video files from parquet input file.
         
-        Args:
-            video_directory: Directory containing video files (used as fallback)
-            
         Returns:
             List of video file paths
         """
-        video_files = []
-
-        if hasattr(self.config, 'main_input_path') and self.config.main_input_path:
-            index_path = self._resolve_path(self.config.main_input_path)
-        else:
-            index_path = None
+        if not hasattr(self.config, 'input_path') or not self.config.input_path:
+            raise ValueError("input_path must be specified in config")
             
-        if index_path and index_path.exists():
-            try:
-                logger.info(f"Loading video files from index: {index_path}")
-                if index_path.suffix.lower() == '.parquet':
-                    df = pd.read_parquet(index_path)
-                else:
-                    df = pd.read_csv(index_path)
-                
-                if 'sensor_video_file' not in df.columns:
-                    logger.warning(f"Column 'sensor_video_file' not found in index file. Available columns: {list(df.columns)}")
-                    logger.info("Falling back to directory scanning")
-                else:
-                    video_paths = df['sensor_video_file'].drop_duplicates().tolist()
-                    video_files = [Path(path) for path in video_paths if Path(path).exists()]
-                    
-                    if video_files:
-                        logger.info(f"Loaded {len(video_files)} video files from index")
-                        return video_files
-                    else:
-                        logger.warning("No valid video files found in index, falling back to directory scanning")
-            except Exception as e:
-                logger.warning(f"Error reading index file: {e}")
-                logger.info("Falling back to directory scanning")
+        index_path = self._resolve_path(self.config.input_path)
         
-        video_dir = Path(video_directory)
-        if not video_dir.exists():
-            raise ValueError(f"Video directory not found: {video_dir}")
+        if not index_path.exists():
+            raise FileNotFoundError(f"Input parquet file not found: {index_path}")
+            
+        if index_path.suffix.lower() != '.parquet':
+            raise ValueError(f"Only parquet input files are supported, got: {index_path.suffix}")
         
-        logger.info(f"Scanning directory for video files: {video_dir}")
-        for ext in self.config.supported_formats:
-            video_files.extend(video_dir.glob(f"*{ext}"))
-            video_files.extend(video_dir.glob(f"*{ext.upper()}"))
-        
-        return video_files
+        try:
+            logger.info(f"Loading video files from parquet: {index_path}")
+            df = pd.read_parquet(index_path)
+            
+            if 'sensor_video_file' not in df.columns:
+                raise ValueError(f"Column 'sensor_video_file' not found in parquet file. Available columns: {list(df.columns)}")
+            
+            video_paths = df['sensor_video_file'].drop_duplicates().tolist()
+            video_files = [Path(path) for path in video_paths if Path(path).exists()]
+            
+            missing_files = [path for path in video_paths if not Path(path).exists()]
+            if missing_files:
+                logger.warning(f"Found {len(missing_files)} missing video files")
+                for missing in missing_files[:5]:  # Show first 5 missing files
+                    logger.warning(f"  Missing: {missing}")
+                if len(missing_files) > 5:
+                    logger.warning(f"  ... and {len(missing_files) - 5} more")
+            
+            logger.info(f"Loaded {len(video_files)} valid video files from parquet")
+            return video_files
+            
+        except Exception as e:
+            raise RuntimeError(f"Error reading parquet file {index_path}: {e}")
+
+    def _get_video_files(self, video_directory: Union[str, Path]) -> List[Path]:
+        """
+        Legacy method - use _get_video_files_from_parquet instead.
+        """
+        logger.warning("_get_video_files is deprecated. Use _get_video_files_from_parquet instead.")
+        return self._get_video_files_from_parquet()
 
     @time_it
-    def build_database(self, video_directory: Union[str, Path], 
-                      force_rebuild: bool = False,
-                      save_format: str = "parquet"):
+    def build_database_from_parquet(self, force_rebuild: bool = False):
         """
-        Build video embeddings database.
+        Build video embeddings database from parquet input file.
         
         Args:
-            video_directory: Directory containing video files
             force_rebuild: If True, rebuild from scratch
-            save_format: Format to save database ("parquet")
         """
         if not force_rebuild:
             try:
@@ -159,7 +153,7 @@ class VideoSearchEngine:
             except Exception as e:
                 logger.info(f"Could not load existing database: {e}")
         
-        video_files = self._get_video_files(video_directory)
+        video_files = self._get_video_files_from_parquet()
         
         if not video_files:
             logger.warning(f"No video files found")
@@ -167,23 +161,19 @@ class VideoSearchEngine:
         
         logger.info(f"Found {len(video_files)} video files")
         
-        # Load slice_id mapping if available
+        # Load slice_id mapping from parquet
         path_to_slice_id = {}
-        if hasattr(self.config, 'main_input_path') and self.config.main_input_path:
-            index_path = self._resolve_path(self.config.main_input_path)
-            if index_path and index_path.exists():
-                try:
-                    if index_path.suffix.lower() == '.parquet':
-                        df = pd.read_parquet(index_path)
-                    else:
-                        df = pd.read_csv(index_path)
-                    
-                    if 'slice_id' in df.columns and 'sensor_video_file' in df.columns:
-                        for _, row in df.iterrows():
-                            path_to_slice_id[Path(row['sensor_video_file'])] = row['slice_id']
-                        logger.info(f"Loaded slice_id mapping for {len(path_to_slice_id)} videos")
-                except Exception as e:
-                    logger.warning(f"Error loading slice_id mapping: {e}")
+        index_path = self._resolve_path(self.config.input_path)
+        try:
+            df = pd.read_parquet(index_path)
+            if 'slice_id' in df.columns and 'sensor_video_file' in df.columns:
+                for _, row in df.iterrows():
+                    path_to_slice_id[Path(row['sensor_video_file'])] = row['slice_id']
+                logger.info(f"Loaded slice_id mapping for {len(path_to_slice_id)} videos")
+            else:
+                raise ValueError("Required columns 'slice_id' and 'sensor_video_file' not found in parquet")
+        except Exception as e:
+            raise RuntimeError(f"Error loading slice_id mapping from parquet: {e}")
         
         # Check existing videos in ParquetVectorDatabase using only slice_id as key
         existing_slice_ids = set()
@@ -245,23 +235,23 @@ class VideoSearchEngine:
         Returns:
             Build statistics
         """
-        if hasattr(self.config, 'query_input_path') and self.config.query_input_path:
-            query_input_path = self._resolve_path(self.config.query_input_path)
-            if query_input_path.exists():
-                logger.info(f"Loading query videos from file path list: {query_input_path}")
-                return self.query_manager.build_query_database_from_file_list(query_input_path, force_rebuild)
+        if hasattr(self.config, 'input_path') and self.config.input_path:
+            input_path = self._resolve_path(self.config.input_path)
+            if input_path.exists():
+                logger.info(f"Loading query videos from unified input path: {input_path}")
+                return self.build_unified_database_from_file_list(input_path, force_rebuild)
         
         if query_video_directory:
             query_dir = self._resolve_path(query_video_directory)
         else:
-            raise ValueError("No query video directory provided and no query_input_path configured")
+            raise ValueError("No query video directory provided and no input_path configured")
         
         if not query_dir.exists():
             logger.warning(f"Query video directory not found: {query_dir}")
             return {"processed": 0, "cached": 0, "errors": 1}
         
-        logger.info(f"Building query database from: {query_dir}")
-        return self.query_manager.build_query_database(query_dir, force_rebuild)
+        logger.info(f"Building unified database from: {query_dir}")
+        return self.build_unified_database_from_file_list(self.config.input_path, force_rebuild)
 
     def search_by_filename(self, slice_id: str, top_k: Optional[int] = None) -> List[Dict]:
         """
@@ -277,12 +267,12 @@ class VideoSearchEngine:
         top_k = top_k or self.config.default_top_k
         
         try:
-            query_embedding = self.query_manager.get_query_embedding(slice_id)
+            query_embedding = self.database.get_embedding(slice_id)
             
             if query_embedding is not None:
                 logger.info(f"Using pre-computed embedding for slice_id: {slice_id}")
                 try:
-                    return self._search_by_embedding(query_embedding, top_k)
+                    return self._search_by_embedding(query_embedding, top_k, exclude_slice_id=slice_id)
                 except Exception as e:
                     logger.error(f"Error during pre-computed search: {e}")
                     logger.info("Falling back to real-time computation...")
@@ -293,13 +283,13 @@ class VideoSearchEngine:
         
         logger.info(f"Falling back to real-time processing for slice_id: {slice_id}")
         
-        if hasattr(self.config, 'query_input_path') and self.config.query_input_path:
-            query_input_path = self._resolve_path(self.config.query_input_path)
-            if query_input_path.exists():
-                if query_input_path.suffix.lower() == '.parquet':
-                    df = pd.read_parquet(query_input_path)
+        if hasattr(self.config, 'input_path') and self.config.input_path:
+            input_path = self._resolve_path(self.config.input_path)
+            if input_path.exists():
+                if input_path.suffix.lower() == '.parquet':
+                    df = pd.read_parquet(input_path)
                 else:
-                    df = pd.read_csv(query_input_path)
+                    df = pd.read_csv(input_path)
                 
                 matching_rows = df[df['slice_id'] == slice_id]
                 if len(matching_rows) > 0:
@@ -307,7 +297,7 @@ class VideoSearchEngine:
                     if query_path.exists():
                         return self.search_by_video(query_path, top_k)
         
-        raise VideoNotFoundError(f"Query video not found for slice_id: {slice_id}. Please ensure it's listed in query_input_path.")
+        raise VideoNotFoundError(f"Query video not found for slice_id: {slice_id}. Please ensure it's listed in input_path.")
 
     def _extract_embeddings(self, video_paths: List[Path]) -> List[Dict[str, Any]]:
         """
@@ -358,7 +348,7 @@ class VideoSearchEngine:
                        top_k: Optional[int] = None,
                        use_cache: bool = True) -> List[Dict]:
         """
-        Search for similar videos with caching support.
+        Search for similar videos with caching support and self-matching avoidance.
         
         Args:
             query_video_path: Path to query video
@@ -373,6 +363,9 @@ class VideoSearchEngine:
             raise VideoNotFoundError(f"Query video not found: {query_path}")
         
         top_k = top_k or self.config.default_top_k
+        
+        # Extract slice_id from video path for self-matching avoidance
+        query_slice_id = query_path.name
         
         try:
             cache_key = str(query_path)
@@ -394,7 +387,8 @@ class VideoSearchEngine:
             else:
                 logger.info(f"Using cached embedding for: {query_path.name}")
             
-            return self._search_by_embedding(query_embedding, top_k)
+            # Pass slice_id to avoid self-matching
+            return self._search_by_embedding(query_embedding, top_k, exclude_slice_id=query_slice_id)
             
         except Exception as e:
             raise SearchError(f"Search failed: {str(e)}")
@@ -468,10 +462,10 @@ class VideoSearchEngine:
             batch_normalize_embeddings(text_embedding)
             text_embedding = text_embedding[0]
             
-            # Get precomputed video embedding
-            video_embedding = self.query_manager.get_query_embedding(query_video_slice_id)
+            # Get precomputed video embedding from unified database
+            video_embedding = self.database.get_embedding(query_video_slice_id)
             if video_embedding is None:
-                raise VideoNotFoundError(f"No precomputed embedding found for slice_id: {query_video_slice_id}. Please build query database first.")
+                raise VideoNotFoundError(f"No precomputed embedding found for slice_id: {query_video_slice_id}. Please build unified database first.")
             
             logger.info(f"Using precomputed embedding for joint search: {query_video_slice_id}")
             
@@ -488,13 +482,15 @@ class VideoSearchEngine:
         except Exception as e:
             raise SearchError(f"Joint search failed: {str(e)}")
     
-    def _search_by_embedding(self, query_embedding: np.ndarray, top_k: int) -> List[Dict]:
+    def _search_by_embedding(self, query_embedding: np.ndarray, top_k: int, 
+                           exclude_slice_id: Optional[str] = None) -> List[Dict]:
         """
-        Internal search method using FAISS.
+        Internal search method using FAISS with self-matching avoidance.
         
         Args:
             query_embedding: Normalized query embedding
             top_k: Number of results
+            exclude_slice_id: Slice ID to exclude from results (for self-matching avoidance)
             
         Returns:
             Formatted search results
@@ -503,10 +499,13 @@ class VideoSearchEngine:
         if self.database.embedding_matrix is None:
             logger.warning("No embeddings in database for search")
         
+        # Request more results to account for potential self-matches
+        search_k = top_k + 1 if exclude_slice_id else top_k
+        
         results = self.search_strategy.search(
             query_embedding,
             self.database,
-            top_k
+            search_k
         )
         
         if not results:
@@ -516,17 +515,27 @@ class VideoSearchEngine:
         for idx, similarity, metadata in results:
             if similarity < self.config.similarity_threshold:
                 continue
+            
+            # Skip self-matching if exclude_slice_id is provided
+            current_slice_id = metadata.get("slice_id", "")
+            if exclude_slice_id and current_slice_id == exclude_slice_id:
+                logger.debug(f"Skipping self-match for slice_id: {current_slice_id}")
+                continue
                 
             result = {
                 "rank": len(formatted_results) + 1,
                 "video_path": metadata.get("video_path", ""),
-                "slice_id": metadata.get("slice_id", ""),
+                "slice_id": current_slice_id,
                 "similarity_score": similarity,
                 "metadata": metadata,
                 "thumbnail": metadata.get("thumbnail", ""),
                 "thumbnail_size": metadata.get("thumbnail_size", (0, 0))
             }
             formatted_results.append(result)
+            
+            # Stop when we have enough results
+            if len(formatted_results) >= top_k:
+                break
         
         if not formatted_results:
             raise NoResultsError(f"No results above threshold {self.config.similarity_threshold}")
@@ -573,8 +582,8 @@ class VideoSearchEngine:
         logger.info("Caches cleared")
     
     def get_query_videos_list(self) -> List[str]:
-        """Get list of available query video filenames."""
-        return self.query_manager.list_available_query_videos()
+        """Get list of available video filenames from unified database."""
+        return self.database.list_videos()
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get comprehensive statistics."""
@@ -592,8 +601,8 @@ class VideoSearchEngine:
             "search_backend": "FAISS" if self.database.use_faiss else "NumPy"
         })
         
-        query_stats = self.query_manager.get_statistics()
-        stats["query_database"] = query_stats
+        # No separate query database in unified system
+        stats["unified_database"] = True
         
         return stats
 

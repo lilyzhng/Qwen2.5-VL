@@ -17,10 +17,9 @@ class VideoRetrievalConfig:
     device: str = "cuda"
     batch_size: int = 4
     num_frames: int = 8
-    main_embeddings_path: str = "data/main_embeddings.parquet"      # Main database (reference videos embeddings)
-    query_embeddings_path: str = "data/query_embeddings.parquet"    # Query database (user input videos embeddings)
-    main_input_path: str = "data/main_input_path.parquet"             # Main video file paths
-    query_input_path: str = "data/query_input_path.parquet"           # Query video file paths
+    # Unified embeddings and paths (single source of truth)
+    embeddings_path: str = "data/unified_embeddings.parquet"  # All video embeddings (database + query)
+    input_path: str = "data/unified_input_path.parquet"       # All video file paths
     use_safe_serialization: bool = True
     supported_formats: Tuple[str, ...] = ('.mp4', '.avi', '.mov')
     thumbnail_size: Tuple[int, int] = (480, 270)  # 16:9 aspect ratio, higher resolution
@@ -74,8 +73,8 @@ class VideoRetrievalConfig:
         project_root = Path(__file__).parent.parent
         
         
-        # Check file path lists if provided
-        for file_path_attr in ['main_input_path', 'query_input_path']:
+        # Check unified file paths if provided
+        for file_path_attr in ['embeddings_path', 'input_path']:
             if hasattr(self, file_path_attr):
                 file_path = getattr(self, file_path_attr)
                 if file_path:

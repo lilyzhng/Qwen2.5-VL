@@ -5,10 +5,9 @@ model_name: "/path/to/your/local/cosmos-model"
 device: "cuda"  # Use "cpu" if CUDA is not available
 batch_size: 4   # Number of videos to process in parallel
 num_frames: 8   # Number of frames to extract per video
-main_embeddings_path: "data/main_embeddings.parquet"      # Main database (reference videos embeddings)
-query_embeddings_path: "data/query_embeddings.parquet"    # Query database (user input videos embeddings)
-main_input_path: "data/main_input_path.parquet"             # Main video file paths
-query_input_path: "data/query_input_path.parquet"           # Query video file paths
+# Unified paths (single source of truth)
+embeddings_path: "data/unified_embeddings.parquet"  # All video embeddings (database + query)
+input_path: "data/unified_input_path.parquet"       # All video file paths
 use_safe_serialization: true
 supported_formats: [".mp4", ".avi", ".mov", ".mkv", ".webm"]
 thumbnail_size: [480, 270]  # 16:9 aspect ratio, higher resolution

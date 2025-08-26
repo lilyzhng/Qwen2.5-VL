@@ -89,11 +89,11 @@ def get_all_videos_from_database(search_engine) -> List[Dict]:
         # Try to get data directly from the parquet file for better cluster info
         from pathlib import Path
         project_root = Path(__file__).parent.parent
-        main_embeddings_path = project_root / "data" / "main_embeddings.parquet"
+        unified_embeddings_path = project_root / "data" / "unified_embeddings.parquet"
         
-        if main_embeddings_path.exists():
+        if unified_embeddings_path.exists():
             import pandas as pd
-            df = pd.read_parquet(main_embeddings_path)
+            df = pd.read_parquet(unified_embeddings_path)
             all_videos = []
             for _, row in df.iterrows():
                 video_info = {
@@ -133,10 +133,10 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
     try:
         from pathlib import Path
         project_root = Path(__file__).parent.parent
-        main_embeddings_path = project_root / "data" / "main_embeddings.parquet"
+        unified_embeddings_path = project_root / "data" / "unified_embeddings.parquet"
         
-        if main_embeddings_path.exists():
-            cluster_df = pd.read_parquet(main_embeddings_path)
+        if unified_embeddings_path.exists():
+            cluster_df = pd.read_parquet(unified_embeddings_path)
             # Create a mapping from slice_id to coordinates and cluster
             coord_mapping = {
                 row['slice_id']: {
@@ -981,17 +981,42 @@ def get_gif_path_from_result(video_info: Dict) -> Optional[str]:
 
 def get_input_gif_path(slice_id: str, search_engine) -> Optional[str]:
     """
-    Get GIF file path for input video by slice_id.
+    Get GIF file path for input video by slice_id from unified embeddings parquet file.
     
     Args:
         slice_id: The slice ID of the input video
-        search_engine: The search engine instance to access query database
+        search_engine: The search engine instance (not used in this implementation)
         
     Returns:
         GIF file path or None if not available
     """
     try:
-        # Try to get GIF path from query database
+        # Load unified embeddings parquet file to get gif_file path
+        from pathlib import Path
+        project_root = Path(__file__).parent.parent
+        unified_embeddings_path = project_root / "data" / "unified_embeddings.parquet"
+        
+        if unified_embeddings_path.exists():
+            logger.info(f"Loading unified embeddings from: {unified_embeddings_path}")
+            df = pd.read_parquet(unified_embeddings_path)
+            
+            # Look for the slice_id in the dataframe
+            matching_rows = df[df['slice_id'] == slice_id]
+            if not matching_rows.empty:
+                gif_path = matching_rows.iloc[0].get('gif_file', '')
+                if gif_path and os.path.exists(gif_path):
+                    logger.info(f"Found GIF in unified embeddings: {gif_path}")
+                    return gif_path
+                elif gif_path:
+                    logger.warning(f"GIF path exists in database but file not found: {gif_path}")
+                else:
+                    logger.warning(f"No gif_file entry for slice_id: {slice_id}")
+            else:
+                logger.warning(f"slice_id not found in unified embeddings: {slice_id}")
+        else:
+            logger.warning(f"Unified embeddings file not found: {unified_embeddings_path}")
+        
+        # Fallback: Try to get GIF path from query database
         if hasattr(search_engine, 'query_manager') and hasattr(search_engine.query_manager, 'query_db'):
             query_db = search_engine.query_manager.query_db
             if hasattr(query_db, 'df') and query_db.df is not None:
@@ -1000,21 +1025,15 @@ def get_input_gif_path(slice_id: str, search_engine) -> Optional[str]:
                 if not matching_rows.empty:
                     gif_path = matching_rows.iloc[0].get('gif_file', '')
                     if gif_path and os.path.exists(gif_path):
+                        logger.info(f"Found GIF in query database: {gif_path}")
                         return gif_path
         
-        # Fallback: construct expected GIF path based on slice_id
-        gif_base_dir = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/gifs"
-        
-        # For user input videos (query videos)
-        gif_path = os.path.join(gif_base_dir, "user_input", slice_id.replace('.mp4', '.gif'))
-        if os.path.exists(gif_path):
-            return gif_path
-            
-        # For main database videos
-        # This would require more complex path construction, but typically input is from user_input
+        logger.warning(f"No GIF found for slice_id: {slice_id}")
         
     except Exception as e:
         logger.warning(f"Error getting input GIF path for {slice_id}: {e}")
+        import traceback
+        logger.warning(traceback.format_exc())
     
     return None
 

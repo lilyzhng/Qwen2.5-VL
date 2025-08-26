@@ -166,8 +166,8 @@ class TestUnifiedQueryManager(unittest.TestCase):
             self.fail(f"File list processing failed: {e}")
 
 
-class TestOptimizedVideoSearchEngine(unittest.TestCase):
-    """Test cases for VideoSearchEngine with unified parquet system."""
+class TestVideoSearchEngineConfig(unittest.TestCase):
+    """Test cases for VideoSearchEngine configuration with unified parquet system."""
     
     def setUp(self):
         """Set up test environment."""
@@ -265,7 +265,7 @@ if __name__ == '__main__':
     test_suite.addTest(unittest.makeSuite(TestConfigurationSystem))
     test_suite.addTest(unittest.makeSuite(TestParquetVectorDatabase))
     test_suite.addTest(unittest.makeSuite(TestUnifiedQueryManager))
-    test_suite.addTest(unittest.makeSuite(TestOptimizedVideoSearchEngine))
+    test_suite.addTest(unittest.makeSuite(TestVideoSearchEngineConfig))
     test_suite.addTest(unittest.makeSuite(TestFilePathGeneration))
     
     # Run tests
