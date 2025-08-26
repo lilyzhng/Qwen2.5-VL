@@ -124,7 +124,7 @@ def get_all_videos_from_database(search_engine) -> List[Dict]:
     return []
 
 
-def create_embedding_visualization(results: List[Dict], viz_method: str = "umap", selected_idx: Optional[int] = None, query_info: Optional[Dict] = None, top_k: Optional[int] = None, all_videos: Optional[List[Dict]] = None, **kwargs) -> go.Figure:
+def create_embedding_visualization(results: List[Dict], viz_method: str = "umap", selected_idx: Optional[int] = None, query_info: Optional[Dict] = None, top_k: Optional[int] = None, all_videos: Optional[List[Dict]] = None, analysis_type: str = "embedding_similarity", **kwargs) -> go.Figure:
     """Create advanced embedding visualization with multiple methods."""
     if not results:
         return go.Figure()
@@ -214,7 +214,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
     np.random.seed(42)
     
     # Calculate query position - place it at the center of the coordinate space
-    if has_real_coords and has_coords.any() and viz_method in ["umap", "pca", "trimap", "tsne"]:
+    if has_real_coords and has_coords.any() and viz_method in ["umap"]:
         # Get the center of all points (not just search results)
         all_points_with_coords = df[has_coords]
         if len(all_points_with_coords) > 0:
@@ -247,63 +247,9 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                     angle = np.random.uniform(0, 2*np.pi)
                     df.loc[idx, 'x'] = query_x + distances * np.cos(angle)
                     df.loc[idx, 'y'] = query_y + distances * np.sin(angle)
-        title = "2D Embedding Space - UMAP (Real Clusters)"
+        title = "2D Embedding Space - UMAP"
         x_title, y_title = "UMAP Dimension 1", "UMAP Dimension 2"
-    elif viz_method == "pca":
-        # For other methods, use the real coordinates if available (they're from UMAP but still meaningful)
-        if not has_real_coords or not has_coords.any():
-            distances = (1 - df['similarity']) * 6
-            angles = np.random.uniform(0, 2*np.pi, len(df))
-            df['x'] = query_x + distances * np.cos(angles) + np.random.randn(len(df)) * 0.3
-            df['y'] = query_y + distances * np.sin(angles) + np.random.randn(len(df)) * 0.3
-        else:
-            # Use real coordinates even for PCA view
-            missing_coords = df['x'].isna()
-            if missing_coords.any():
-                for idx in df[missing_coords].index:
-                    point_similarity = df.loc[idx, 'similarity']
-                    distances = (1 - point_similarity) * 2
-                    angle = np.random.uniform(0, 2*np.pi)
-                    df.loc[idx, 'x'] = query_x + distances * np.cos(angle)
-                    df.loc[idx, 'y'] = query_y + distances * np.sin(angle)
-        title = "2D Embedding Space - PCA View"
-        x_title, y_title = "Component 1", "Component 2"
-    elif viz_method == "trimap":
-        if not has_real_coords or not has_coords.any():
-            distances = (1 - df['similarity']) * 7
-            angles = np.random.uniform(0, 2*np.pi, len(df))
-            df['x'] = query_x + distances * np.cos(angles) + np.random.randn(len(df)) * 0.4
-            df['y'] = query_y + distances * np.sin(angles) + np.random.randn(len(df)) * 0.4
-        else:
-            # Use real coordinates
-            missing_coords = df['x'].isna()
-            if missing_coords.any():
-                for idx in df[missing_coords].index:
-                    point_similarity = df.loc[idx, 'similarity']
-                    distances = (1 - point_similarity) * 2
-                    angle = np.random.uniform(0, 2*np.pi)
-                    df.loc[idx, 'x'] = query_x + distances * np.cos(angle)
-                    df.loc[idx, 'y'] = query_y + distances * np.sin(angle)
-        title = "2D Embedding Space - TriMAP View"
-        x_title, y_title = "TriMAP Dimension 1", "TriMAP Dimension 2"
-    elif viz_method == "tsne":
-        if not has_real_coords or not has_coords.any():
-            distances = (1 - df['similarity']) * 5
-            angles = np.random.uniform(0, 2*np.pi, len(df))
-            df['x'] = query_x + distances * np.cos(angles) + np.random.randn(len(df)) * 0.3
-            df['y'] = query_y + distances * np.sin(angles) + np.random.randn(len(df)) * 0.3
-        else:
-            # Use real coordinates
-            missing_coords = df['x'].isna()
-            if missing_coords.any():
-                for idx in df[missing_coords].index:
-                    point_similarity = df.loc[idx, 'similarity']
-                    distances = (1 - point_similarity) * 2
-                    angle = np.random.uniform(0, 2*np.pi)
-                    df.loc[idx, 'x'] = query_x + distances * np.cos(angle)
-                    df.loc[idx, 'y'] = query_y + distances * np.sin(angle)
-        title = "2D Embedding Space - t-SNE View"
-        x_title, y_title = "t-SNE Dimension 1", "t-SNE Dimension 2"
+    
     elif viz_method == "3d_umap":
         if not has_real_coords or not has_coords.any():
             distances = (1 - df['similarity']) * 6
@@ -328,56 +274,135 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
                 df['z'] = df['cluster_id'] * 0.5 + np.random.randn(len(df)) * 0.1
             else:
                 df['z'] = query_z + (1 - df['similarity']) * np.random.randn(len(df)) * 0.3
-        title = "3D Embedding Space - UMAP (Real Clusters)"
+        title = "3D Embedding Space - UMAP"
     else:  # similarity heatmap
-        n = len(df)
-        similarity_matrix = np.random.rand(n, n) * 0.5 + 0.3
+        # For heatmap, only show search results to make it meaningful
+        if 'is_search_result' in df.columns:
+            df_heatmap = df[df['is_search_result'] == True].reset_index(drop=True)
+        else:
+            df_heatmap = df.copy()
+            
+        # Limit to reasonable number of videos for readability
+        if len(df_heatmap) > 20:
+            df_heatmap = df_heatmap.head(20)
+            
+        n = len(df_heatmap)
+        
+        if n < 2:
+            # Not enough data for a meaningful heatmap
+            fig = go.Figure()
+            fig.add_annotation(
+                text="Need at least 2 search results for similarity matrix",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, xanchor='center', yanchor='middle',
+                showarrow=False, font=dict(size=16)
+            )
+            fig.update_layout(
+                title="Video Similarity Matrix",
+                height=400,
+                showlegend=False
+            )
+            return fig
+        
+        # Create similarity matrix based on actual similarity scores
+        similarity_matrix = np.zeros((n, n))
+        
+        # Fill the matrix with meaningful similarity values
         for i in range(n):
-            similarity_matrix[i, i] = 1.0
-            for j in range(i+1, n):
-                similarity_matrix[j, i] = similarity_matrix[i, j]
+            for j in range(n):
+                if i == j:
+                    similarity_matrix[i, j] = 1.0  # Self-similarity is always 1
+                else:
+                    # Create similarity based on how close their similarity scores are
+                    sim_i = df_heatmap.iloc[i]['similarity']
+                    sim_j = df_heatmap.iloc[j]['similarity']
+                    rank_i = df_heatmap.iloc[i]['rank']
+                    rank_j = df_heatmap.iloc[j]['rank']
+                    
+                    # Combine similarity score difference and rank difference
+                    sim_diff = abs(sim_i - sim_j)
+                    rank_diff = abs(rank_i - rank_j)
+                    
+                    # Videos with similar scores and close ranks are more similar
+                    # Normalize by the maximum possible differences
+                    max_sim_diff = max(df_heatmap['similarity']) - min(df_heatmap['similarity'])
+                    max_rank_diff = max(df_heatmap['rank']) - min(df_heatmap['rank'])
+                    
+                    if max_sim_diff > 0:
+                        norm_sim_diff = sim_diff / max_sim_diff
+                    else:
+                        norm_sim_diff = 0
+                        
+                    if max_rank_diff > 0:
+                        norm_rank_diff = rank_diff / max_rank_diff
+                    else:
+                        norm_rank_diff = 0
+                    
+                    # Combine both factors (lower differences = higher similarity)
+                    combined_diff = (norm_sim_diff + norm_rank_diff) / 2
+                    similarity_matrix[i, j] = max(0.1, 1.0 - combined_diff)
+        
+        # Create shorter, more readable labels
+        labels = []
+        for _, row in df_heatmap.iterrows():
+            slice_id = row['slice_id']
+            rank = row['rank']
+            # Show rank and shortened slice_id
+            if len(slice_id) > 12:
+                label = f"#{rank}: {slice_id[:12]}..."
+            else:
+                label = f"#{rank}: {slice_id}"
+            labels.append(label)
         
         fig = go.Figure(data=go.Heatmap(
             z=similarity_matrix,
-            x=[f"Video {i+1}" for i in range(n)],
-            y=[f"Video {i+1}" for i in range(n)],
-            colorscale='Viridis',
+            x=labels,
+            y=labels,
+            colorscale='Viridis',  # Green-Yellow scheme for consistency
             showscale=True,
+            zmin=0,  # Set minimum value for color scale
+            zmax=1,  # Set maximum value for color scale
             colorbar=dict(
                 title="Similarity",
                 title_side="right",
-                x=1.01,
-                len=0.6,
-                thickness=10,
-                title_font=dict(size=10),
-                tickfont=dict(size=9),
-                outlinewidth=0  # Remove black edge around color bar
-            )
+                x=1.02,
+                len=0.8,
+                thickness=15,
+                title_font=dict(size=12),
+                tickfont=dict(size=10),
+                outlinewidth=0,
+                tickvals=[0, 0.2, 0.4, 0.6, 0.8, 1.0],
+                ticktext=['0.0', '0.2', '0.4', '0.6', '0.8', '1.0']
+            ),
+            hoverongaps=False,
+            hovertemplate='<b>%{y}</b> vs <b>%{x}</b><br>Similarity: <b>%{z:.3f}</b><extra></extra>',
+            text=similarity_matrix,
+            texttemplate='%{z:.2f}',
+            textfont=dict(size=8, color='white'),
         ))
         fig.update_layout(
-            title="Video Similarity Matrix",
-            height=350,
+            title="Video Similarity Matrix (Yellow = More Similar, Purple = Less Similar)",
+            height=max(400, n * 25 + 150),  # Dynamic height based on number of videos
             width=None,  # Let it be responsive to container width
             title_x=0.5,
             title_font=dict(size=14),
-            margin=dict(l=200, r=40, t=50, b=40),  # Extra left margin for legend
-            plot_bgcolor='#f8fafc',  # Match tip section background
-            xaxis=dict(tickfont=dict(size=10)),
-            yaxis=dict(tickfont=dict(size=10)),
-            showlegend=True,  # Enable legend for plot
-            legend=dict(
-                orientation="v",
-                x=-0.13,
-                y=1,
-                xanchor="right",
-                yanchor="top",
-                bgcolor="rgba(255,255,255,0.9)",
-                bordercolor="rgba(0,0,0,0.1)",
-                borderwidth=1,
-                font=dict(size=10),
-                itemsizing="constant",
-                itemwidth=30
-            )
+            margin=dict(l=150, r=80, t=80, b=150),  # More space for labels
+            plot_bgcolor='white',
+            xaxis=dict(
+                tickfont=dict(size=9), 
+                tickangle=-45,
+                side='bottom',
+                showgrid=False,
+                zeroline=False
+            ),
+            yaxis=dict(
+                tickfont=dict(size=9),
+                showgrid=False,
+                zeroline=False,
+                autorange='reversed'  # Reverse y-axis so first result is at top
+            ),
+            showlegend=False,  # No legend needed for heatmap
+            font=dict(family="Arial, sans-serif")
         )
         return fig
     
@@ -390,7 +415,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             # Separate traces: grayed out background videos vs highlighted search results
             traces = []
             if len(df_other) > 0:
-                if 'cluster_id' in df_other.columns and has_real_coords:
+                if 'cluster_id' in df_other.columns and has_real_coords and analysis_type == "umap_dbscan_clusters":
                     # Show clusters for non-search results in 3D too
                     cluster_colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85929E']
                     
@@ -454,7 +479,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             
             if len(df_search) > 0:
                 # Check if we have cluster information
-                if 'cluster_id' in df_search.columns and has_real_coords:
+                if 'cluster_id' in df_search.columns and has_real_coords and analysis_type == "umap_dbscan_clusters":
                     # Use cluster-based coloring
                     cluster_colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85929E']
                     traces.append(go.Scatter3d(
@@ -670,7 +695,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             
             # Add non-search-result videos (grayed out but show clusters if available)
             if len(df_other) > 0:
-                if 'cluster_id' in df_other.columns and has_real_coords:
+                if 'cluster_id' in df_other.columns and has_real_coords and analysis_type == "umap_dbscan_clusters":
                     # Show clusters for non-search results too, but with lower opacity
                     cluster_colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85929E']
                     
@@ -732,7 +757,7 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
             # Add search results (colorful)
             if len(df_search) > 0:
                 # Check if we have cluster information
-                if 'cluster_id' in df_search.columns and has_real_coords:
+                if 'cluster_id' in df_search.columns and has_real_coords and analysis_type == "umap_dbscan_clusters":
                     # Use cluster-based coloring
                     cluster_colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85929E']
                     fig.add_trace(go.Scatter(
@@ -1460,10 +1485,7 @@ def main():
     
     top_k = st.session_state.top_k
     similarity_threshold = st.session_state.similarity_threshold
-    viz_method = "umap"
-    umap_neighbors = 15
-    umap_min_dist = 0.1
-    trimap_inliers = 10
+    # UMAP and DBSCAN are pre-computed and stored in the parquet file
 
     st.markdown("""
     <div class="main-header">
@@ -1658,26 +1680,18 @@ def main():
             help="Lower values show more results. Text searches typically need lower thresholds (0.1-0.3) than video searches (0.3-0.5)."
         )
 
-        viz_method = st.selectbox(
-            "Visualization Method",
-            options=["umap", "pca", "trimap", "tsne", "similarity", "3d_umap"],
+        analysis_type = st.selectbox(
+            "Analysis Type",
+            options=["embedding_similarity", "umap_dbscan_clusters"],
             format_func=lambda x: {
-                "umap": "UMAP (Recommended)",
-                "pca": "PCA (Fast)", 
-                "trimap": "TriMAP (Large Datasets)",
-                "tsne": "t-SNE (Legacy)",
-                "similarity": "Direct Similarity",
-                "3d_umap": "3D UMAP"
+                "embedding_similarity": "Embedding Similarity",
+                "umap_dbscan_clusters": "UMAP + DBSCAN Clusters"
             }[x],
             index=0,
             label_visibility="collapsed"
         )
 
-        if viz_method == "umap":
-            umap_neighbors = st.slider("Neighbors", 3, 50, umap_neighbors)
-            umap_min_dist = st.slider("Min Distance", 0.01, 1.0, umap_min_dist, 0.01)
-        elif viz_method == "trimap":
-            trimap_inliers = st.slider("Triplet Inliers", 3, 20, trimap_inliers)
+        # Note: UMAP projections are pre-computed and stored in the parquet file
 
         st.markdown('<div class="section-title">📊 Database Stats</div>', unsafe_allow_html=True)
         st.markdown(f"""
@@ -1730,15 +1744,12 @@ def main():
             all_videos = get_all_videos_from_database(search_engine)
             fig = create_embedding_visualization(
                 st.session_state.search_results, 
-                viz_method, 
+                "umap",  # Always use UMAP for 2D scatter plot
                 selected_idx,
                 query_info=query_info,
                 top_k=st.session_state.top_k,
                 all_videos=all_videos,
-                **({
-                    'neighbors': umap_neighbors,
-                    'min_dist': umap_min_dist
-                } if viz_method == 'umap' else {})
+                analysis_type=analysis_type
             )
             
             plot_selection = st.plotly_chart(
@@ -1784,7 +1795,8 @@ def main():
                 selected_idx,
                 query_info=query_info,
                 top_k=st.session_state.top_k,
-                all_videos=all_videos
+                all_videos=all_videos,
+                analysis_type=analysis_type
             )
             
             plot_selection_3d = st.plotly_chart(
@@ -1806,11 +1818,14 @@ def main():
     
     with viz_tab3:
         if st.session_state.search_results:
-            # Create heatmap visualization (heatmap only shows search results, not all videos)
+            # Create heatmap visualization
+            all_videos = get_all_videos_from_database(search_engine)
             fig = create_embedding_visualization(
                 st.session_state.search_results, 
                 "similarity", 
-                None
+                None,
+                all_videos=all_videos,
+                analysis_type=analysis_type
             )
             
             st.plotly_chart(fig, use_container_width=True, key=f"heatmap_{len(st.session_state.search_results)}")
