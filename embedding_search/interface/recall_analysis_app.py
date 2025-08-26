@@ -268,7 +268,7 @@ def extract_keybert_keywords_from_query(query_text: str, ground_truth: GroundTru
 # Page configuration
 st.set_page_config(
     page_title="Recall Analysis Dashboard",
-    page_icon="🎯",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -771,9 +771,7 @@ def display_text_search_analysis(ground_truth: GroundTruthProcessor, quality_thr
                         'Rank': i+1,
                         'Video ID': result['slice_id'],
                         'Similarity': f"{result.get('similarity_score', result.get('similarity', 0.0)):.3f}",
-                        'Keyword Match': _get_keyword_match_status(result['slice_id'], primary_keywords, ground_truth),
-                        'Keyword Matches': len([kw for kw in ground_truth.get_video_info(result['slice_id'])['keywords'] 
-                                               if kw in primary_keywords]),
+                        'Status': _get_keyword_match_status(result['slice_id'], primary_keywords, ground_truth),
                         'Video Keywords': ', '.join(ground_truth.get_video_info(result['slice_id'])['keywords'][:3]) + 
                                         ('...' if len(ground_truth.get_video_info(result['slice_id'])['keywords']) > 3 else '')
                     }
@@ -815,221 +813,243 @@ def display_text_search_analysis(ground_truth: GroundTruthProcessor, quality_thr
                 st.code(traceback.format_exc())
 
 
-def display_video_analysis(ground_truth: GroundTruthProcessor):
+def display_video_analysis(ground_truth: GroundTruthProcessor, quality_threshold: float = 0.15):
     """Display video-level analysis and triaging tools."""
-    st.subheader("🎬 Video Analysis & Triaging")
+    st.subheader("🎬 Video Search Triage")
     
     # Video selection
     all_videos = list(ground_truth.video_to_keywords.keys())
-    selected_video = st.selectbox("Select a video to analyze:", all_videos)
+    selected_video = st.selectbox(
+        "Select a video to analyze:",
+        all_videos,
+        help="Choose a video to search for similar videos in the database"
+    )
     
-    if selected_video:
-        video_info = ground_truth.get_video_info(selected_video)
-        relevant_videos = ground_truth.get_relevant_videos(selected_video, include_self=False)
-        
-        # Display basic video information
-        st.write(f"**Selected Video:** {selected_video}")
-        st.write(f"**Keywords:** {', '.join(video_info['keywords'])}")
-        
-        # Run search for this specific video
-        if st.button(f"🔍 Search Similar to {selected_video}", key=f"search_{selected_video}"):
-            try:
-                config = VideoRetrievalConfig()
-                search_engine = VideoSearchEngine(config=config)
-                
-                with st.spinner("Searching for similar videos..."):
-                    search_results = search_engine.search_by_video(
-                        video_info['video_path'],
-                        top_k=10,
-                        use_cache=True
-                    )
-                
-                # Calculate recall metrics (Standard: Recall@K = relevant_found_in_top_K / K)
-                retrieved_ids = [r['slice_id'] for r in search_results]
-                
-                # Calculate TP (True Positives) for each K
-                tp_1 = len(set(retrieved_ids[:1]).intersection(relevant_videos)) if len(retrieved_ids) >= 1 else 0
-                tp_3 = len(set(retrieved_ids[:3]).intersection(relevant_videos)) if len(retrieved_ids) >= 1 else 0
-                tp_5 = len(set(retrieved_ids[:5]).intersection(relevant_videos)) if len(retrieved_ids) >= 1 else 0
-                
-                # Standard Recall@K = TP / K
-                recall_1 = tp_1 / 1 if retrieved_ids else 0
-                recall_3 = tp_3 / 3 if retrieved_ids else 0
-                recall_5 = tp_5 / 5 if retrieved_ids else 0
-                
-                # Track qualifying results count
-                qualifying_results_video = len(retrieved_ids)
-                
-                # Display recall metrics (Standard Formula)
-                st.subheader("📊 Search Performance")
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Recall@1", f"{recall_1:.3f}")
-                    if qualifying_results_video < 1:
-                        st.caption(f"TP: {tp_1}, FP: {1 - tp_1}")
-                        st.caption(f"Qualifying results: {qualifying_results_video} < 1")
-                    else:
-                        fp_1 = 1 - tp_1
-                        st.caption(f"TP: {tp_1}, FP: {fp_1}")
-                with col2:
-                    st.metric("Recall@3", f"{recall_3:.3f}")
-                    if qualifying_results_video < 3:
-                        fp_3 = qualifying_results_video - tp_3  # FP = qualifying_results - TP when results < K
-                        st.caption(f"TP: {tp_3}, FP: {fp_3}")
-                        st.caption(f"Qualifying results: {qualifying_results_video} < 3")
-                    else:
-                        fp_3 = 3 - tp_3
-                        st.caption(f"TP: {tp_3}, FP: {fp_3}")
-                with col3:
-                    st.metric("Recall@5", f"{recall_5:.3f}")
-                    if qualifying_results_video < 5:
-                        fp_5 = qualifying_results_video - tp_5  # FP = qualifying_results - TP when results < K
-                        st.caption(f"TP: {tp_5}, FP: {fp_5}")
-                        st.caption(f"Qualifying results: {qualifying_results_video} < 5")
-                    else:
-                        fp_5 = 5 - tp_5
-                        st.caption(f"TP: {tp_5}, FP: {fp_5}")
-                
-                # Display side-by-side comparison with GIFs
-                st.subheader("Input vs Retrieved Results")
-                
-                # Create 6 columns: Input + Top 5 results
-                cols = st.columns(6)
-                
-                # Column 1: Input video
-                with cols[0]:
-                    st.markdown("**INPUT**")
-                    st.markdown(f"**{selected_video}**")
-                    
-                    # Display input video GIF
-                    query_gif_path = Path(video_info['gif_path'])
-                    if query_gif_path.exists():
-                        try:
-                            st.image(str(query_gif_path), width=180, use_container_width=True)
-                        except Exception as e:
-                            st.write("❌ GIF not available")
-                    else:
-                        st.write("❌ GIF not available")
-                    
-                    # Show input keywords
-                    st.markdown("**Keywords:**")
-                    for keyword in video_info['keywords']:
-                        st.markdown(f"🏷️ {keyword}")
-                
-                # Columns 2-6: Top 5 results
-                for i in range(5):
-                    with cols[i + 1]:
-                        if i < len(search_results):
-                            result = search_results[i]
-                            result_id = result['slice_id']
-                            # Handle different possible similarity key names
-                            similarity = result.get('similarity_score', result.get('similarity', result.get('score', 0.0)))
-                            is_relevant = result_id in relevant_videos
-                            
-                            # Success/failure indicator
-                            status_icon = "✅" if is_relevant else "❌"
-                            
-                            st.markdown(f"**{status_icon} RANK #{i+1}**")
-                            st.markdown(f"**{result_id}**")
-                            st.markdown(f"*Similarity: {similarity:.3f}*")
-                            
-                            # Get result video info and display GIF
-                            try:
-                                result_info = ground_truth.get_video_info(result_id)
-                                result_gif_path = Path(result_info['gif_path'])
-                                
-                                # Display result GIF
-                                if result_gif_path.exists():
-                                    try:
-                                        st.image(str(result_gif_path), width=180, use_container_width=True)
-                                    except Exception as e:
-                                        st.write("❌ GIF not available")
-                                else:
-                                    st.write("❌ GIF not available")
-                                
-                                # Show result keywords with matching indicators
-                                st.markdown("**Keywords:**")
-                                result_keywords = result_info['keywords']
-                                query_keywords_set = set(video_info['keywords'])
-                                
-                                for keyword in result_keywords:
-                                    if keyword in query_keywords_set:
-                                        st.markdown(f"✅ {keyword}")  # Matching keyword
-                                    else:
-                                        st.markdown(f"🔸 {keyword}")  # Non-matching keyword
-                                
-                            except Exception as e:
-                                st.write(f"❌ Error: {e}")
-                        else:
-                            st.write("No result")
-                
-                # Analysis summary
-                st.subheader("🔍 Analysis Summary")
-                
-                if recall_1 > 0:
-                    st.success(f"✅ **Good Performance**: Found relevant video in top-1 result (Recall@1 = {recall_1:.3f})")
-                else:
-                    st.error(f"❌ **Poor Performance**: No relevant videos in top-1 result")
-                
-                if recall_3 > 0.5:
-                    st.success(f"✅ **Good Recall@3**: {recall_3:.1%} of relevant videos found in top-3")
-                elif recall_3 > 0:
-                    st.warning(f"⚠️ **Moderate Recall@3**: {recall_3:.1%} of relevant videos found in top-3")
-                else:
-                    st.error(f"❌ **Poor Recall@3**: No relevant videos found in top-3")
-                
-                # Detailed results table
-                st.subheader("📋 Detailed Search Results")
-                results_df = pd.DataFrame([
-                    {
-                        'Rank': i+1,
-                        'Video ID': result['slice_id'],
-                        'Similarity': f"{result.get('similarity_score', result.get('similarity', 0.0)):.3f}",
-                        'Status': '✅ Relevant' if result['slice_id'] in relevant_videos else '❌ Not Relevant',
-                        'Shared Keywords': len(set(ground_truth.get_video_info(result['slice_id'])['keywords']).intersection(set(video_info['keywords'])))
-                    }
-                    for i, result in enumerate(search_results[:10])
-                ])
-                
-                # Color code the dataframe
-                def highlight_results(row):
-                    if '✅' in row['Status']:
-                        return ['background-color: #d4edda'] * len(row)
-                    else:
-                        return ['background-color: #f8d7da'] * len(row)
-                
-                st.dataframe(
-                    results_df.style.apply(highlight_results, axis=1),
-                    use_container_width=True
+    if selected_video and st.button(f"🔍 Search for: '{selected_video}'", key=f"search_{selected_video}"):
+        try:
+            video_info = ground_truth.get_video_info(selected_video)
+            relevant_videos = ground_truth.get_relevant_videos(selected_video, include_self=False)
+            
+            config = VideoRetrievalConfig()
+            search_engine = VideoSearchEngine(config=config)
+            
+            with st.spinner("Searching for similar videos..."):
+                search_results = search_engine.search_by_video(
+                    video_info['video_path'],
+                    top_k=10,  # Search for more results to ensure we have enough after filtering
+                    use_cache=True
                 )
+            
+            # Apply quality threshold filtering
+            original_count = len(search_results)
+            search_results = [r for r in search_results if r.get('similarity_score', r.get('similarity', 0)) >= quality_threshold]
+            filtered_count = original_count - len(search_results)
+            
+            # Check if top result has very low similarity
+            if search_results:
+                top_similarity = search_results[0].get('similarity_score', search_results[0].get('similarity', 0))
+                if top_similarity < quality_threshold:
+                    st.error(f"❌ **No Results Found**")
+                    st.write(f"Top similarity score ({top_similarity:.3f}) is below quality threshold ({quality_threshold:.3f})")
+                    st.write("This suggests the database doesn't contain similar videos for this query.")
+                    st.write("**Suggestions:**")
+                    st.write("- Try a different video")
+                    st.write("- Lower the quality threshold")
+                    st.write("- The database may be too small for this specific video")
+                    return
+            
+            if not search_results:
+                st.error(f"❌ **No Results Found**")
+                st.write(f"No results found for video: '{selected_video}' with similarity >= {quality_threshold:.3f}")
+                if filtered_count > 0:
+                    st.write(f"({filtered_count} results were filtered out due to low quality)")
+                st.write("**Suggestions:**")
+                st.write("- Try lowering the quality threshold")
+                st.write("- Try a different video")
+                st.write("- The database may be too small for this specific video")
+                return
+            
+            if filtered_count > 0:
+                st.info(f"ℹ️ Filtered out {filtered_count} low-quality results (similarity < {quality_threshold:.3f})")
+            
+            # Calculate recall metrics (Standard: Recall@K = relevant_found_in_top_K / K)
+            retrieved_ids = [r['slice_id'] for r in search_results]
+            
+            # Calculate TP (True Positives) for each K
+            tp_1 = len(set(retrieved_ids[:1]).intersection(relevant_videos)) if len(retrieved_ids) >= 1 else 0
+            tp_3 = len(set(retrieved_ids[:3]).intersection(relevant_videos)) if len(retrieved_ids) >= 1 else 0
+            tp_5 = len(set(retrieved_ids[:5]).intersection(relevant_videos)) if len(retrieved_ids) >= 1 else 0
+            
+            # Standard Recall@K = TP / K
+            recall_1 = tp_1 / 1 if retrieved_ids else 0
+            recall_3 = tp_3 / 3 if retrieved_ids else 0
+            recall_5 = tp_5 / 5 if retrieved_ids else 0
+            
+            # Track qualifying results count
+            qualifying_results_video = len(retrieved_ids)
+            
+            # Display search performance metrics
+            st.subheader("Video Search Performance")
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Top-K", len(search_results))
+            with col2:
+                st.metric("Recall@1", f"{recall_1:.3f}")
+                if qualifying_results_video < 1:
+                    st.caption(f"TP: {tp_1}, FP: {1 - tp_1}")
+                    st.caption(f"Qualifying results: {qualifying_results_video} < 1")
+                else:
+                    fp_1 = 1 - tp_1
+                    st.caption(f"TP: {tp_1}, FP: {fp_1}")
+            with col3:
+                st.metric("Recall@3", f"{recall_3:.3f}")
+                if qualifying_results_video < 3:
+                    fp_3 = qualifying_results_video - tp_3  # FP = qualifying_results - TP when results < K
+                    st.caption(f"TP: {tp_3}, FP: {fp_3}")
+                    st.caption(f"Qualifying results: {qualifying_results_video} < 3")
+                else:
+                    fp_3 = 3 - tp_3
+                    st.caption(f"TP: {tp_3}, FP: {fp_3}")
+            with col4:
+                st.metric("Recall@5", f"{recall_5:.3f}")
+                if qualifying_results_video < 5:
+                    fp_5 = qualifying_results_video - tp_5  # FP = qualifying_results - TP when results < K
+                    st.caption(f"TP: {tp_5}, FP: {fp_5}")
+                    st.caption(f"Qualifying results: {qualifying_results_video} < 5")
+                else:
+                    fp_5 = 5 - tp_5
+                    st.caption(f"TP: {tp_5}, FP: {fp_5}")
+            
+            # Display side-by-side comparison with GIFs
+            st.subheader("Input vs Retrieved Results")
+            
+            # Create 6 columns: Input + Top 5 results
+            cols = st.columns(6)
+            
+            # Column 1: Input video
+            with cols[0]:
+                st.markdown("**INPUT**")
+                st.markdown(f"**{selected_video}**")
                 
-                # Improvement suggestions
-                st.subheader("💡 Improvement Suggestions")
+                # Display input video GIF
+                query_gif_path = Path(video_info['gif_path'])
+                if query_gif_path.exists():
+                    try:
+                        st.image(str(query_gif_path), width=180, use_container_width=True)
+                    except Exception as e:
+                        st.write("❌ GIF not available")
+                else:
+                    st.write("❌ GIF not available")
                 
-                if recall_1 == 0:
-                    st.write("**Why might Recall@1 be low?**")
-                    st.write("- The embedding model may not capture the semantic meaning of the keywords")
-                    st.write("- Visual features might not align with the keyword annotations")
-                    st.write("- The query video might be an outlier in its category")
-                    st.write("- Consider reviewing the keyword annotations for accuracy")
-                
-                if recall_3 < 0.3:
-                    st.write("**Why might Recall@3 be low?**")
-                    st.write("- Limited training data for this type of scenario")
-                    st.write("- The embedding space might not cluster similar scenarios well")
-                    st.write("- Consider data augmentation or fine-tuning the model")
+                # Show input keywords
+                st.markdown("**Keywords:**")
+                for keyword in video_info['keywords']:
+                    st.markdown(f"🏷️ {keyword}")
+            
+            # Columns 2-6: Top 5 results
+            for i in range(5):
+                with cols[i + 1]:
+                    if i < len(search_results):
+                        result = search_results[i]
+                        result_id = result['slice_id']
+                        # Handle different possible similarity key names
+                        similarity = result.get('similarity_score', result.get('similarity', result.get('score', 0.0)))
+                        is_relevant = result_id in relevant_videos
+                        
+                        # Success/failure indicator
+                        status_icon = "✅" if is_relevant else "❌"
+                        
+                        st.markdown(f"**{status_icon} RANK #{i+1}**")
+                        st.markdown(f"**{result_id}**")
+                        st.markdown(f"*Similarity: {similarity:.3f}*")
+                        
+                        # Get result video info and display GIF
+                        try:
+                            result_info = ground_truth.get_video_info(result_id)
+                            result_gif_path = Path(result_info['gif_path'])
+                            
+                            # Display result GIF
+                            if result_gif_path.exists():
+                                try:
+                                    st.image(str(result_gif_path), width=180, use_container_width=True)
+                                except Exception as e:
+                                    st.write("❌ GIF not available")
+                            else:
+                                st.write("❌ GIF not available")
+                            
+                            # Show result keywords with matching indicators
+                            st.markdown("**Keywords:**")
+                            result_keywords = result_info['keywords']
+                            query_keywords_set = set(video_info['keywords'])
+                            
+                            for keyword in result_keywords:
+                                if keyword in query_keywords_set:
+                                    st.markdown(f"✅ {keyword}")  # Matching keyword
+                                else:
+                                    st.markdown(f"🔸 {keyword}")  # Non-matching keyword
+                            
+                        except Exception as e:
+                            st.write(f"❌ Error: {e}")
+                    else:
+                        st.write("No result")
+            
+            
+            # Detailed results table
+            st.subheader("📋 Detailed Search Results")
+            results_df = pd.DataFrame([
+                {
+                    'Rank': i+1,
+                    'Video ID': result['slice_id'],
+                    'Similarity': f"{result.get('similarity_score', result.get('similarity', 0.0)):.3f}",
+                    'Status': _get_keyword_match_status(result['slice_id'], list(video_info['keywords']), ground_truth),
+                    'Video Keywords': ', '.join(ground_truth.get_video_info(result['slice_id'])['keywords'][:3]) + 
+                                    ('...' if len(ground_truth.get_video_info(result['slice_id'])['keywords']) > 3 else '')
+                }
+                for i, result in enumerate(search_results[:5])
+            ])
+            
+            # Color code the dataframe
+            def highlight_results(row):
+                if '✅' in row['Status']:
+                    return ['background-color: #d4edda'] * len(row)
+                else:
+                    return ['background-color: #f8d7da'] * len(row)
+            
+            st.dataframe(
+                results_df.style.apply(highlight_results, axis=1),
+                use_container_width=True
+            )
+            
+            # Improvement suggestions in expandable section
+            with st.expander("💡 Improvement Suggestions"):
+                if recall_1 == 0 or recall_3 < 0.3:
+                    st.markdown("**Why might performance be low?**")
+                    if recall_1 == 0:
+                        st.write("• The embedding model may not capture the semantic meaning of the keywords")
+                        st.write("• Visual features might not align with the keyword annotations")
+                        st.write("• The query video might be an outlier in its category")
+                    if recall_3 < 0.3:
+                        st.write("• Limited training data for this type of scenario")
+                        st.write("• The embedding space might not cluster similar scenarios well")
+                        st.write("• Consider data augmentation or fine-tuning the model")
                 
                 # Show what was expected vs what was retrieved
                 expected_but_missing = relevant_videos - set(retrieved_ids[:5])
                 if expected_but_missing:
-                    st.write("**Expected but missing in top-5:**")
+                    st.markdown("**Expected but missing in top-5:**")
                     for vid in list(expected_but_missing)[:3]:
-                        st.write(f"- {vid}")
+                        st.write(f"• {vid}")
                 
-            except Exception as e:
-                st.error(f"Search failed: {e}")
-                import traceback
-                st.code(traceback.format_exc())
+                st.markdown("**Tips for better results:**")
+                st.write("• Review keyword annotations for accuracy")
+                st.write("• Consider visual similarity vs semantic similarity alignment")
+                st.write("• Check if query video represents typical examples of its keywords")
+        
+        except Exception as e:
+            st.error(f"Search failed: {e}")
+            import traceback
+            st.code(traceback.format_exc())
 
 
 def main():
@@ -1038,25 +1058,25 @@ def main():
 
     # Show recall formula info
     st.info("""
-    **Standard Recall@K = relevant_found_in_top_K / K** 
+    **Recall@K = relevant_found_in_top_K / K** 
     
     This means:
     - **Recall@1 = 100%** when the top result is relevant
     - **Recall@3 = 33%** when 1 out of 3 top results is relevant
     - **Recall@5 = 40%** when 2 out of 5 top results are relevant
     
-    📝 Note: When qualifying results < K, this is indicated in the recall details.
+    Note: When qualifying results < K, this is indicated in the recall details.
     """)
     
     # Sidebar for navigation and controls
-    st.sidebar.title("🔧 Controls")
+    st.sidebar.title("Controls")
     
     # Quality threshold control
-    st.sidebar.subheader("⚙️ Quality Settings")
+    st.sidebar.subheader("Quality Settings")
     global_quality_threshold = st.sidebar.slider(
         "Similarity Threshold", 
         min_value=0.0, 
-        max_value=0.3, 
+        max_value=1.0, 
         value=0.15, 
         step=0.01,
         help="Filter out results below this similarity score globally. Higher values = stricter filtering."
@@ -1227,7 +1247,7 @@ def main():
                         st.plotly_chart(fig, use_container_width=True)
     
     elif analysis_mode == "🎬 Video Search Triage":
-        display_video_analysis(ground_truth)
+        display_video_analysis(ground_truth, quality_threshold=global_quality_threshold)
     
     elif analysis_mode == "📝 Text Search Triage":
         display_text_search_analysis(ground_truth, quality_threshold=global_quality_threshold)

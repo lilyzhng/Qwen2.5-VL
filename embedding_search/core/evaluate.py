@@ -102,6 +102,7 @@ class GroundTruthProcessor:
     def get_relevant_videos(self, query_video_id: str, include_self: bool = False) -> Set[str]:
         """
         Get videos that should be considered relevant for a given query video.
+        A video is considered relevant if it contains ALL keywords of the query video.
         
         Args:
             query_video_id: ID of the query video
@@ -113,12 +114,15 @@ class GroundTruthProcessor:
         if query_video_id not in self.video_to_keywords:
             return set()
         
-        query_keywords = self.video_to_keywords[query_video_id]
+        query_keywords = set(self.video_to_keywords[query_video_id])
         relevant_videos = set()
         
-        # Find videos that share any keywords
-        for keyword in query_keywords:
-            relevant_videos.update(self.keyword_to_videos[keyword])
+        # Find videos that contain ALL keywords of the query video
+        for video_id, video_keywords in self.video_to_keywords.items():
+            video_keywords_set = set(video_keywords)
+            # Check if query keywords are a subset of video keywords
+            if query_keywords.issubset(video_keywords_set):
+                relevant_videos.add(video_id)
         
         if not include_self:
             relevant_videos.discard(query_video_id)
