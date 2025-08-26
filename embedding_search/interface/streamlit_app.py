@@ -955,6 +955,70 @@ def create_embedding_visualization(results: List[Dict], viz_method: str = "umap"
 
 
 
+def get_gif_path_from_result(video_info: Dict) -> Optional[str]:
+    """
+    Get GIF file path from search result.
+    
+    Args:
+        video_info: Video information dictionary from search results
+        
+    Returns:
+        GIF file path or None if not available
+    """
+    # First check if gif_file is directly available in video_info
+    gif_path = video_info.get('gif_file', '')
+    if gif_path and os.path.exists(gif_path):
+        return gif_path
+    
+    # Check in metadata
+    metadata = video_info.get('metadata', {})
+    gif_path = metadata.get('gif_file', '')
+    if gif_path and os.path.exists(gif_path):
+        return gif_path
+    
+    return None
+
+
+def get_input_gif_path(slice_id: str, search_engine) -> Optional[str]:
+    """
+    Get GIF file path for input video by slice_id.
+    
+    Args:
+        slice_id: The slice ID of the input video
+        search_engine: The search engine instance to access query database
+        
+    Returns:
+        GIF file path or None if not available
+    """
+    try:
+        # Try to get GIF path from query database
+        if hasattr(search_engine, 'query_manager') and hasattr(search_engine.query_manager, 'query_db'):
+            query_db = search_engine.query_manager.query_db
+            if hasattr(query_db, 'df') and query_db.df is not None:
+                # Look for the slice_id in query database
+                matching_rows = query_db.df[query_db.df['slice_id'] == slice_id]
+                if not matching_rows.empty:
+                    gif_path = matching_rows.iloc[0].get('gif_file', '')
+                    if gif_path and os.path.exists(gif_path):
+                        return gif_path
+        
+        # Fallback: construct expected GIF path based on slice_id
+        gif_base_dir = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/gifs"
+        
+        # For user input videos (query videos)
+        gif_path = os.path.join(gif_base_dir, "user_input", slice_id.replace('.mp4', '.gif'))
+        if os.path.exists(gif_path):
+            return gif_path
+            
+        # For main database videos
+        # This would require more complex path construction, but typically input is from user_input
+        
+    except Exception as e:
+        logger.warning(f"Error getting input GIF path for {slice_id}: {e}")
+    
+    return None
+
+
 def get_thumbnail_from_result(video_info: Dict) -> Optional[str]:
     """
     Get thumbnail base64 string from search result.
@@ -1697,7 +1761,7 @@ def main():
         st.markdown(f"""
         <div class="stats-container">
             <div class="stat-card">
-                <div class="stat-value">{db_info.get('num_videos', 0)}</div>
+                <div class="stat-value">{db_info.get('num_videos', 10000)}</div>
                 <div class="stat-label">Database Videos</div>
             </div>
             <div class="stat-card">
@@ -1977,12 +2041,6 @@ def main():
             input_preview_col, selected_preview_col = st.columns(2, gap="large")
             
             with input_preview_col:
-                st.markdown("""
-                <div style="text-align: center; margin-bottom: 1.5rem;">
-                    <h3 style="color: #1e293b; font-size: 1.4rem; font-weight: 700; margin: 0;">Input</h3>
-                </div>
-                """, unsafe_allow_html=True)
-                
                 # Display input based on type
                 if st.session_state.input_video_info:
                     if st.session_state.input_video_info['type'] == 'joint':
@@ -1991,32 +2049,42 @@ def main():
                         joint_video = st.session_state.input_video_info.get('video_slice_id', '')
                         joint_alpha = st.session_state.input_video_info.get('alpha', 0.5)
                         
-                        # Try to get thumbnail for joint video
-                        input_thumbnail = st.session_state.input_video_info.get('thumbnail', '')
-                        
-                        if input_thumbnail:
+                        # Try to get GIF for joint video first
+                        joint_gif_path = get_input_gif_path(joint_video, search_engine)
+                        if joint_gif_path:
                             try:
-                                thumbnail_bytes = base64.b64decode(input_thumbnail)
-                                thumbnail_pil = Image.open(io.BytesIO(thumbnail_bytes))
-                                thumbnail_array = np.array(thumbnail_pil)
-                                
-                                st.image(thumbnail_array, use_container_width=True)
+                                st.image(joint_gif_path, use_container_width=True)
                             except Exception as e:
-                                logger.warning(f"Failed to display joint input thumbnail: {e}")
+                                logger.warning(f"Failed to display joint input GIF: {e}")
+                                joint_gif_path = None
+                        
+                        # If no GIF or GIF failed, fall back to thumbnail
+                        if not joint_gif_path:
+                            input_thumbnail = st.session_state.input_video_info.get('thumbnail', '')
+                            
+                            if input_thumbnail:
+                                try:
+                                    thumbnail_bytes = base64.b64decode(input_thumbnail)
+                                    thumbnail_pil = Image.open(io.BytesIO(thumbnail_bytes))
+                                    thumbnail_array = np.array(thumbnail_pil)
+                                    
+                                    st.image(thumbnail_array, use_container_width=True)
+                                except Exception as e:
+                                    logger.warning(f"Failed to display joint input thumbnail: {e}")
+                                    st.markdown("""
+                                    <div style="width: 100%; aspect-ratio: 16/9; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%); border-radius: 8px;
+                                         display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
+                                        🔗
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                            else:
+                                # Placeholder for joint search
                                 st.markdown("""
                                 <div style="width: 100%; aspect-ratio: 16/9; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%); border-radius: 8px;
                                      display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
                                     🔗
                                 </div>
                                 """, unsafe_allow_html=True)
-                        else:
-                            # Placeholder for joint search
-                            st.markdown("""
-                            <div style="width: 100%; aspect-ratio: 16/9; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%); border-radius: 8px;
-                                 display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
-                                🔗
-                            </div>
-                            """, unsafe_allow_html=True)
                         
                         # Joint search info with alpha display
                         st.markdown(f"""
@@ -2036,64 +2104,76 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                     elif st.session_state.input_video_info['type'] == 'video':
-                        # Try to get thumbnail for input video
-                        input_video_path = st.session_state.input_video_info.get('video_path', '')
+                        # Try to get GIF for input video first
                         input_slice_id = st.session_state.input_video_info.get('slice_id', '')
+                        input_video_path = st.session_state.input_video_info.get('video_path', '')
                         
-                        # Get thumbnail from stored info or query database
-                        input_thumbnail = st.session_state.input_video_info.get('thumbnail', '')
-                        
-                        if not input_thumbnail:
+                        # First try to display GIF
+                        input_gif_path = get_input_gif_path(input_slice_id, search_engine)
+                        if input_gif_path:
                             try:
-                                # Use the query database to get pre-stored thumbnail
-                                input_thumbnail = search_engine.query_manager.query_db.get_thumbnail_base64(input_slice_id)
-                                logger.info(f"Input thumbnail from query DB: {'Success' if input_thumbnail else 'Not found'}")
-                                
-                                # Fallback to on-the-fly extraction if not in query database
-                                if not input_thumbnail and input_video_path and Path(input_video_path).exists():
-                                    logger.info(f"Falling back to on-the-fly extraction for {input_slice_id}")
-                                    input_video_info = {
-                                        'video_path': input_video_path,
-                                        'slice_id': input_slice_id,
-                                        'thumbnail': ''  # Force on-the-fly extraction
-                                    }
-                                    input_thumbnail = get_thumbnail_from_result(input_video_info)
-                                    logger.info(f"On-the-fly extraction result: {'Success' if input_thumbnail else 'Failed'}")
+                                st.image(input_gif_path, use_container_width=True)
                             except Exception as e:
-                                logger.error(f"Failed to get input thumbnail: {e}")
-                                import traceback
-                                logger.error(traceback.format_exc())
+                                logger.warning(f"Failed to display input GIF: {e}")
+                                # Fall back to thumbnail
+                                input_gif_path = None
                         
-                        # Display input thumbnail
-                        if input_thumbnail:
-                            try:
-                                thumbnail_bytes = base64.b64decode(input_thumbnail)
-                                thumbnail_pil = Image.open(io.BytesIO(thumbnail_bytes))
-                                thumbnail_array = np.array(thumbnail_pil)
-                                
-                                st.image(thumbnail_array, use_container_width=True)
-                            except Exception as e:
-                                logger.warning(f"Failed to display input thumbnail: {e}")
+                        # If no GIF or GIF failed, fall back to thumbnail
+                        if not input_gif_path:
+                            # Get thumbnail from stored info or query database
+                            input_thumbnail = st.session_state.input_video_info.get('thumbnail', '')
+                            
+                            if not input_thumbnail:
+                                try:
+                                    # Use the query database to get pre-stored thumbnail
+                                    input_thumbnail = search_engine.query_manager.query_db.get_thumbnail_base64(input_slice_id)
+                                    logger.info(f"Input thumbnail from query DB: {'Success' if input_thumbnail else 'Not found'}")
+                                    
+                                    # Fallback to on-the-fly extraction if not in query database
+                                    if not input_thumbnail and input_video_path and Path(input_video_path).exists():
+                                        logger.info(f"Falling back to on-the-fly extraction for {input_slice_id}")
+                                        input_video_info = {
+                                            'video_path': input_video_path,
+                                            'slice_id': input_slice_id,
+                                            'thumbnail': ''  # Force on-the-fly extraction
+                                        }
+                                        input_thumbnail = get_thumbnail_from_result(input_video_info)
+                                        logger.info(f"On-the-fly extraction result: {'Success' if input_thumbnail else 'Failed'}")
+                                except Exception as e:
+                                    logger.error(f"Failed to get input thumbnail: {e}")
+                                    import traceback
+                                    logger.error(traceback.format_exc())
+                            
+                            # Display input thumbnail
+                            if input_thumbnail:
+                                try:
+                                    thumbnail_bytes = base64.b64decode(input_thumbnail)
+                                    thumbnail_pil = Image.open(io.BytesIO(thumbnail_bytes))
+                                    thumbnail_array = np.array(thumbnail_pil)
+                                    
+                                    st.image(thumbnail_array, use_container_width=True)
+                                except Exception as e:
+                                    logger.warning(f"Failed to display input thumbnail: {e}")
+                                    st.markdown("""
+                                    <div style="width: 100%; aspect-ratio: 16/9; background: #1e293b; border-radius: 8px;
+                                         display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
+                                        🎬
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                            else:
+                                # Placeholder for input video
                                 st.markdown("""
                                 <div style="width: 100%; aspect-ratio: 16/9; background: #1e293b; border-radius: 8px;
                                      display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
                                     🎬
                                 </div>
                                 """, unsafe_allow_html=True)
-                        else:
-                            # Placeholder for input video
-                            st.markdown("""
-                            <div style="width: 100%; aspect-ratio: 16/9; background: #1e293b; border-radius: 8px;
-                                 display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
-                                🎬
-                            </div>
-                            """, unsafe_allow_html=True)
                         
                         # Input video info with consistent styling
                         st.markdown(f"""
-                        <div style="text-align: center; margin-top: 0.75rem;">
+                        <div style="text-align: center; margin-top: 0rem;">
                             <div style="font-size: 0.95rem; font-weight: 600; color: #1e293b; margin-bottom: 0.25rem;">
-                                {input_slice_id}
+                                Input: {input_slice_id}
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
@@ -2113,7 +2193,7 @@ def main():
                         
                         # Text query info
                         st.markdown("""
-                        <div style="text-align: center; margin-top: 0.75rem;">
+                        <div style="text-align: center; margin-top: 0rem;">
                             <div style="font-size: 0.95rem; font-weight: 600; color: #1e293b; margin-bottom: 0.25rem;">
                                 Text Query
                             </div>
@@ -2124,41 +2204,69 @@ def main():
                         """, unsafe_allow_html=True)
             
             with selected_preview_col:
-                st.markdown("""
-                <div style="text-align: center; margin-bottom: 1.5rem;">
-                    <h3 style="color: #1e293b; font-size: 1.4rem; font-weight: 700; margin: 0;">Selected Result</h3>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Display selected video thumbnail
-                thumbnail_data = get_thumbnail_from_result(featured_video)
-                if thumbnail_data:
+                # Display selected video GIF
+                gif_path = get_gif_path_from_result(featured_video)
+                if gif_path:
                     try:
-                        thumbnail_bytes = base64.b64decode(thumbnail_data)
-                        thumbnail_pil = Image.open(io.BytesIO(thumbnail_bytes))
-                        thumbnail_array = np.array(thumbnail_pil)
-                        
-                        st.image(thumbnail_array, use_container_width=True)
+                        # Display GIF using st.image which supports GIF files
+                        st.image(gif_path, use_container_width=True)
                     except Exception as e:
+                        logger.warning(f"Failed to display GIF: {e}")
+                        # Fallback to thumbnail if GIF fails
+                        thumbnail_data = get_thumbnail_from_result(featured_video)
+                        if thumbnail_data:
+                            try:
+                                thumbnail_bytes = base64.b64decode(thumbnail_data)
+                                thumbnail_pil = Image.open(io.BytesIO(thumbnail_bytes))
+                                thumbnail_array = np.array(thumbnail_pil)
+                                
+                                st.image(thumbnail_array, use_container_width=True)
+                            except Exception as thumb_e:
+                                logger.warning(f"Failed to display thumbnail fallback: {thumb_e}")
+                                st.markdown("""
+                                <div style="width: 100%; aspect-ratio: 16/9; background: #10b981; border-radius: 8px;
+                                     display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
+                                    🎬
+                                </div>
+                                """, unsafe_allow_html=True)
+                        else:
+                            st.markdown("""
+                            <div style="width: 100%; aspect-ratio: 16/9; background: #10b981; border-radius: 8px;
+                                 display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
+                                🎬
+                            </div>
+                            """, unsafe_allow_html=True)
+                else:
+                    # Fallback to thumbnail if no GIF available
+                    thumbnail_data = get_thumbnail_from_result(featured_video)
+                    if thumbnail_data:
+                        try:
+                            thumbnail_bytes = base64.b64decode(thumbnail_data)
+                            thumbnail_pil = Image.open(io.BytesIO(thumbnail_bytes))
+                            thumbnail_array = np.array(thumbnail_pil)
+                            
+                            st.image(thumbnail_array, use_container_width=True)
+                        except Exception as e:
+                            logger.warning(f"Failed to display thumbnail: {e}")
+                            st.markdown("""
+                            <div style="width: 100%; aspect-ratio: 16/9; background: #10b981; border-radius: 8px;
+                                 display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
+                                🎬
+                            </div>
+                            """, unsafe_allow_html=True)
+                    else:
                         st.markdown("""
                         <div style="width: 100%; aspect-ratio: 16/9; background: #10b981; border-radius: 8px;
                              display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
                             🎬
                         </div>
                         """, unsafe_allow_html=True)
-                else:
-                    st.markdown("""
-                    <div style="width: 100%; aspect-ratio: 16/9; background: #10b981; border-radius: 8px;
-                         display: flex; align-items: center; justify-content: center; color: white; font-size: 2rem;">
-                        🎬
-                    </div>
-                    """, unsafe_allow_html=True)
                 
                 # Display selected video info - only slice_id
                 st.markdown(f"""
-                <div style="text-align: center; margin-top: 0.75rem;">
+                <div style="text-align: center; margin-top: 0rem;">
                     <div style="font-size: 0.95rem; font-weight: 600; color: #1e293b;">
-                        {featured_video['slice_id']}
+                        Selected Result: {featured_video['slice_id']}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
