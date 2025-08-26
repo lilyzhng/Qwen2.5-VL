@@ -23,8 +23,10 @@ embedding_search/
 │   ├── evaluate.py                # Recall evaluation framework
 ├── interface/                     # User interfaces
 │   ├── streamlit_app.py           # Web interface (ALFA 0.1)
+│   ├── recall_analysis_app.py     # Recall analysis dashboard
 │   ├── main.py                    # Main CLI interface
-│   ├── launch_streamlit.sh        # Streamlit launcher
+│   ├── launch_streamlit.sh        # Main app launcher
+│   ├── launch_recall_analysis.sh  # Recall analysis launcher
 ├── data/                          # Data storage
 │   ├── unified_embeddings.parquet    # video database embeddings
 │   ├── unified_input_path.parquet     # video file paths
@@ -58,14 +60,26 @@ python interface/main.py build --input-path data/unified_input_path.parquet
 - Input must be a parquet file with columns: `slice_id`, `sensor_video_file`, `category`, `gif_file`
 - All video files referenced in the parquet must exist on disk
 
-### 2. Launch Streamlit App
-ALFA 0.1 -  Similarity Search Interface:
+### 2. Launch Streamlit Apps
 
+#### Main Search Interface (ALFA 0.1)
 ```bash
 ./interface/launch_streamlit.sh
 ```
+Available at: `http://localhost:8501`
 
-The app will be available at: `http://localhost:8501`
+#### Recall Analysis Dashboard
+Interactive dashboard for analyzing recall performance and triaging low-performing scenarios:
+```bash
+./interface/launch_recall_analysis.sh
+```
+Available at: `http://localhost:8502`
+
+**Features:**
+- 📊 **Overall Performance**: Comprehensive recall metrics with interactive charts
+- 🏷️ **Keyword Analysis**: Analyze specific keywords and categories separately  
+- 🎬 **Video Triaging**: Individual video analysis with search testing and GIF previews
+- 📈 **Custom Evaluation**: Run custom evaluations with your own parameters
 
 ### 4. Performance Benchmarks (Optional)
 
