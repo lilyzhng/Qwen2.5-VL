@@ -6,6 +6,7 @@ This system enables efficient similarity search across video databases using bot
 - Interactive video similarity search
 - Text-to-video search
 - Real-time embedding visualization
+- Comprehensive recall evaluation framework
 
 ## Codebase Structure
 
@@ -19,17 +20,22 @@ embedding_search/
 │   ├── database.py                # Unified Parquet storage system
 │   ├── faiss_backend.py           # FAISS-based search backend
 │   ├── visualizer.py              # Result visualization
+│   ├── evaluate.py                # Recall evaluation framework
 ├── interface/                     # User interfaces
 │   ├── streamlit_app.py           # Web interface (ALFA 0.1)
 │   ├── main.py                    # Main CLI interface
 │   ├── launch_streamlit.sh        # Streamlit launcher
-│   └── mock/                      # Mock interfaces for testing
 ├── data/                          # Data storage
 │   ├── unified_embeddings.parquet    # video database embeddings
 │   ├── unified_input_path.parquet     # video file paths
+│   ├── annotation/                # Ground truth annotations
+│   │   ├── video_annotation.csv   # Annotated video clips with keywords
 ├── tests/                         # Unit tests
+│   ├── test_evaluate.py           # Evaluation framework tests
 ├── benchmarks/                    # Performance testing
 │   ├── inference_benchmark.py     # Model inference benchmarks
+├── run_recall_evaluation.py       # Recall evaluation runner script
+├── run_keyword_evaluation.py      # Keyword-specific evaluation script
 └── requirements.txt               # Python dependencies
 ```
 
@@ -121,6 +127,96 @@ python interface/main.py search --query-text "car approaching cyclist" --top-k 5
 python interface/main.py search --query-video data/videos/user_input/car2cyclist_2.mp4 --visualize
 ```
 
+## Recall Evaluation
+
+The system includes a comprehensive recall evaluation framework to measure search performance using annotated ground truth data.
+
+### Quick Evaluation
+Run the complete recall evaluation:
+```bash
+python run_recall_evaluation.py
+```
+
+This will evaluate:
+- **Video-to-Video Recall**: Using each annotated video as a query
+- **Text-to-Video Recall**: Using keywords as text queries  
+- **Category-Specific Recall**: Performance for specific interaction types and environments
+
+### Keyword-Specific Evaluation
+Evaluate specific keywords or categories separately:
+
+#### List Available Keywords
+```bash
+python run_keyword_evaluation.py --list-keywords
+```
+
+#### Text-to-Video Evaluation for Specific Keywords
+```bash
+# Evaluate urban and highway scenarios
+python run_keyword_evaluation.py --mode text --keywords urban highway
+
+# Evaluate car interactions
+python run_keyword_evaluation.py --mode text --keywords car2pedestrian car2cyclist
+```
+
+#### Video-to-Video Evaluation for Specific Keywords
+```bash
+# Evaluate videos with intersection scenarios
+python run_keyword_evaluation.py --mode video --keywords intersection crosswalk
+
+# Evaluate night driving videos
+python run_keyword_evaluation.py --mode video --keywords night
+```
+
+#### Combined Evaluation
+```bash
+# Run both text-to-video and video-to-video for specific keywords
+python run_keyword_evaluation.py --mode both --keywords car2pedestrian urban
+```
+
+#### Custom K Values
+```bash
+# Evaluate with custom Recall@K values
+python run_keyword_evaluation.py --keywords urban --k-values 1 2 3 5 10
+```
+
+### Evaluation Metrics
+The framework measures **Recall@K** for K=1,3,5:
+- **Recall@1**: Percentage of relevant videos found in top-1 result
+- **Recall@3**: Percentage of relevant videos found in top-3 results
+- **Recall@5**: Percentage of relevant videos found in top-5 results
+
+### Ground Truth Data
+The evaluation uses annotated data from:
+```
+data/annotation/video_annotation.csv
+```
+
+This file contains 29 annotated video clips with keywords describing:
+- **Interaction types**: car2pedestrian, car2cyclist, car2motorcyclist, car2car
+- **Environment types**: urban, highway, intersection, crosswalk
+- **Conditions**: night, daytime, rain, parking, tunnel
+- **Actions**: turning_left, turning_right, lane_merge
+
+### Programmatic Usage
+```python
+from core.evaluate import run_recall_evaluation, print_recall_results
+
+# Run evaluation
+results = run_recall_evaluation()
+
+# Print formatted results
+print_recall_results(results)
+
+# Access specific metrics
+video_to_video_recall = results['video_to_video']['average_recalls']
+text_to_video_recall = results['text_to_video']['average_recalls']
+category_specific = results['category_specific']
+```
+
+### Performance Optimization
+The evaluation framework uses **pre-computed embeddings** from `unified_embeddings.parquet` for fast execution, avoiding the need to extract embeddings on-the-fly during evaluation.
+
 ## Testing
 
 Run the test suite:
@@ -128,39 +224,8 @@ Run the test suite:
 python -m pytest tests/ -v
 ```
 
-## CPU-only Performance
+Run evaluation framework tests:
+```bash
+python tests/test_evaluate.py
+```
 
-🖥️  DARWIN SYSTEM CONFIGURATION:
-   Model: Unknown
-   CPU: 12 logical cores (12 physical)
-   RAM: 36.0 GB
-   OS: 14.4
-   PyTorch Threads: 6
-
-🤖 MODEL CONFIGURATION:
-   Model: /Users/lilyzhang/Desktop/Qwen2.5-VL/cookbooks/nvidia_cosmos_embed_1
-   Device: CPU (forced)
-   Load Time: 0.69s
-   
-📊 PERFORMANCE SUMMARY:
-   Total Videos: 5
-   Successful: 5
-   Failed: 0
-
-⏱️  INFERENCE PERFORMANCE:
-   Average Time: 23.049s per video
-   Range: 22.736s - 23.351s
-   Std Dev: 0.245s
-   Average FPS: 0.04
-
-🚀 THROUGHPUT:
-   Videos per minute: 2.6
-   Videos per hour: 156
-
-💻 CPU UTILIZATION:
-   Peak Usage: 30.2%
-   Average Usage: 27.6%
-
-🧠 MEMORY USAGE:
-   Peak RAM: 17967.0 MB (17.5 GB)
-   Average RAM: 17796.7 MB (17.4 GB)
