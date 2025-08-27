@@ -67,10 +67,21 @@ class GroundTruthProcessor:
         """Build keyword-to-video and video-to-keyword mappings."""
         for _, row in self.annotations_df.iterrows():
             slice_id = row['slice_id']
-            keywords_str = row['keywords']
             
-            # Parse keywords (comma-separated, may have quotes)
-            keywords = [kw.strip().strip('"') for kw in keywords_str.split(',')]
+            # Extract keywords from semantic annotation columns
+            keywords = set()
+            
+            # Define the semantic columns to extract keywords from
+            semantic_columns = ['object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']
+            
+            for col in semantic_columns:
+                if col in row and pd.notna(row[col]) and str(row[col]).strip():
+                    # Parse comma-separated values and clean them
+                    values = [v.strip().strip('"') for v in str(row[col]).split(',')]
+                    keywords.update([v for v in values if v])  # Only add non-empty values
+            
+            # Convert to list for consistency
+            keywords = list(keywords)
             
             self.video_to_keywords[slice_id] = set(keywords)
             
@@ -85,18 +96,18 @@ class GroundTruthProcessor:
     def _build_semantic_groups(self):
         """Build semantic groups for related concepts."""
         # Define semantic groupings
-        interaction_types = ['car2pedestrian', 'car2cyclist', 'car2motorcyclist', 'car2car']
-        environments = ['urban', 'highway', 'freeway', 'intersection', 'crosswalk']
-        conditions = ['night', 'daytime', 'rain', 'parking', 'tunnel']
-        actions = ['turning_left', 'turning_right', 'lane_merge']
-        critical_objects = ['bicyclist', 'motorcyclist', 'parked bicycle', 'parked motorcycle', 'truck', 'pedestrian']
-        
+        object_type = ['small vehicle', 'large vehicle', 'bollard', 'stationary object', 'pedestrian', 'motorcyclist', 'bicyclist', 'other', 'unknown']
+        actor_behavior = ['entering ego path', 'stationary', 'traveling in same direction', 'traveling in opposite direction', 'straight crossing path', 'oncoming turn across path']
+        spatial_relation = ['corridor front', 'corridor behind', 'left adjacent', 'right adjacent', 'left adjacent front', 'left adjacent behind', 'right adjacent front', 'right adjacent behind', 'left split', 'right split', 'left split front', 'left split behind', 'right split front', 'right split behind']
+        ego_behavior = ['ego turning', 'proceeding straight', 'ego lane change']
+        scene_type = ['test track', 'parking lot/depot', 'intersection', 'non-intersection', 'crosswalk', 'highway', 'urban',  'bridge/tunnel', 'curved road', 'positive road grade', 'negative road grade', 'street parked vehicle', 'vulnerable road user present', 'nighttime', 'daytime', 'rainy', 'sunny', 'overcast', 'other']
+
         self.semantic_groups = {
-            'interactions': interaction_types,
-            'environments': environments,
-            'conditions': conditions,
-            'actions': actions,
-            'critical_objects': critical_objects
+            'object_type': object_type,
+            'actor_behavior': actor_behavior,
+            'spatial_relation': spatial_relation,
+            'ego_behavior': ego_behavior,
+            'scene_type': scene_type
         }
     
     def get_relevant_videos(self, query_video_id: str, include_self: bool = False) -> Set[str]:
@@ -189,7 +200,12 @@ class GroundTruthProcessor:
             'slice_id': video_id,
             'video_path': row['video_path'],
             'gif_path': row['gif_path'],
-            'keywords': list(self.video_to_keywords[video_id])
+            'keywords': list(self.video_to_keywords[video_id]),
+            'object_type': row.get('object_type', '') if pd.notna(row.get('object_type', '')) else '',
+            'actor_behavior': row.get('actor_behavior', '') if pd.notna(row.get('actor_behavior', '')) else '',
+            'spatial_relation': row.get('spatial_relation', '') if pd.notna(row.get('spatial_relation', '')) else '',
+            'ego_behavior': row.get('ego_behavior', '') if pd.notna(row.get('ego_behavior', '')) else '',
+            'scene_type': row.get('scene_type', '') if pd.notna(row.get('scene_type', '')) else ''
         }
 
 

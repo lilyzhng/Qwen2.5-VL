@@ -69,15 +69,19 @@ class TestGroundTruthProcessor(unittest.TestCase):
         """Test retrieval of relevant videos."""
         processor = GroundTruthProcessor(str(self.temp_annotation_file))
         
-        # Test video1 (urban, car2pedestrian) should find video2 (urban) and video4 (car2pedestrian)
+        # Test video1 (urban, car2pedestrian) - no other video contains ALL its keywords
         relevant = processor.get_relevant_videos('video1.mp4', include_self=False)
-        self.assertIn('video2.mp4', relevant)  # shares 'urban'
-        self.assertIn('video4.mp4', relevant)  # shares 'car2pedestrian'
+        # No other video has both 'urban' AND 'car2pedestrian'
+        self.assertEqual(len(relevant), 0)
         self.assertNotIn('video1.mp4', relevant)  # exclude self
         
-        # Test with include_self=True
+        # Test with include_self=True - should include itself
         relevant_with_self = processor.get_relevant_videos('video1.mp4', include_self=True)
         self.assertIn('video1.mp4', relevant_with_self)
+        
+        # Test video3 (highway, car2car) - no other video contains ALL its keywords
+        relevant_v3 = processor.get_relevant_videos('video3.mp4', include_self=False)
+        self.assertEqual(len(relevant_v3), 0)
     
     def test_text_query_relevance(self):
         """Test text query relevance."""
@@ -98,10 +102,17 @@ class TestGroundTruthProcessor(unittest.TestCase):
         """Test semantic group creation."""
         processor = GroundTruthProcessor(str(self.temp_annotation_file))
         
-        self.assertIn('interactions', processor.semantic_groups)
-        self.assertIn('environments', processor.semantic_groups)
-        self.assertIn('car2pedestrian', processor.semantic_groups['interactions'])
-        self.assertIn('urban', processor.semantic_groups['environments'])
+        # Check that all new semantic groups exist
+        self.assertIn('object_type', processor.semantic_groups)
+        self.assertIn('actor_behavior', processor.semantic_groups)
+        self.assertIn('spatial_relation', processor.semantic_groups)
+        self.assertIn('ego_behavior', processor.semantic_groups)
+        self.assertIn('scene_type', processor.semantic_groups)
+        
+        # Check that specific keywords are in the correct groups
+        self.assertIn('pedestrian', processor.semantic_groups['object_type'])
+        self.assertIn('intersection', processor.semantic_groups['scene_type'])
+        self.assertIn('crosswalk', processor.semantic_groups['scene_type'])
 
 
 class TestRecallEvaluator(unittest.TestCase):

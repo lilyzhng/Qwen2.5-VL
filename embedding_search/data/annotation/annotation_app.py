@@ -19,7 +19,7 @@ st.set_page_config(
 
 def load_annotation_data():
     """Load the annotation template data and filter for videos needing annotation."""
-    template_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/video_annotation.csv"
+    template_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/annotation/video_annotation.csv"
     
     if not os.path.exists(template_file):
         st.error(f"Template file not found: {template_file}")
@@ -27,12 +27,27 @@ def load_annotation_data():
     
     df = pd.read_csv(template_file)
     
-    # Filter for videos with empty keywords (needing annotation)
-    empty_keywords_mask = df['keywords'].isna() | (df['keywords'] == '') | (df['keywords'].str.strip() == '')
-    videos_needing_annotation = df[empty_keywords_mask].copy()
+    # Filter for videos with empty semantic group annotations (needing annotation)
+    # Check if any of the semantic group columns are empty
+    semantic_columns = ['object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']
+    
+    # Convert semantic columns to string to handle NaN values properly
+    for col in semantic_columns:
+        if col in df.columns:
+            df[col] = df[col].astype(str)
+    
+    # A video needs annotation if ANY semantic group columns are empty
+    empty_mask = False
+    for col in semantic_columns:
+        if col in df.columns:
+            col_empty = df[col].isna() | (df[col] == '') | (df[col] == 'nan') | (df[col].str.strip() == '')
+            empty_mask = empty_mask | col_empty
+    
+    empty_annotations_mask = empty_mask
+    videos_needing_annotation = df[empty_annotations_mask].copy()
     
     # Store original indices for saving back to the full dataset
-    videos_needing_annotation['original_index'] = df[empty_keywords_mask].index
+    videos_needing_annotation['original_index'] = df[empty_annotations_mask].index
     
     return videos_needing_annotation, df
 
@@ -79,12 +94,21 @@ def main():
     # Check if there are videos needing annotation
     if len(videos_to_annotate) == 0:
         st.success("🎉 All videos have been annotated!")
-        st.info("No videos with empty keywords found. All videos in the dataset have been annotated.")
+        st.info("No videos with incomplete semantic annotations found. All videos in the dataset have been fully annotated.")
         
         # Show summary of annotated videos
         st.subheader("📊 Dataset Summary")
         total_videos = len(full_df)
-        annotated_videos = len(full_df[full_df['keywords'].notna() & (full_df['keywords'] != '')])
+        
+        # Count videos that have annotations in ALL semantic groups (fully annotated)
+        semantic_columns = ['object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']
+        fully_annotated_mask = True
+        for col in semantic_columns:
+            if col in full_df.columns:
+                col_annotated = full_df[col].notna() & (full_df[col] != '') & (full_df[col] != 'nan') & (full_df[col].str.strip() != '')
+                fully_annotated_mask = fully_annotated_mask & col_annotated
+        
+        annotated_videos = len(full_df[fully_annotated_mask])
         
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -95,29 +119,35 @@ def main():
             completion_pct = (annotated_videos / total_videos) * 100 if total_videos > 0 else 0
             st.metric("Completion", f"{completion_pct:.1f}%")
         
-        # Show keyword distribution
+        # Show keyword distribution by semantic group
         if annotated_videos > 0:
-            st.subheader("🏷️ Keyword Distribution")
-            all_keywords = []
-            for keywords_str in full_df['keywords'].dropna():
-                if keywords_str.strip():
-                    keywords = [k.strip() for k in keywords_str.split(',')]
-                    all_keywords.extend(keywords)
+            st.subheader("🏷️ Keyword Distribution by Semantic Group")
             
-            if all_keywords:
-                from collections import Counter
-                keyword_counts = Counter(all_keywords)
-                
-                # Display as a table
-                keyword_df = pd.DataFrame([
-                    {"Keyword": keyword, "Count": count} 
-                    for keyword, count in keyword_counts.most_common()
-                ])
-                st.dataframe(keyword_df, use_container_width=True)
+            for group_name in semantic_columns:
+                if group_name in full_df.columns:
+                    group_display_name = group_name.replace('_', ' ').title()
+                    st.write(f"**{group_display_name}:**")
+                    
+                    all_keywords = []
+                    for keywords_str in full_df[group_name].dropna():
+                        if str(keywords_str).strip() and str(keywords_str) != 'nan':
+                            keywords = [k.strip() for k in str(keywords_str).split(',') if k.strip()]
+                            all_keywords.extend(keywords)
+                    
+                    if all_keywords:
+                        from collections import Counter
+                        keyword_counts = Counter(all_keywords)
+                        
+                        # Display as a simple list
+                        for keyword, count in sorted(keyword_counts.items(), key=lambda x: x[1], reverse=True):
+                            st.write(f"  - {keyword}: {count}")
+                    else:
+                        st.write("  - No annotations yet")
+                    st.write("")  # Add spacing
         
         return
     
-    st.info(f"📝 Found {len(videos_to_annotate)} videos needing annotation (with empty keywords)")
+    st.info(f"📝 Found {len(videos_to_annotate)} videos needing annotation (with incomplete semantic annotations)")
     df = videos_to_annotate
     
     # Initialize session state
@@ -126,44 +156,84 @@ def main():
     if 'annotations' not in st.session_state:
         st.session_state.annotations = {}
     
-    # Keywords for annotation
-    available_keywords = [
-        "highway",
-        "parking", 
-        "urban",
-        "intersection",
-        "cyclist",
-        "pedestrian",
-        "motorcyclist",
-        "lane_merge",
-        "car2cyclist",
-        "car2pedestrian",
-        "car2motorcyclist",
-        "car2car",
-        "turning_left",
-        "turning_right",
-        "merging",
-        "traffic_light",
-        "crosswalk",
-        "bridge",
-        "tunnel",
-        "construction",
-        "rain",
-        "night",
-        "daytime",
-        "busy_traffic",
-        "light_traffic",
-        "residential",
-        "commercial",
-        "freeway",
-        "parked_bicycle",
-        "other"
-    ]
+    # Auto-load existing annotations on first run
+    if 'annotations_loaded' not in st.session_state:
+        st.session_state.annotations_loaded = False
+        
+    if not st.session_state.annotations_loaded:
+        # Load existing annotations automatically
+        output_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/annotation/video_annotation.csv"
+        if os.path.exists(output_file):
+            try:
+                existing_df = pd.read_csv(output_file)
+                
+                # Load existing annotations into session state for videos currently being annotated
+                for current_idx in range(len(df)):
+                    original_idx = df.iloc[current_idx]['original_index']
+                    
+                    if original_idx < len(existing_df):
+                        row = existing_df.iloc[original_idx]
+                        
+                        # Load semantic group annotations
+                        annotations = {}
+                        for group_name in ['object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']:
+                            if group_name in row and pd.notna(row[group_name]) and str(row[group_name]).strip() and str(row[group_name]) != 'nan':
+                                keywords_str = str(row[group_name])
+                                keywords = [k.strip() for k in keywords_str.split(',') if k.strip()]
+                                annotations[group_name] = keywords
+                        
+                        # Only save if there are any annotations
+                        if any(annotations.values()):
+                            st.session_state.annotations[current_idx] = annotations
+                
+                st.session_state.annotations_loaded = True
+            except Exception as e:
+                st.warning(f"Could not auto-load existing annotations: {e}")
+    
+    # Semantic groups with their respective keywords
+    semantic_groups = {
+        'object_type': [
+            "small vehicle", "large vehicle", "bollard", "stationary object", 
+            "pedestrian", "motorcyclist", "bicyclist", "other", "unknown"
+        ],
+        'actor_behavior': [
+            "entering ego path", "stationary", "traveling in same direction", 
+            "traveling in opposite direction", "straight crossing path", 
+            "oncoming turn across path"
+        ],
+        'spatial_relation': [
+            "corridor front", "corridor behind", "left adjacent", "right adjacent",
+            "left adjacent front", "left adjacent behind", "right adjacent front", 
+            "right adjacent behind", "left split", "right split", "left split front",
+            "left split behind", "right split front", "right split behind"
+        ],
+        'ego_behavior': [
+            "ego turning", "proceeding straight", "ego lane change", "ego stationary"
+        ],
+        'scene_type': [
+            "test track", "parking lot/depot", "intersection", "non-intersection", 
+            "crosswalk", "highway", "urban",  "bridge/tunnel", "curved road", "positive road grade", 
+            "negative road grade", "street parked vehicle", 
+            "vulnerable road user present", "nighttime", "daytime", 
+            "rainy", "sunny", "overcast", "other"
+        ]
+    }
+    
+    # Ensure current_index is within valid bounds
+    if st.session_state.current_index >= len(df):
+        st.session_state.current_index = len(df) - 1 if len(df) > 0 else 0
+    if st.session_state.current_index < 0:
+        st.session_state.current_index = 0
     
     # Progress bar
-    progress = st.session_state.current_index / len(df)
+    progress = st.session_state.current_index / len(df) if len(df) > 0 else 0
     st.progress(progress)
     st.write(f"Progress: {st.session_state.current_index + 1} / {len(df)} videos")
+    
+    # Safety check for empty dataframe
+    if len(df) == 0:
+        st.error("No videos available for annotation.")
+        return
     
     # Current video info
     current_video = df.iloc[st.session_state.current_index]
@@ -190,24 +260,30 @@ def main():
             st.subheader("🏷️ Annotation")
         
         with col_save:
-            output_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/video_annotation.csv"
+            output_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/annotation/video_annotation.csv"
             if st.button("💾 Save", type="primary", help="Save all annotations to CSV"):
                 # Prepare the full dataframe for saving
                 save_df = full_df.copy()
                 
                 # Update annotations for videos that were annotated
                 for idx in range(len(df)):
-                    keywords = st.session_state.annotations.get(idx, [])
-                    if isinstance(keywords, str):
-                        keywords = [keywords] if keywords else []
-                    
-                    keywords_str = ", ".join(keywords) if keywords else ""
+                    annotations = st.session_state.annotations.get(idx, {})
+                    if not isinstance(annotations, dict):
+                        annotations = {}
                     
                     # Get the original index in the full dataset
                     original_idx = df.iloc[idx]['original_index']
                     
-                    # Update the full dataframe
-                    save_df.loc[original_idx, 'keywords'] = keywords_str
+                    # Only update semantic group columns that have new annotations
+                    for group_name in ['object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']:
+                        if group_name in annotations:  # Only update if this group was annotated
+                            group_keywords = annotations.get(group_name, [])
+                            if isinstance(group_keywords, str):
+                                group_keywords = [group_keywords] if group_keywords else []
+                            
+                            keywords_str = ", ".join(group_keywords) if group_keywords else ""
+                            save_df.loc[original_idx, group_name] = keywords_str
+                            # Note: We don't touch columns that weren't annotated, preserving existing data
                 
                 if save_annotations(save_df, output_file):
                     st.success(f"✅ Saved annotations for {len([k for k in st.session_state.annotations.values() if k])} videos!")
@@ -222,23 +298,40 @@ def main():
         # Get folder name for context
         video_path = current_video['video_path']
         folder_name = Path(video_path).parent.name if pd.notna(video_path) else "Unknown"
+        st.write(f"**Source:** {folder_name}")
         
-        # Keywords selection
-        current_keywords = st.session_state.annotations.get(st.session_state.current_index, [])
-        if isinstance(current_keywords, str):
-            # Handle legacy single category format
-            current_keywords = [current_keywords] if current_keywords else []
+        # Semantic group selections
+        st.subheader("🏷️ Semantic Annotation")
         
-        selected_keywords = st.multiselect(
-            "Select keywords (choose multiple):",
-            available_keywords,
-            default=current_keywords,
-            key=f"keywords_{st.session_state.current_index}",
-            help="Select all keywords that describe this video"
-        )
+        # Initialize current annotations for this video
+        current_annotations = st.session_state.annotations.get(st.session_state.current_index, {})
+        if not isinstance(current_annotations, dict):
+            current_annotations = {}
         
-        # Save current annotation
-        st.session_state.annotations[st.session_state.current_index] = selected_keywords
+        # Create selection widgets for each semantic group
+        selected_annotations = {}
+        
+        for group_name, keywords in semantic_groups.items():
+            group_display_name = group_name.replace('_', ' ').title()
+            
+            # Get current selection for this group
+            current_selection = current_annotations.get(group_name, [])
+            if isinstance(current_selection, str):
+                current_selection = [current_selection] if current_selection else []
+            
+            # Create multiselect for this semantic group
+            selected = st.multiselect(
+                f"🔹 {group_display_name}:",
+                keywords,
+                default=current_selection,
+                key=f"{group_name}_{st.session_state.current_index}",
+                help=f"Select {group_display_name.lower()} keywords that apply to this video"
+            )
+            
+            selected_annotations[group_name] = selected
+        
+        # Save current annotations
+        st.session_state.annotations[st.session_state.current_index] = selected_annotations
         
         # Navigation buttons
         st.markdown("---")
@@ -272,22 +365,30 @@ def main():
     st.markdown("---")
     st.subheader("📊 Annotation Summary")
     
-    # Count annotations and keywords
-    keyword_counts = {}
+    # Count annotations and keywords by semantic group
+    group_keyword_counts = {group: {} for group in semantic_groups.keys()}
     annotated_videos = 0
     
-    for idx, keywords in st.session_state.annotations.items():
+    for idx, annotations in st.session_state.annotations.items():
         if isinstance(idx, int):  # Only count video annotations
-            if isinstance(keywords, str):
-                keywords = [keywords] if keywords else []
+            if not isinstance(annotations, dict):
+                continue
+                
+            # Check if video has any annotations
+            has_annotations = False
+            for group_name, keywords in annotations.items():
+                if isinstance(keywords, str):
+                    keywords = [keywords] if keywords else []
+                if keywords:
+                    has_annotations = True
+                    for keyword in keywords:
+                        if keyword in group_keyword_counts[group_name]:
+                            group_keyword_counts[group_name][keyword] += 1
+                        else:
+                            group_keyword_counts[group_name][keyword] = 1
             
-            if keywords:  # Video has at least one keyword
+            if has_annotations:
                 annotated_videos += 1
-                for keyword in keywords:
-                    if keyword in keyword_counts:
-                        keyword_counts[keyword] += 1
-                    else:
-                        keyword_counts[keyword] = 1
     
     col1, col2, col3 = st.columns(3)
     
@@ -301,17 +402,19 @@ def main():
         completion_pct = (annotated_videos / len(df)) * 100 if len(df) > 0 else 0
         st.metric("Completion", f"{completion_pct:.1f}%")
     
-    if keyword_counts:
-        # Keyword breakdown
-        st.write("**Keyword Usage:**")
-        for keyword, count in sorted(keyword_counts.items(), key=lambda x: x[1], reverse=True):
-            st.write(f"- {keyword}: {count}")
+    # Display keyword usage by semantic group
+    for group_name, keyword_counts in group_keyword_counts.items():
+        if keyword_counts:
+            group_display_name = group_name.replace('_', ' ').title()
+            st.write(f"**{group_display_name} Usage:**")
+            for keyword, count in sorted(keyword_counts.items(), key=lambda x: x[1], reverse=True):
+                st.write(f"  - {keyword}: {count}")
     
     # Load previous annotations (moved to bottom)
     st.markdown("---")
     
     if st.button("📥 Load Previous Annotations"):
-        output_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/video_annotation.csv"
+        output_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/annotation/video_annotation.csv"
         if os.path.exists(output_file):
             try:
                 existing_df = pd.read_csv(output_file)
@@ -323,14 +426,18 @@ def main():
                     if original_idx < len(existing_df):
                         row = existing_df.iloc[original_idx]
                         
-                        # Try to load keywords first, fallback to category for backward compatibility
-                        if pd.notna(row.get('keywords', '')) and row.get('keywords', '').strip():
-                            keywords_str = row['keywords']
-                            keywords = [k.strip() for k in keywords_str.split(',') if k.strip()]
-                            st.session_state.annotations[current_idx] = keywords
-                        elif pd.notna(row.get('category', '')):
-                            # Backward compatibility with old category format
-                            st.session_state.annotations[current_idx] = [row['category']]
+                        # Load semantic group annotations
+                        annotations = {}
+                        for group_name in ['object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']:
+                            if group_name in row and pd.notna(row[group_name]) and str(row[group_name]).strip() and str(row[group_name]) != 'nan':
+                                keywords_str = str(row[group_name])
+                                keywords = [k.strip() for k in keywords_str.split(',') if k.strip()]
+                                annotations[group_name] = keywords
+                            # Don't set empty lists for missing annotations - let them remain unset
+                        
+                        # Only save if there are any annotations
+                        if any(annotations.values()):
+                            st.session_state.annotations[current_idx] = annotations
                 
                 st.success("✅ Previous annotations loaded!")
                 st.rerun()
@@ -344,7 +451,7 @@ def main():
         st.markdown("""
         ### How to use this annotation tool:
         
-        **This tool automatically loads only videos with empty keywords that need annotation.**
+        **This tool automatically loads only videos with incomplete semantic annotations that need annotation.**
         
         1. **View the GIF** on the left to understand the video content
         2. **Select multiple keywords** that describe the video content
@@ -352,22 +459,42 @@ def main():
         4. **Save regularly** to preserve your work
         5. **When all videos are annotated**, the tool will show a completion summary
         
-        ### Available Keywords:
-        1. **Environment:** highway, urban, intersection, residential, commercial, freeway, bridge, tunnel, construction
-        2. **Interactions:** cyclist, pedestrian, motorcyclist, lane_merge, crosswalk
-        3. **Maneuvers:** turning_left, turning_right, merging, parking
-        4. **Traffic:** traffic_light, busy_traffic, light_traffic
-        5. **Conditions:** rain, night, daytime
-        6. **Other:** other
+        ### Available Keywords (Organized by Semantic Groups):
+        
+        1. **Object Type:** What objects/actors are present in the scene
+           - Vehicles: small vehicle, large vehicle
+           - People: pedestrian, motorcyclist, bicyclist
+           - Objects: bollard, stationary object, other, unknown
+        
+        2. **Actor Behavior:** How other actors are moving/behaving
+           - entering ego path, stationary, traveling in same direction
+           - traveling in opposite direction, straight crossing path, oncoming turn across path
+        
+        3. **Spatial Relation:** Where objects are positioned relative to ego vehicle
+           - corridor front, corridor behind, left/right adjacent (front/behind)
+           - left/right split (front/behind)
+        
+        4. **Ego Behavior:** What the ego vehicle is doing
+           - ego turning, proceeding straight, ego lane change
+        
+        5. **Scene Type:** Environmental and contextual information
+           - Location: test track, parking lot/depot, intersection, non-intersection, crosswalk, highway
+           - Road: curved road, positive/negative road grade, street parked vehicle
+           - Conditions: nighttime, daytime, rainy, sunny, overcast
+           - Special: vulnerable road user present, other
         
         ### Tips:
-        1. **Select multiple keywords** that apply to each video
-        2. **Be descriptive** - choose all relevant keywords
-        3. **The tool filters automatically** - only shows videos needing annotation
+        1. **Select keywords from multiple groups** - try to describe the scene comprehensively
+        2. **Object Type**: Always identify what objects/actors are present
+        3. **Actor Behavior**: Describe how other actors are moving relative to ego vehicle
+        4. **Spatial Relation**: Note where objects are positioned around ego vehicle
+        5. **Ego Behavior**: Describe what the ego vehicle is doing
+        6. **Scene Type**: Include environmental context (location, conditions, etc.)
+        7. **The tool filters automatically** - only shows videos needing annotation
         
         ### For Recall Evaluation:
-        Videos with the same keyword will be used as ground truth for measuring recall@5.
-        When you search for one video, other videos with the same keyword should appear in the top-5 results.
+        Videos with the same semantic annotations will be used as ground truth for measuring recall@5.
+        When you search for one video, other videos with similar semantic annotations should appear in the top-5 results.
         """)
 
 if __name__ == "__main__":

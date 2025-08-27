@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class GifGenerator:
-    def __init__(self, gif_width=320, gif_fps=10, gif_duration=None):
+    def __init__(self, gif_width=320, gif_fps=5, gif_duration=None):
         """
         Initialize GIF generator with default parameters.
         
@@ -157,19 +157,16 @@ def process_parquet_file(parquet_path, gif_base_dir, gif_generator, overwrite=Fa
 
 def main():
     parser = argparse.ArgumentParser(description='Create GIFs from videos in parquet files')
-    parser.add_argument('--main-parquet', 
-                       default='/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/main_input_mini.parquet',
-                       help='Path to main input parquet file')
-    parser.add_argument('--query-parquet',
-                       default='/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/query_input_path.parquet', 
-                       help='Path to query input parquet file')
+    parser.add_argument('--input-parquet', 
+                       default='/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/unified_input_path.parquet',
+                       help='Path to unified input parquet file')
     parser.add_argument('--gif-dir',
-                       default='/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/gifs',
+                       default='/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/gifs_new',
                        help='Base directory for generated GIFs')
     parser.add_argument('--gif-width', type=int, default=320,
                        help='Width of generated GIFs (default: 320)')
-    parser.add_argument('--gif-fps', type=int, default=10,
-                       help='Frames per second for GIFs (default: 10)')
+    parser.add_argument('--gif-fps', type=int, default=5,
+                       help='Frames per second for GIFs (default: 5)')
     parser.add_argument('--gif-duration', type=float, default=None,
                        help='Duration limit for GIFs in seconds (default: full video)')
     parser.add_argument('--overwrite', action='store_true',
@@ -194,32 +191,29 @@ def main():
         gif_duration=args.gif_duration
     )
     
-    # Process both parquet files
-    files_to_process = [
-        (args.main_parquet, 'main_input_mini_with_gifs.parquet'),
-        (args.query_parquet, 'query_input_path_with_gifs.parquet')
-    ]
+    # Process the unified parquet file
+    input_file = args.input_parquet
+    output_filename = 'unified_input_path_with_gifs.parquet'
     
-    for input_file, output_filename in files_to_process:
-        if not os.path.exists(input_file):
-            logger.warning(f"Parquet file does not exist: {input_file}")
-            continue
-            
-        if args.dry_run:
-            logger.info(f"DRY RUN: Would process {input_file}")
-            df = pd.read_parquet(input_file)
-            for idx, row in df.iterrows():
-                video_path = row['sensor_video_file']
-                gif_path = get_gif_path(video_path, args.gif_dir)
-                logger.info(f"Would create: {video_path} -> {gif_path}")
-        else:
-            # Process the file
-            updated_df = process_parquet_file(input_file, args.gif_dir, gif_generator, args.overwrite)
-            
-            # Save the updated parquet file
-            output_path = os.path.join(os.path.dirname(input_file), output_filename)
-            updated_df.to_parquet(output_path, index=False)
-            logger.info(f"Updated parquet file saved to: {output_path}")
+    if not os.path.exists(input_file):
+        logger.error(f"Parquet file does not exist: {input_file}")
+        return 1
+        
+    if args.dry_run:
+        logger.info(f"DRY RUN: Would process {input_file}")
+        df = pd.read_parquet(input_file)
+        for idx, row in df.iterrows():
+            video_path = row['sensor_video_file']
+            gif_path = get_gif_path(video_path, args.gif_dir)
+            logger.info(f"Would create: {video_path} -> {gif_path}")
+    else:
+        # Process the file
+        updated_df = process_parquet_file(input_file, args.gif_dir, gif_generator, args.overwrite)
+        
+        # Save the updated parquet file
+        output_path = os.path.join(os.path.dirname(input_file), output_filename)
+        updated_df.to_parquet(output_path, index=False)
+        logger.info(f"Updated parquet file saved to: {output_path}")
     
     logger.info("GIF generation completed!")
     return 0

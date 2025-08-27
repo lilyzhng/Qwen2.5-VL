@@ -1,5 +1,5 @@
-filename,scene_description,category,relevance_group,notes
-car2cyclist_1.mp4,car approaching cyclist from behind on road,car_cyclist,cyclist_interaction,"daytime, urban setting"
-car2cyclist_2.mp4,car passing cyclist on narrow street,car_cyclist,cyclist_interaction,"narrow street, close proximity"
-car2ped_1.mp4,car stopping for pedestrian crossing street,car_pedestrian,pedestrian_crossing,"crosswalk visible, car yields"
-car2car_1.mp4,two cars merging in traffic lane,car_car,car_merging,"highway merge, multiple lanes"
+slice_id,video_path,object_type,actor_behavior,spatial_relation,ego_behavior,scene_type
+car2cyclist_1.mp4,/path/to/car2cyclist_1.mp4,bicyclist,traveling in same direction,corridor front,proceeding straight,"non-intersection, daytime"
+car2cyclist_2.mp4,/path/to/car2cyclist_2.mp4,bicyclist,entering ego path,left adjacent,ego lane change,"intersection, daytime"
+car2ped_1.mp4,/path/to/car2ped_1.mp4,pedestrian,straight crossing path,corridor front,proceeding straight,"crosswalk, daytime"
+car2car_1.mp4,/path/to/car2car_1.mp4,small vehicle,traveling in same direction,right adjacent,proceeding straight,"highway, daytime"

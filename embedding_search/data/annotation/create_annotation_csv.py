@@ -12,8 +12,8 @@ def create_annotation_csv():
     """Create CSV template for manual annotation of video scenes."""
     
     # File paths
-    input_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/main_input_mini.parquet"
-    output_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/video_annotation.csv"
+    input_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/unified_input_path.parquet"
+    output_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/annotation/video_annotation.csv"
     
     print("📋 Creating annotation CSV template...")
     print(f"Reading from: {input_file}")
@@ -36,16 +36,12 @@ def create_annotation_csv():
         # Create annotation template
         annotation_df = pd.DataFrame()
         
-        # Extract filename from sensor_video_file path
-        if 'sensor_video_file' in df.columns:
-            annotation_df['filename'] = df['sensor_video_file'].apply(lambda x: Path(x).name)
-        else:
-            print("❌ 'sensor_video_file' column not found")
-            return
-        
-        # Add slice_id for reference
+        # Add slice_id as the primary identifier
         if 'slice_id' in df.columns:
             annotation_df['slice_id'] = df['slice_id']
+        else:
+            print("❌ 'slice_id' column not found")
+            return
         
         # Add full video path for reference
         annotation_df['video_path'] = df['sensor_video_file']
@@ -54,21 +50,15 @@ def create_annotation_csv():
         if 'gif_file' in df.columns:
             annotation_df['gif_path'] = df['gif_file']
         
-        # Add empty scene_description column for manual annotation
-        annotation_df['scene_description'] = ''
+        # Add separate columns for each semantic group
+        annotation_df['object_type'] = ''
+        annotation_df['actor_behavior'] = ''
+        annotation_df['spatial_relation'] = ''
+        annotation_df['ego_behavior'] = ''
+        annotation_df['scene_type'] = ''
         
-        # Add category column for grouping similar scenes
-        annotation_df['category'] = ''
-        
-        # Add relevance_group column for recall evaluation
-        # Videos with same relevance_group should be retrieved together
-        annotation_df['relevance_group'] = ''
-        
-        # Add notes column for additional observations
-        annotation_df['notes'] = ''
-        
-        # Sort by filename for easier annotation
-        annotation_df = annotation_df.sort_values('filename').reset_index(drop=True)
+        # Sort by slice_id for easier annotation
+        annotation_df = annotation_df.sort_values('slice_id').reset_index(drop=True)
         
         # Save to CSV
         annotation_df.to_csv(output_file, index=False)
@@ -78,7 +68,7 @@ def create_annotation_csv():
         
         # Show sample of the template
         print(f"\n📋 Sample annotation template:")
-        print(annotation_df[['filename', 'scene_description', 'category', 'relevance_group']].head(10))
+        print(annotation_df[['slice_id', 'object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']].head(5))
         
         # Print instructions
         print_annotation_instructions(output_file)
@@ -97,42 +87,57 @@ def print_annotation_instructions(csv_file):
     print("="*80)
     
     print(f"""
-🎯 GOAL: Create ground truth for recall@5 evaluation
+🎯 GOAL: Create ground truth for recall@5 evaluation using semantic keywords
 
 📋 HOW TO ANNOTATE:
 
-1. SCENE_DESCRIPTION:
-   - Describe what happens in the video (e.g., "car approaching cyclist")
-   - Be specific about interactions, movements, and objects
-   - Examples:
-     * "car turning left while cyclist goes straight"
-     * "pedestrian crossing street as car approaches"
-     * "two cars merging in traffic"
+1. SEMANTIC GROUP COLUMNS:
+   Fill in each semantic group column with comma-separated keywords from that group:
 
-2. CATEGORY:
-   - Group similar types of interactions
-   - Examples: "car_cyclist", "car_pedestrian", "car_car", "traffic_light"
+   🚗 OBJECT TYPE: What objects/actors are present
+   - Vehicles: small vehicle, large vehicle
+   - People: pedestrian, motorcyclist, bicyclist  
+   - Objects: bollard, stationary object, other, unknown
 
-3. RELEVANCE_GROUP:
-   - Assign same group ID to videos that should be retrieved together
-   - For recall evaluation: if you search for one video in a group,
-     the other videos in that group should appear in top-5 results
-   - Examples:
-     * All "car approaching cyclist" videos → group "cyclist_approach"
-     * All "pedestrian crossing" videos → group "ped_crossing"
+   🏃 ACTOR BEHAVIOR: How other actors are moving/behaving
+   - entering ego path, stationary, traveling in same direction
+   - traveling in opposite direction, straight crossing path, oncoming turn across path
 
-4. NOTES:
-   - Any additional observations
-   - Weather conditions, time of day, location details
+   📍 SPATIAL RELATION: Where objects are positioned relative to ego vehicle
+   - corridor front, corridor behind, left/right adjacent (front/behind)
+   - left/right split (front/behind)
+
+   🚙 EGO BEHAVIOR: What the ego vehicle is doing
+   - ego turning, proceeding straight, ego lane change
+
+   🌍 SCENE TYPE: Environmental and contextual information
+   - Location: test track, parking lot/depot, intersection, non-intersection, crosswalk, highway, urban, bridge/tunnel
+   - Road: curved road, positive/negative road grade, street parked vehicle
+   - Conditions: nighttime, daytime, rainy, sunny, overcast
+   - Special: vulnerable road user present, other
+
+2. SLICE_ID:
+   - Unique identifier for each video clip
+   - Used as the primary key for annotation
 
 📁 FILE LOCATION: {csv_file}
 
 🔍 FOR RECALL EVALUATION:
-   - We'll test if searching for one video returns other videos 
-     from the same relevance_group in the top-5 results
-   - The more precise your relevance_groups, the better the evaluation
+   - Videos with the same keywords will be used as ground truth
+   - When searching for one video, other videos with shared keywords should appear in top-5 results
+   - Use multiple keywords from different semantic groups for comprehensive annotation
 
-💡 TIP: You can view the GIF files (if available) for easier annotation
+💡 TIPS:
+   - Select keywords from multiple semantic groups
+   - Be specific and descriptive
+   - Use GIF files (if available) for easier viewing during annotation
+
+📋 EXAMPLE ANNOTATION:
+   object_type: "pedestrian"
+   actor_behavior: "entering ego path"
+   spatial_relation: "corridor front"
+   ego_behavior: "proceeding straight"
+   scene_type: "intersection, daytime"
     """)
     
     print("="*80)
@@ -141,40 +146,52 @@ def create_sample_annotations():
     """Create a few sample annotations to show the expected format."""
     
     sample_data = {
-        'filename': [
+        'slice_id': [
             'car2cyclist_1.mp4',
-            'car2cyclist_2.mp4', 
-            'car2ped_1.mp4',
+            'car2cyclist_2.mp4',
+            'car2ped_1.mp4', 
             'car2car_1.mp4'
         ],
-        'scene_description': [
-            'car approaching cyclist from behind on road',
-            'car passing cyclist on narrow street',
-            'car stopping for pedestrian crossing street',
-            'two cars merging in traffic lane'
+        'video_path': [
+            '/path/to/car2cyclist_1.mp4',
+            '/path/to/car2cyclist_2.mp4',
+            '/path/to/car2ped_1.mp4',
+            '/path/to/car2car_1.mp4'
         ],
-        'category': [
-            'car_cyclist',
-            'car_cyclist',
-            'car_pedestrian', 
-            'car_car'
+        'object_type': [
+            'bicyclist',
+            'bicyclist',
+            'pedestrian',
+            'small vehicle'
         ],
-        'relevance_group': [
-            'cyclist_interaction',
-            'cyclist_interaction',
-            'pedestrian_crossing',
-            'car_merging'
+        'actor_behavior': [
+            'traveling in same direction',
+            'entering ego path',
+            'straight crossing path',
+            'traveling in same direction'
         ],
-        'notes': [
-            'daytime, urban setting',
-            'narrow street, close proximity',
-            'crosswalk visible, car yields',
-            'highway merge, multiple lanes'
+        'spatial_relation': [
+            'corridor front',
+            'left adjacent',
+            'corridor front',
+            'right adjacent'
+        ],
+        'ego_behavior': [
+            'proceeding straight',
+            'ego lane change',
+            'proceeding straight',
+            'proceeding straight'
+        ],
+        'scene_type': [
+            'non-intersection, daytime',
+            'intersection, daytime',
+            'crosswalk, daytime',
+            'highway, daytime'
         ]
     }
     
     sample_df = pd.DataFrame(sample_data)
-    sample_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/annotation_example.csv"
+    sample_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/annotation/annotation_example.csv"
     sample_df.to_csv(sample_file, index=False)
     
     print(f"\n📋 Created sample annotation file: {sample_file}")

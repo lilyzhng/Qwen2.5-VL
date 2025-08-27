@@ -229,6 +229,139 @@ def _get_keyword_match_status(video_id: str, primary_keywords: List[str], ground
         return f'❌ Partial ({len(matched_keywords)}/{len(primary_keywords)})'
 
 
+def _group_keywords_by_semantic_category(keywords: List[str], ground_truth: GroundTruthProcessor) -> Dict[str, List[str]]:
+    """
+    Group keywords by their semantic categories.
+    
+    Args:
+        keywords: List of keywords to group
+        ground_truth: GroundTruthProcessor instance with semantic groups
+        
+    Returns:
+        Dictionary mapping category names to lists of keywords
+    """
+    # Get semantic groups from ground truth processor
+    semantic_groups = getattr(ground_truth, 'semantic_groups', {
+        'object_type': ['small vehicle', 'large vehicle', 'bollard', 'stationary object', 'pedestrian', 'motorcyclist', 'bicyclist', 'other', 'unknown'],
+        'actor_behavior': ['entering ego path', 'stationary', 'traveling in same direction', 'traveling in opposite direction', 'straight crossing path', 'oncoming turn across path'],
+        'spatial_relation': ['corridor front', 'corridor behind', 'left adjacent', 'right adjacent', 'left adjacent front', 'left adjacent behind', 'right adjacent front', 'right adjacent behind', 'left split', 'right split', 'left split front', 'left split behind', 'right split front', 'right split behind'],
+        'ego_behavior': ['ego turning', 'proceeding straight', 'ego lane change'],
+        'scene_type': ['test track', 'parking lot/depot', 'intersection', 'non-intersection', 'crosswalk', 'highway', 'urban', 'bridge/tunnel', 'curved road', 'positive road grade', 'negative road grade', 'street parked vehicle', 'vulnerable road user present', 'nighttime', 'daytime', 'rainy', 'sunny', 'overcast', 'other']
+    })
+    
+    # Create reverse mapping from keyword to category
+    keyword_to_category = {}
+    for category, category_keywords in semantic_groups.items():
+        for keyword in category_keywords:
+            keyword_to_category[keyword.lower()] = category
+    
+    # Group the input keywords by category
+    grouped = {
+        'object_type': [],
+        'actor_behavior': [],
+        'spatial_relation': [],
+        'ego_behavior': [],
+        'scene_type': [],
+        'other': []  # For keywords that don't fit into predefined categories
+    }
+    
+    for keyword in keywords:
+        category = keyword_to_category.get(keyword.lower(), 'other')
+        grouped[category].append(keyword)
+    
+    # Remove empty categories
+    return {k: v for k, v in grouped.items() if v}
+
+
+def _display_keywords_by_semantic_groups(keywords: List[str], primary_keywords: List[str], ground_truth: GroundTruthProcessor):
+    """
+    Display keywords organized by semantic groups with match indicators.
+    
+    Args:
+        keywords: All keywords for the video
+        primary_keywords: Keywords to match against (from query)
+        ground_truth: GroundTruthProcessor instance
+    """
+    grouped_keywords = _group_keywords_by_semantic_category(keywords, ground_truth)
+    
+    # Category display names and emojis
+    category_display = {
+        'object_type': {'name': 'Objects', 'emoji': '🚗'},
+        'actor_behavior': {'name': 'Actor Behavior', 'emoji': '🏃'},
+        'spatial_relation': {'name': 'Spatial Relation', 'emoji': '📍'},
+        'ego_behavior': {'name': 'Ego Behavior', 'emoji': '🚙'},
+        'scene_type': {'name': 'Scene Type', 'emoji': '🌆'},
+        'other': {'name': 'Other', 'emoji': '🏷️'}
+    }
+    
+    st.markdown("**Video Keywords (by Semantic Groups):**")
+    
+    for category, category_keywords in grouped_keywords.items():
+        if category_keywords:  # Only show categories that have keywords
+            display_info = category_display.get(category, {'name': category.title(), 'emoji': '🏷️'})
+            st.markdown(f"**{display_info['emoji']} {display_info['name']}:**")
+            
+            for keyword in category_keywords:
+                # Check if keyword matches primary keywords
+                is_match = keyword in primary_keywords
+                
+                if is_match:
+                    st.markdown(f"  ✅ {keyword}")  # Match
+                else:
+                    st.markdown(f"  🔸 {keyword}")  # No match
+
+
+def _display_focused_keyword_comparison(video_keywords: List[str], query_keywords_with_scores: List[tuple], ground_truth: GroundTruthProcessor, show_query_only: bool = False):
+    """
+    Display only relevant keywords that appear in query, organized by semantic groups with match indicators.
+    
+    Args:
+        video_keywords: All keywords for the video (empty list if showing query only)
+        query_keywords_with_scores: List of (keyword, score) tuples from query
+        ground_truth: GroundTruthProcessor instance
+        show_query_only: If True, show only query keywords without comparison
+    """
+    # Extract just the keywords from query (without scores)
+    query_keywords = [kw for kw, score in query_keywords_with_scores]
+    
+    # Group query keywords by semantic category
+    query_grouped = _group_keywords_by_semantic_category(query_keywords, ground_truth)
+    
+    # Category display names (no emojis)
+    category_display = {
+        'object_type': 'Objects',
+        'actor_behavior': 'Actor Behavior',
+        'spatial_relation': 'Spatial Relation',
+        'ego_behavior': 'Ego Behavior',
+        'scene_type': 'Scene Type',
+        'other': 'Other'
+    }
+    
+    # Only show categories that have query keywords
+    relevant_categories = set(query_grouped.keys())
+    
+    if relevant_categories:
+        for category in relevant_categories:
+            if category in query_grouped and query_grouped[category]:
+                category_name = category_display.get(category, category.title())
+                st.markdown(f"**{category_name}:**")
+                
+                # Show each query keyword and whether it matches in the video (if comparing)
+                for query_keyword in query_grouped[category]:
+                    if show_query_only or not video_keywords:
+                        # Just show the query keyword without match indicator
+                        st.markdown(f"    🔸 {query_keyword}")
+                    else:
+                        # Show comparison with video keywords
+                        is_match = query_keyword in video_keywords
+                        if is_match:
+                            st.markdown(f"    ✅ {query_keyword}")
+                        else:
+                            st.markdown(f"    ❌ {query_keyword}")
+    else:
+        st.markdown("❌ No semantic keywords found in query")
+
+
 def extract_keybert_keywords_from_query(query_text: str, ground_truth: GroundTruthProcessor, 
                                        similarity_threshold: float = 0.5) -> tuple:
     """
@@ -706,12 +839,11 @@ def display_text_search_analysis(ground_truth: GroundTruthProcessor, quality_thr
                     st.markdown("**Input Query**")
                     st.markdown(f"*\"{text_query}\"*")
                     
-                    # Show KeyBERT keywords
-                    st.markdown("**Input Keywords (KeyBERT)**")
+                    # Show KeyBERT keywords organized by semantic groups
                     if keybert_keywords:
-                        for keyword, score in keybert_keywords:
-                            st.markdown(f"- {keyword} ({score:.2f})")
+                        _display_focused_keyword_comparison([], keybert_keywords, ground_truth, show_query_only=True)
                     else:
+                        st.markdown("**Query Keywords:**")
                         st.markdown("❌ No keywords found")
                 
                 # Columns 2-6: Top 5 results
@@ -744,18 +876,9 @@ def display_text_search_analysis(ground_truth: GroundTruthProcessor, quality_thr
                                 else:
                                     st.write("❌ GIF not available")
                                 
-                                # Show result keywords with matching indicators
-                                st.markdown("**Video Keywords:**")
+                                # Show focused keyword comparison with scores
                                 result_keywords = result_info['keywords']
-                                
-                                for keyword in result_keywords:
-                                    # Check if keyword matches KeyBERT keywords
-                                    is_keybert_match = keyword in primary_keywords
-                                    
-                                    if is_keybert_match:
-                                        st.markdown(f"✅ {keyword}")  # Match
-                                    else:
-                                        st.markdown(f"🔸 {keyword}")  # No match
+                                _display_focused_keyword_comparison(result_keywords, keybert_keywords, ground_truth)
                                 
                             except Exception as e:
                                 st.write(f"❌ Error: {e}")
@@ -771,9 +894,12 @@ def display_text_search_analysis(ground_truth: GroundTruthProcessor, quality_thr
                         'Rank': i+1,
                         'Video ID': result['slice_id'],
                         'Similarity': f"{result.get('similarity_score', result.get('similarity', 0.0)):.3f}",
-                        'Status': _get_keyword_match_status(result['slice_id'], primary_keywords, ground_truth),
-                        'Video Keywords': ', '.join(ground_truth.get_video_info(result['slice_id'])['keywords'][:3]) + 
-                                        ('...' if len(ground_truth.get_video_info(result['slice_id'])['keywords']) > 3 else '')
+                        'Keyword Match': _get_keyword_match_status(result['slice_id'], primary_keywords, ground_truth),
+                        'Objects': ground_truth.get_video_info(result['slice_id']).get('object_type', '')[:50] + 
+                                  ('...' if len(ground_truth.get_video_info(result['slice_id']).get('object_type', '')) > 50 else ''),
+                        'Scene': ground_truth.get_video_info(result['slice_id']).get('scene_type', '')[:40] + 
+                                ('...' if len(ground_truth.get_video_info(result['slice_id']).get('scene_type', '')) > 40 else ''),
+                        'Ego Behavior': ground_truth.get_video_info(result['slice_id']).get('ego_behavior', '')
                     }
                     for i, result in enumerate(search_results[:5])
                 ])
@@ -942,10 +1068,32 @@ def display_video_analysis(ground_truth: GroundTruthProcessor, quality_threshold
                 else:
                     st.write("❌ GIF not available")
                 
-                # Show input keywords
-                st.markdown("**Keywords:**")
-                for keyword in video_info['keywords']:
-                    st.markdown(f"🏷️ {keyword}")
+                # Show semantic annotation details
+                st.markdown("**Semantic Annotations:**")
+                
+                # Object Type
+                if video_info.get('object_type'):
+                    st.markdown(f"🚗 **Objects:** {video_info['object_type']}")
+                
+                # Actor Behavior
+                if video_info.get('actor_behavior'):
+                    st.markdown(f"🏃 **Actor Behavior:** {video_info['actor_behavior']}")
+                
+                # Spatial Relation
+                if video_info.get('spatial_relation'):
+                    st.markdown(f"📍 **Spatial Relation:** {video_info['spatial_relation']}")
+                
+                # Ego Behavior
+                if video_info.get('ego_behavior'):
+                    st.markdown(f"🚙 **Ego Behavior:** {video_info['ego_behavior']}")
+                
+                # Scene Type
+                if video_info.get('scene_type'):
+                    st.markdown(f"🌆 **Scene:** {video_info['scene_type']}")
+                
+                # Also show extracted keywords organized by semantic groups
+                if video_info.get('keywords'):
+                    _display_keywords_by_semantic_groups(video_info['keywords'], [], ground_truth)
             
             # Columns 2-6: Top 5 results
             for i in range(5):
@@ -978,16 +1126,25 @@ def display_video_analysis(ground_truth: GroundTruthProcessor, quality_threshold
                             else:
                                 st.write("❌ GIF not available")
                             
-                            # Show result keywords with matching indicators
-                            st.markdown("**Keywords:**")
-                            result_keywords = result_info['keywords']
-                            query_keywords_set = set(video_info['keywords'])
+                            # Show result semantic annotations
+                            st.markdown("**Annotations:**")
                             
-                            for keyword in result_keywords:
-                                if keyword in query_keywords_set:
-                                    st.markdown(f"✅ {keyword}")  # Matching keyword
-                                else:
-                                    st.markdown(f"🔸 {keyword}")  # Non-matching keyword
+                            # Show key semantic fields
+                            if result_info.get('object_type'):
+                                st.markdown(f"🚗 {result_info['object_type']}")
+                            if result_info.get('actor_behavior'):
+                                st.markdown(f"🏃 {result_info['actor_behavior']}")
+                            if result_info.get('ego_behavior'):
+                                st.markdown(f"🚙 {result_info['ego_behavior']}")
+                            if result_info.get('scene_type'):
+                                st.markdown(f"🌆 {result_info['scene_type']}")
+                            
+                            # Show focused keyword comparison for video search
+                            result_keywords = result_info['keywords']
+                            query_keywords_list = list(video_info['keywords'])
+                            # For video search, we don't have similarity scores, so use 1.0 for all query keywords
+                            query_keywords_with_scores = [(kw, 1.0) for kw in query_keywords_list]
+                            _display_focused_keyword_comparison(result_keywords, query_keywords_with_scores, ground_truth)
                             
                         except Exception as e:
                             st.write(f"❌ Error: {e}")
@@ -1003,8 +1160,11 @@ def display_video_analysis(ground_truth: GroundTruthProcessor, quality_threshold
                     'Video ID': result['slice_id'],
                     'Similarity': f"{result.get('similarity_score', result.get('similarity', 0.0)):.3f}",
                     'Status': _get_keyword_match_status(result['slice_id'], list(video_info['keywords']), ground_truth),
-                    'Video Keywords': ', '.join(ground_truth.get_video_info(result['slice_id'])['keywords'][:3]) + 
-                                    ('...' if len(ground_truth.get_video_info(result['slice_id'])['keywords']) > 3 else '')
+                    'Objects': ground_truth.get_video_info(result['slice_id']).get('object_type', '')[:50] + 
+                              ('...' if len(ground_truth.get_video_info(result['slice_id']).get('object_type', '')) > 50 else ''),
+                    'Scene': ground_truth.get_video_info(result['slice_id']).get('scene_type', '')[:40] + 
+                            ('...' if len(ground_truth.get_video_info(result['slice_id']).get('scene_type', '')) > 40 else ''),
+                    'Ego Behavior': ground_truth.get_video_info(result['slice_id']).get('ego_behavior', '')
                 }
                 for i, result in enumerate(search_results[:5])
             ])

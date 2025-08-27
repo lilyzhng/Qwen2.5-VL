@@ -154,7 +154,7 @@ python run_recall_evaluation.py
 This will evaluate:
 - **Video-to-Video Recall**: Using each annotated video as a query
 - **Text-to-Video Recall**: Using keywords as text queries  
-- **Category-Specific Recall**: Performance for specific interaction types and environments
+- **Category-Specific Recall**: Performance for specific object types, behaviors, spatial relations, and scene types
 
 ### Keyword-Specific Evaluation
 Evaluate specific keywords or categories separately:
@@ -169,7 +169,7 @@ python run_keyword_evaluation.py --list-keywords
 # Evaluate urban and highway scenarios
 python run_keyword_evaluation.py --mode text --keywords urban highway
 
-# Evaluate car interactions
+# Evaluate specific actor behaviors
 python run_keyword_evaluation.py --mode text --keywords car2pedestrian car2cyclist
 ```
 
