@@ -17,6 +17,8 @@ from typing import Union, List, Dict, Tuple, Any, Optional
 from tqdm import tqdm
 import logging
 from functools import wraps
+import os
+import random
 
 from .base import EmbeddingModel, VideoProcessor
 from .config import VideoRetrievalConfig
@@ -28,19 +30,36 @@ from .exceptions import (
 logger = logging.getLogger(__name__)
 
 
-def validate_video_path(func):
-    """Decorator to validate video paths."""
+def validate_input_path(func):
+    """Decorator to validate video paths or frame folders."""
     @wraps(func)
-    def wrapper(self, video_path: Union[str, Path], *args, **kwargs):
-        path = Path(video_path)
+    def wrapper(self, input_path: Union[str, Path], *args, **kwargs):
+        path = Path(input_path)
         if not path.exists():
-            raise VideoNotFoundError(f"Video not found: {path}")
-        if not path.suffix.lower() in self.config.supported_formats:
+            raise VideoNotFoundError(f"Input path not found: {path}")
+        
+        # Check if it's a video file
+        if path.is_file() and path.suffix.lower() in self.config.supported_formats:
+            return func(self, path, *args, **kwargs)
+        
+        # Check if it's a frame folder
+        elif path.is_dir():
+            # Check if directory contains image files
+            image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
+            image_files = [f for f in path.iterdir() 
+                          if f.is_file() and f.suffix.lower() in image_extensions]
+            if not image_files:
+                raise InvalidVideoFormatError(
+                    f"Frame folder contains no valid image files: {path}. "
+                    f"Supported image formats: {image_extensions}"
+                )
+            return func(self, path, *args, **kwargs)
+        
+        else:
             raise InvalidVideoFormatError(
-                f"Unsupported video format: {path.suffix}. "
-                f"Supported formats: {self.config.supported_formats}"
+                f"Input must be either a video file {self.config.supported_formats} "
+                f"or a directory containing image frames: {path}"
             )
-        return func(self, path, *args, **kwargs)
     return wrapper
 
 
@@ -129,11 +148,77 @@ class VideoFrameProcessor(VideoProcessor):
                 raise
             raise VideoLoadError(f"Failed to load video with OpenCV {video_path}: {str(e)}")
     
+    def load_frames_from_folder(self, folder_path: Path, num_frames: int = None) -> np.ndarray:
+        """Load and select frames from a folder containing image files."""
+        num_frames = num_frames or self.config.num_frames
+        
+        # Get all image files
+        image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
+        image_files = [f for f in folder_path.iterdir() 
+                      if f.is_file() and f.suffix.lower() in image_extensions]
+        
+        if not image_files:
+            raise VideoLoadError(f"No image files found in folder: {folder_path}")
+        
+        # Sort files to ensure consistent ordering
+        image_files.sort()
+        
+        # Select frames uniformly if we have more frames than needed
+        if len(image_files) >= num_frames:
+            # Sample frames uniformly across the available frames
+            indices = np.linspace(0, len(image_files) - 1, num_frames, dtype=int)
+            selected_files = [image_files[i] for i in indices]
+        else:
+            # If we have fewer frames than needed, use all available frames
+            # and repeat the last frame to reach the desired count
+            selected_files = image_files[:]
+            while len(selected_files) < num_frames:
+                selected_files.append(image_files[-1])
+            logger.warning(f"Folder {folder_path.name} has only {len(image_files)} frames, "
+                          f"repeating last frame to reach {num_frames} frames")
+        
+        # Load and resize frames
+        frames = []
+        target_height, target_width = self.config.resolution
+        
+        for img_path in selected_files:
+            try:
+                # Load image using OpenCV
+                img = cv2.imread(str(img_path))
+                if img is None:
+                    raise VideoLoadError(f"Failed to load image: {img_path}")
+                
+                # Convert BGR to RGB
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                
+                # Resize to target resolution
+                img = cv2.resize(img, (target_width, target_height))
+                frames.append(img)
+                
+            except Exception as e:
+                raise VideoLoadError(f"Failed to process image {img_path}: {str(e)}")
+        
+        frames = np.array(frames)
+        logger.debug(f"Loaded {len(frames)} frames from folder {folder_path.name}")
+        return frames
+    
     def validate_video(self, video_path: Path) -> bool:
         """Validate if a video file can be processed."""
         try:
             frames = self.load_frames(video_path, num_frames=1)
             return frames.shape[0] > 0
+        except:
+            return False
+    
+    def validate_input(self, input_path: Path) -> bool:
+        """Validate if an input (video file or frame folder) can be processed."""
+        try:
+            if input_path.is_file():
+                return self.validate_video(input_path)
+            elif input_path.is_dir():
+                frames = self.load_frames_from_folder(input_path, num_frames=1)
+                return frames.shape[0] > 0
+            return False
         except:
             return False
 
@@ -203,19 +288,25 @@ class CosmosVideoEmbedder(EmbeddingModel):
         
         return self._embedding_dim
     
-    @validate_video_path
-    def extract_video_embedding(self, video_path: Path) -> np.ndarray:
+    @validate_input_path
+    def extract_video_embedding(self, input_path: Path) -> np.ndarray:
         """
-        Extract embedding from a single video.
+        Extract embedding from a single video file or frame folder.
         
         Args:
-            video_path: Path to the video file
+            input_path: Path to the video file or frame folder
             
         Returns:
             Normalized embedding vector
         """
         try:
-            frames = self.video_processor.load_frames(video_path)
+            # Determine if input is a video file or frame folder
+            if input_path.is_file():
+                frames = self.video_processor.load_frames(input_path)
+            elif input_path.is_dir():
+                frames = self.video_processor.load_frames_from_folder(input_path)
+            else:
+                raise InvalidVideoFormatError(f"Input path must be a file or directory: {input_path}")
             
             # Prepare batch for model (BTCHW format)
             batch = np.transpose(np.expand_dims(frames, 0), (0, 1, 4, 2, 3))
@@ -239,7 +330,7 @@ class CosmosVideoEmbedder(EmbeddingModel):
         except Exception as e:
             if isinstance(e, (VideoNotFoundError, VideoLoadError, InvalidVideoFormatError)):
                 raise
-            raise EmbeddingExtractionError(f"Failed to extract embedding from {video_path}: {str(e)}")
+            raise EmbeddingExtractionError(f"Failed to extract embedding from {input_path}: {str(e)}")
     
     def extract_text_embedding(self, text: str) -> np.ndarray:
         """
@@ -273,13 +364,13 @@ class CosmosVideoEmbedder(EmbeddingModel):
             raise EmbeddingExtractionError(f"Failed to extract text embedding: {str(e)}")
     
     def extract_video_embeddings_batch(self, 
-                                     video_paths: List[Path], 
+                                     input_paths: List[Path], 
                                      batch_size: Optional[int] = None) -> List[Dict[str, Any]]:
         """
-        Extract embeddings from multiple videos using batch processing.
+        Extract embeddings from multiple videos or frame folders using batch processing.
         
         Args:
-            video_paths: List of video file paths
+            input_paths: List of video file paths or frame folder paths
             batch_size: Batch size for processing (uses config if not specified)
             
         Returns:
@@ -287,28 +378,35 @@ class CosmosVideoEmbedder(EmbeddingModel):
         """
         batch_size = batch_size or self.config.batch_size
         embeddings_data = []
-        failed_videos = []
+        failed_inputs = []
         
-        with tqdm(total=len(video_paths), desc="Extracting embeddings") as pbar:
-            for i in range(0, len(video_paths), batch_size):
-                batch_paths = video_paths[i:i+batch_size]
+        with tqdm(total=len(input_paths), desc="Extracting embeddings") as pbar:
+            for i in range(0, len(input_paths), batch_size):
+                batch_paths = input_paths[i:i+batch_size]
                 batch_frames = []
                 valid_paths = []
                 
                 for path in batch_paths:
                     try:
                         if not path.exists():
-                            raise VideoNotFoundError(f"Video not found: {path}")
-                        if not path.suffix.lower() in self.config.supported_formats:
-                            raise InvalidVideoFormatError(f"Unsupported format: {path.suffix}")
+                            raise VideoNotFoundError(f"Input not found: {path}")
                         
-                        frames = self.video_processor.load_frames(path)
+                        # Load frames based on input type
+                        if path.is_file():
+                            if not path.suffix.lower() in self.config.supported_formats:
+                                raise InvalidVideoFormatError(f"Unsupported format: {path.suffix}")
+                            frames = self.video_processor.load_frames(path)
+                        elif path.is_dir():
+                            frames = self.video_processor.load_frames_from_folder(path)
+                        else:
+                            raise InvalidVideoFormatError(f"Input must be a file or directory: {path}")
+                        
                         batch_frames.append(frames)
                         valid_paths.append(path)
                         
                     except Exception as e:
                         logger.error(f"Error loading {path}: {e}")
-                        failed_videos.append({"path": str(path), "error": str(e)})
+                        failed_inputs.append({"path": str(path), "error": str(e)})
                         pbar.update(1)
                         continue
                 
@@ -339,8 +437,12 @@ class CosmosVideoEmbedder(EmbeddingModel):
                         # Normalize
                         embedding = embedding / np.linalg.norm(embedding)
                         
+                        # Determine input type for metadata
+                        input_type = "video" if path.is_file() else "frame_folder"
+                        
                         embeddings_data.append({
-                            "video_path": str(path),
+                            "input_path": str(path),
+                            "input_type": input_type,
                             "embedding": embedding,
                             "embedding_dim": embedding.shape[0],
                             "num_frames": len(batch_frames[j])
@@ -351,16 +453,16 @@ class CosmosVideoEmbedder(EmbeddingModel):
                 except Exception as e:
                     logger.error(f"Error processing batch: {e}")
                     for path in valid_paths:
-                        failed_videos.append({"path": str(path), "error": f"Batch processing error: {str(e)}"})
+                        failed_inputs.append({"path": str(path), "error": f"Batch processing error: {str(e)}"})
                     pbar.update(len(valid_paths))
         
-        if failed_videos:
-            logger.warning(f"Failed to process {len(failed_videos)} videos")
-            for fail in failed_videos[:5]:  # Show first 5 failures
+        if failed_inputs:
+            logger.warning(f"Failed to process {len(failed_inputs)} inputs")
+            for fail in failed_inputs[:5]:  # Show first 5 failures
                 logger.warning(f"  - {fail['path']}: {fail['error']}")
-            if len(failed_videos) > 5:
-                logger.warning(f"  ... and {len(failed_videos) - 5} more")
+            if len(failed_inputs) > 5:
+                logger.warning(f"  ... and {len(failed_inputs) - 5} more")
         
-        logger.info(f"Successfully processed {len(embeddings_data)} out of {len(video_paths)} videos")
+        logger.info(f"Successfully processed {len(embeddings_data)} out of {len(input_paths)} inputs")
         
         return embeddings_data
