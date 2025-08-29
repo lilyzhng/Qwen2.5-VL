@@ -43,17 +43,27 @@ class GifGenerator:
     def create_gif_from_input(self, input_path, gif_path, overwrite=False):
         """
         Create a GIF from either a video file or a zip file containing frames.
+        Supports zip fragment syntax (e.g., file.zip#subfolder).
         
         Args:
-            input_path (str): Path to the input video file or zip file
+            input_path (str): Path to the input video file or zip file (supports zip#subfolder)
             gif_path (str): Path where the GIF should be saved
             overwrite (bool): Whether to overwrite existing GIF files
             
         Returns:
             bool: True if successful, False otherwise
         """
-        if not os.path.exists(input_path):
-            logger.error(f"Input file does not exist: {input_path}")
+        # Handle zip fragment syntax (file.zip#subfolder)
+        actual_file_path = input_path
+        is_zip_fragment = False
+        
+        if '#' in input_path:
+            # Extract the actual zip file path
+            actual_file_path = input_path.split('#')[0]
+            is_zip_fragment = True
+            
+        if not os.path.exists(actual_file_path):
+            logger.error(f"Input file does not exist: {actual_file_path}")
             return False
             
         if os.path.exists(gif_path) and not overwrite:
@@ -64,8 +74,8 @@ class GifGenerator:
         os.makedirs(os.path.dirname(gif_path), exist_ok=True)
         
         # Determine input type and process accordingly
-        input_path_obj = Path(input_path)
-        if input_path_obj.suffix.lower() == '.zip':
+        # Check if it's a zip file (either by extension or fragment syntax)
+        if is_zip_fragment or Path(actual_file_path).suffix.lower() == '.zip':
             return self._create_gif_from_zip(input_path, gif_path, overwrite)
         else:
             return self._create_gif_from_video(input_path, gif_path, overwrite)
@@ -114,9 +124,10 @@ class GifGenerator:
     def _create_gif_from_zip(self, zip_path, gif_path, overwrite=False):
         """
         Create a GIF from a zip file containing image frames.
+        Supports zip fragment syntax (e.g., file.zip#subfolder).
         
         Args:
-            zip_path (str): Path to the input zip file
+            zip_path (str): Path to the input zip file (supports zip#subfolder)
             gif_path (str): Path where the GIF should be saved
             overwrite (bool): Whether to overwrite existing GIF files
             
@@ -124,14 +135,31 @@ class GifGenerator:
             bool: True if successful, False otherwise
         """
         try:
+            # Parse zip path and optional subfolder
+            actual_zip_path = zip_path
+            subfolder = None
+            
+            if '#' in zip_path:
+                actual_zip_path, subfolder = zip_path.split('#', 1)
+            
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_path = Path(temp_dir)
                 
                 # Extract frames from zip
-                with zipfile.ZipFile(zip_path, 'r') as zip_file:
-                    # Get image files, filtering out system files
+                with zipfile.ZipFile(actual_zip_path, 'r') as zip_file:
+                    # Get image files, filtering out system files and by subfolder if specified
                     image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
-                    image_files = [f for f in zip_file.namelist() 
+                    all_files = zip_file.namelist()
+                    
+                    # Filter by subfolder if specified
+                    if subfolder:
+                        subfolder_prefix = subfolder + '/' if not subfolder.endswith('/') else subfolder
+                        filtered_files = [f for f in all_files if f.startswith(subfolder_prefix)]
+                    else:
+                        filtered_files = all_files
+                    
+                    # Find image files
+                    image_files = [f for f in filtered_files 
                                   if Path(f).suffix.lower() in image_extensions and not f.startswith('__MACOSX/')]
                     
                     if not image_files:
@@ -218,15 +246,18 @@ class GifGenerator:
 def get_gif_path(input_path, gif_base_dir):
     """
     Generate the corresponding GIF path for a video file or zip file.
+    Supports zip fragment syntax (e.g., file.zip#subfolder).
     
     Args:
-        input_path (str): Path to the video file or zip file
+        input_path (str): Path to the video file or zip file (supports zip#subfolder)
         gif_base_dir (str): Base directory for GIF files
         
     Returns:
         str: Path where the GIF should be saved
     """
-    input_path = Path(input_path)
+    # Handle zip fragment syntax - remove fragment for path processing
+    actual_path = input_path.split('#')[0] if '#' in input_path else input_path
+    input_path = Path(actual_path)
     
     # Create a relative path structure that mirrors the input structure
     # Extract the relevant part of the path after 'videos/' or other base dirs
