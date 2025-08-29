@@ -53,10 +53,23 @@ class SelectedVideo:
 
 
 @st.cache_resource
-def load_search_engine() -> VideoSearchEngine:
+def load_search_engine(use_lakefs: bool = False) -> VideoSearchEngine:
     """Load and cache the search engine."""
     try:
         config = VideoRetrievalConfig()
+        
+        # Configure LakeFS if requested
+        if use_lakefs:
+            config.use_lakefs = True
+            config.lakefs_repository = "embedding-search"  # Default repository name
+            
+            # Check if LakeFS is properly configured
+            from pathlib import Path
+            lakectl_path = Path.home() / '.lakectl.yaml'
+            if not lakectl_path.exists():
+                st.warning("⚠️ LakeFS selected but ~/.lakectl.yaml not found. Falling back to local storage.")
+                config.use_lakefs = False
+        
         search_engine = VideoSearchEngine(config=config)
         
         # Database loads automatically in ParquetVectorDatabase.__init__
@@ -86,7 +99,36 @@ def load_database_info(_engine: VideoSearchEngine) -> Dict:
 def get_all_videos_from_database(search_engine) -> List[Dict]:
     """Get all videos from the database for visualization."""
     try:
-        # Try to get data directly from the parquet file for better cluster info
+        # Use the search engine's database directly (LakeFS-aware)
+        if hasattr(search_engine, 'database') and hasattr(search_engine.database, 'df') and search_engine.database.df is not None:
+            df = search_engine.database.df
+            all_videos = []
+            for _, row in df.iterrows():
+                video_info = {
+                    'slice_id': row['slice_id'],
+                    'video_path': row.get('video_path', ''),
+                    'similarity_score': 0.1,  # Default low similarity
+                    'rank': 1000,  # High rank for non-search results
+                    'metadata': row.to_dict()
+                }
+                all_videos.append(video_info)
+            return all_videos
+        
+        # Fallback to metadata method
+        if hasattr(search_engine, 'database') and hasattr(search_engine.database, 'metadata'):
+            all_videos = []
+            for i, metadata in enumerate(search_engine.database.metadata):
+                video_info = {
+                    'slice_id': metadata.get('slice_id', f"Video {i+1}"),
+                    'video_path': metadata.get('video_path', ''),
+                    'similarity_score': 0.1,  # Default low similarity
+                    'rank': i + 1000,  # High rank for non-search results
+                    'metadata': metadata
+                }
+                all_videos.append(video_info)
+            return all_videos
+            
+        # Final fallback: try local file only if search engine database is empty
         from pathlib import Path
         project_root = Path(__file__).parent.parent
         unified_embeddings_path = project_root / "data" / "unified_embeddings.parquet"
@@ -105,20 +147,7 @@ def get_all_videos_from_database(search_engine) -> List[Dict]:
                 }
                 all_videos.append(video_info)
             return all_videos
-        
-        # Fallback to original method
-        if hasattr(search_engine, 'database') and hasattr(search_engine.database, 'metadata'):
-            all_videos = []
-            for i, metadata in enumerate(search_engine.database.metadata):
-                video_info = {
-                    'slice_id': metadata.get('slice_id', f"Video {i+1}"),
-                    'video_path': metadata.get('video_path', ''),
-                    'similarity_score': 0.1,  # Default low similarity
-                    'rank': i + 1000,  # High rank for non-search results
-                    'metadata': metadata
-                }
-                all_videos.append(video_info)
-            return all_videos
+            
     except Exception as e:
         logger.warning(f"Could not get all videos from database: {e}")
     return []
@@ -1577,9 +1606,39 @@ def main():
     """, unsafe_allow_html=True)
 
     with st.sidebar:
+        # Storage Backend Selection
+        st.markdown('<div class="section-title">💾 Storage Backend</div>', unsafe_allow_html=True)
+        
+        # Check if LakeFS is available
+        from pathlib import Path
+        lakectl_path = Path.home() / '.lakectl.yaml'
+        lakefs_available = lakectl_path.exists()
+        
+        if lakefs_available:
+            storage_options = ["Local Storage", "LakeFS"]
+            storage_help = "Choose between local parquet files or LakeFS repository"
+        else:
+            storage_options = ["Local Storage"]
+            storage_help = "LakeFS not configured (missing ~/.lakectl.yaml)"
+        
+        storage_backend = st.selectbox(
+            "Storage Backend",
+            options=storage_options,
+            help=storage_help,
+            label_visibility="collapsed"
+        )
+        
+        use_lakefs = storage_backend == "LakeFS"
+        
+        # Show storage status
+        if use_lakefs:
+            st.success("🌊 Using LakeFS storage")
+        else:
+            st.info("📁 Using local storage")
+        
         with st.spinner("Loading search engine..."):
             try:
-                search_engine = load_search_engine()
+                search_engine = load_search_engine(use_lakefs=use_lakefs)
                 db_info = load_database_info(search_engine)
             except Exception as e:
                 st.error(f"❌ Failed to load search engine: {e}")
@@ -1777,10 +1836,22 @@ def main():
         # Note: UMAP projections are pre-computed and stored in the parquet file
 
         st.markdown('<div class="section-title">📊 Database Stats</div>', unsafe_allow_html=True)
+        
+        # Get additional stats from search engine
+        try:
+            engine_stats = search_engine.database.get_statistics()
+            storage_backend = engine_stats.get('storage_backend', 'Local')
+            database_size_mb = engine_stats.get('database_size_mb', 0)
+            total_embeddings = engine_stats.get('total_embeddings', db_info.get('num_videos', 0))
+        except:
+            storage_backend = 'Local'
+            database_size_mb = 0
+            total_embeddings = db_info.get('num_videos', 0)
+        
         st.markdown(f"""
         <div class="stats-container">
             <div class="stat-card">
-                <div class="stat-value">{db_info.get('num_videos', 10000)}</div>
+                <div class="stat-value">{total_embeddings}</div>
                 <div class="stat-label">Database Videos</div>
             </div>
             <div class="stat-card">
@@ -1792,11 +1863,53 @@ def main():
                 <div class="stat-label">Embedding Dim</div>
             </div>
             <div class="stat-card">
+                <div class="stat-value">{storage_backend}</div>
+                <div class="stat-label">Storage</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{database_size_mb:.1f} MB</div>
+                <div class="stat-label">DB Size</div>
+            </div>
+            <div class="stat-card">
                 <div class="stat-value">{db_info.get('search_backend', 'FAISS')}</div>
                 <div class="stat-label">Search Backend</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
+        
+        # Show LakeFS specific information if using LakeFS
+        if use_lakefs and storage_backend == 'LakeFS':
+            try:
+                lakefs_repo = engine_stats.get('lakefs_repository', 'N/A')
+                lakefs_branch = engine_stats.get('lakefs_branch', 'N/A')
+                lakefs_path = engine_stats.get('lakefs_path', 'N/A')
+                
+                st.markdown(f"""
+                <div class="lakefs-info" style="margin-top: 10px; padding: 10px; background: #f0f8ff; border-radius: 5px; font-size: 0.8em;">
+                    <strong>🌊 LakeFS Details:</strong><br/>
+                    Repository: <code>{lakefs_repo}</code><br/>
+                    Branch: <code>{lakefs_branch}</code><br/>
+                    Path: <code>{lakefs_path}</code>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Add sync button for LakeFS
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🔄 Sync to LakeFS", use_container_width=True, help="Manually push current embeddings to LakeFS"):
+                        with st.spinner("Syncing to LakeFS..."):
+                            try:
+                                search_engine.database.save()
+                                st.success("✅ Successfully synced to LakeFS!")
+                            except Exception as e:
+                                st.error(f"❌ Sync failed: {e}")
+                
+                with col2:
+                    lakefs_url = "http://localhost:8000"
+                    st.markdown(f'<a href="{lakefs_url}" target="_blank"><button style="width:100%; padding:8px; background:#4CAF50; color:white; border:none; border-radius:4px; cursor:pointer;">🌐 Open LakeFS UI</button></a>', unsafe_allow_html=True)
+                
+            except:
+                pass
         
 
     st.markdown('<div class="section-title">Embedding Visualization</div>', unsafe_allow_html=True)
