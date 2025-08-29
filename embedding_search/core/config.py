@@ -13,7 +13,7 @@ import os
 class VideoRetrievalConfig:
     """Configuration for the ALFA 0.1 retrieval."""
     
-    model_name: str = "/Users/lilyzhang/Desktop/Qwen2.5-VL/cookbooks/nvidia_cosmos_embed_1"
+    model_name: str = "models/nvidia_cosmos_embed_1"
     device: str = "cuda"
     batch_size: int = 4
     num_frames: int = 8

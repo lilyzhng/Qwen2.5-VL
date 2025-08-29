@@ -234,7 +234,7 @@ def main():
             
             info = search_engine.get_database_info()
             logger.info(f"Database built successfully!")
-            logger.info(f"Total videos: {info['num_videos']}")
+            logger.info(f"Total input files: {info['num_inputs']}")
             logger.info(f"Embedding dimension: {info['embedding_dim']}")
             logger.info(f"Database size: {info.get('database_size_mb', 0):.2f} MB")
             
@@ -343,11 +343,11 @@ def main():
             print("DATABASE INFORMATION")
             print("="*80)
             print(f"Version: {info.get('version', 'unknown')}")
-            print(f"Total videos: {info['num_videos']}")
+            print(f"Total input files: {info['num_inputs']}")
             print(f"Embedding dimension: {info['embedding_dim']}")
             print(f"Database size: {info.get('database_size_mb', 0):.2f} MB")
             
-            if info['num_videos'] > 0:
+            if info['num_inputs'] > 0:
                 print("\nVideos in database:")
                 for i, slice_id in enumerate(info['slice_ids'][:10], 1):
                     print(f"  {i}. {slice_id}")
@@ -360,7 +360,7 @@ def main():
             logger.info("Running demo...")
             
             db_info = search_engine.get_database_info()
-            if db_info['num_videos'] == 0:
+            if db_info['num_inputs'] == 0:
                 logger.info("Building database first...")
                 search_engine.build_unified_database_from_file_list(config.input_path)
             

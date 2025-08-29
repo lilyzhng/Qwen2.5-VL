@@ -609,7 +609,11 @@ class CosmosVideoEmbedder(EmbeddingModel):
                         embedding = embedding / np.linalg.norm(embedding)
                         
                         # Determine input type for metadata
-                        input_type = "video" if path.is_file() else "frame_folder"
+                        if _is_zip_path(path):
+                            input_type = "zip_frames"
+                        else:
+                            path_obj = Path(path) if isinstance(path, str) else path
+                            input_type = "video" if path_obj.is_file() else "frame_folder"
                         
                         embeddings_data.append({
                             "input_path": str(path),

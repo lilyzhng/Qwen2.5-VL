@@ -101,10 +101,10 @@ class VideoSearchEngine:
 
     def _get_video_files_from_parquet(self) -> List[Path]:
         """
-        Get video files from parquet input file, supporting both sensor_video_file and sensor_frame_zip columns.
+        Get input files from parquet input file, supporting both sensor_video_file and sensor_frame_zip columns.
         
         Returns:
-            List of video/frame file paths
+            List of video/zip frame file paths
         """
         if not hasattr(self.config, 'input_path') or not self.config.input_path:
             raise ValueError("input_path must be specified in config")
@@ -118,35 +118,35 @@ class VideoSearchEngine:
             raise ValueError(f"Only parquet input files are supported, got: {index_path.suffix}")
         
         try:
-            logger.info(f"Loading video files from parquet: {index_path}")
+            logger.info(f"Loading input files from parquet: {index_path}")
             df = pd.read_parquet(index_path)
             
             # Check for both sensor_video_file and sensor_frame_zip columns
             video_column = None
-            frame_column = None
+            zip_frame_column = None
             
             if 'sensor_video_file' in df.columns:
                 video_column = 'sensor_video_file'
             if 'sensor_frame_zip' in df.columns:
-                frame_column = 'sensor_frame_zip'
+                zip_frame_column = 'sensor_frame_zip'
                 
-            if not video_column and not frame_column:
+            if not video_column and not zip_frame_column:
                 raise ValueError(f"Neither 'sensor_video_file' nor 'sensor_frame_zip' columns found in parquet file. Available columns: {list(df.columns)}")
             
             # Collect all input paths
             all_paths = []
             
-            # Add video files if column exists
+            # Add input files if column exists
             if video_column:
                 video_paths = df[video_column].dropna().drop_duplicates().tolist()
                 all_paths.extend(video_paths)
                 logger.info(f"Found {len(video_paths)} video file entries")
             
-            # Add frame files if column exists  
-            if frame_column:
-                frame_paths = df[frame_column].dropna().drop_duplicates().tolist()
-                all_paths.extend(frame_paths)
-                logger.info(f"Found {len(frame_paths)} frame file entries")
+            # Add zip frame files if column exists  
+            if zip_frame_column:
+                zip_frame_paths = df[zip_frame_column].dropna().drop_duplicates().tolist()
+                all_paths.extend(zip_frame_paths)
+                logger.info(f"Found {len(zip_frame_paths)} zip frame file entries")
             
             # Filter for existing files (handle zip fragments correctly)
             valid_files = [path for path in all_paths if _path_exists(path)]
@@ -192,22 +192,55 @@ class VideoSearchEngine:
         video_files = self._get_video_files_from_parquet()
         
         if not video_files:
-            logger.warning(f"No video files found")
+            logger.warning(f"No input files found")
             return
         
-        logger.info(f"Found {len(video_files)} video files")
+        logger.info(f"Found {len(video_files)} input files")
         
         # Load slice_id mapping from parquet
         path_to_slice_id = {}
         index_path = self._resolve_path(self.config.input_path)
         try:
             df = pd.read_parquet(index_path)
-            if 'slice_id' in df.columns and 'sensor_video_file' in df.columns:
-                for _, row in df.iterrows():
-                    path_to_slice_id[Path(row['sensor_video_file'])] = row['slice_id']
-                logger.info(f"Loaded slice_id mapping for {len(path_to_slice_id)} videos")
-            else:
-                raise ValueError("Required columns 'slice_id' and 'sensor_video_file' not found in parquet")
+            
+            # Check for both sensor_video_file and sensor_frame_zip columns
+            video_column = None
+            zip_frame_column = None
+            
+            if 'sensor_video_file' in df.columns:
+                video_column = 'sensor_video_file'
+            if 'sensor_frame_zip' in df.columns:
+                zip_frame_column = 'sensor_frame_zip'
+                
+            if 'slice_id' not in df.columns:
+                raise ValueError("Required column 'slice_id' not found in parquet")
+                
+            if not video_column and not zip_frame_column:
+                raise ValueError("Neither 'sensor_video_file' nor 'sensor_frame_zip' columns found in parquet")
+            
+            # Build path to slice_id mapping
+            for _, row in df.iterrows():
+                slice_id = row['slice_id']
+                
+                # Add input files if column exists
+                if video_column and pd.notna(row[video_column]):
+                    video_path = row[video_column]
+                    # Use both string and Path as keys for video files
+                    path_to_slice_id[video_path] = slice_id
+                    path_to_slice_id[Path(video_path)] = slice_id
+                
+                # Add zip frame files if column exists
+                if zip_frame_column and pd.notna(row[zip_frame_column]):
+                    zip_frame_path = row[zip_frame_column]
+                    # For zip fragments, use the original string path as key
+                    if _is_zip_path(zip_frame_path):
+                        path_to_slice_id[zip_frame_path] = slice_id
+                    else:
+                        # Use both string and Path as keys for non-zip frame files
+                        path_to_slice_id[zip_frame_path] = slice_id
+                        path_to_slice_id[Path(zip_frame_path)] = slice_id
+                        
+            logger.info(f"Loaded slice_id mapping for {len(path_to_slice_id)} entries")
         except Exception as e:
             raise RuntimeError(f"Error loading slice_id mapping from parquet: {e}")
         
@@ -219,9 +252,22 @@ class VideoSearchEngine:
         # Filter videos that are not already in the database by slice_id
         new_videos = []
         for v in video_files:
+            # Try multiple lookup strategies
+            slice_id = None
+            
+            # Strategy 1: Direct lookup (works for exact matches)
             slice_id = path_to_slice_id.get(v)
+            
+            # Strategy 2: Try as string if it's a Path object
+            if slice_id is None and not isinstance(v, str):
+                slice_id = path_to_slice_id.get(str(v))
+            
+            # Strategy 3: Try as Path object if it's a string
+            if slice_id is None and isinstance(v, str):
+                slice_id = path_to_slice_id.get(Path(v))
+                
             if slice_id is None:
-                logger.warning(f"No slice_id found for video path: {v}")
+                logger.warning(f"No slice_id found for input path: {v}")
                 continue
                 
             # Skip if the slice_id is already in the database
@@ -231,32 +277,44 @@ class VideoSearchEngine:
             new_videos.append(v)
         
         if new_videos:
-            logger.info(f"Processing {len(new_videos)} new videos")
+            logger.info(f"Processing {len(new_videos)} new input files")
             
             embeddings_data = self._extract_embeddings(new_videos)
             
             if embeddings_data:
                 # Add embeddings one by one to ParquetVectorDatabase
                 for emb_data in embeddings_data:
-                    video_path = Path(emb_data["video_path"])
-                    # Use slice_id from mapping - it must exist in the parquet file
-                    slice_id = path_to_slice_id.get(video_path)
+                    input_path = emb_data["input_path"]
+                    # Use slice_id from mapping - try multiple strategies
+                    slice_id = None
+                    
+                    # Strategy 1: Direct lookup
+                    slice_id = path_to_slice_id.get(input_path)
+                    
+                    # Strategy 2: Try as string if it's a Path object
+                    if slice_id is None and not isinstance(input_path, str):
+                        slice_id = path_to_slice_id.get(str(input_path))
+                    
+                    # Strategy 3: Try as Path object if it's a string
+                    if slice_id is None and isinstance(input_path, str):
+                        slice_id = path_to_slice_id.get(Path(input_path))
+                        
                     if slice_id is None:
-                        logger.error(f"No slice_id found for video path: {video_path}")
+                        logger.error(f"No slice_id found for input path: {input_path}")
                         continue
                     embedding = emb_data["embedding"]
                     metadata = {
                         "num_frames": self.config.num_frames,
                         "category": "main",
-                        **{k: v for k, v in emb_data.items() if k not in ["video_path", "embedding"]}
+                        **{k: v for k, v in emb_data.items() if k not in ["input_path", "embedding"]}
                     }
-                    self.database.add_embedding(slice_id, video_path, embedding, metadata)
+                    self.database.add_embedding(slice_id, input_path, embedding, metadata)
                 
                 # Save the database
                 self.database.save()
-                logger.info(f"Database updated with {len(embeddings_data)} videos")
+                logger.info(f"Database updated with {len(embeddings_data)} input files")
         else:
-            logger.info("All videos already in database")
+            logger.info("All input files already in database")
 
     @time_it
     def build_query_database(self, query_video_directory: Union[str, Path] = None,
@@ -274,7 +332,7 @@ class VideoSearchEngine:
         if hasattr(self.config, 'input_path') and self.config.input_path:
             input_path = self._resolve_path(self.config.input_path)
             if input_path.exists():
-                logger.info(f"Loading query videos from unified input path: {input_path}")
+                logger.info(f"Loading query input files from unified input path: {input_path}")
                 return self.build_unified_database_from_file_list(input_path, force_rebuild)
         
         if query_video_directory:
@@ -343,9 +401,9 @@ class VideoSearchEngine:
                     else:
                         logger.warning(f"Query file not found for slice_id: {slice_id}, path: {query_path}")
         
-        raise VideoNotFoundError(f"Query video/frame file not found for slice_id: {slice_id}. Please ensure it's listed in input_path.")
+        raise VideoNotFoundError(f"Query video/zip frame file not found for slice_id: {slice_id}. Please ensure it's listed in input_path.")
 
-    def _extract_embeddings(self, video_paths: List[Path]) -> List[Dict[str, Any]]:
+    def _extract_embeddings(self, video_paths: List[Union[str, Path]]) -> List[Dict[str, Any]]:
         """
         Extract embeddings with optimizations:
         - Batch processing
@@ -383,7 +441,8 @@ class VideoSearchEngine:
                 batch_normalize_embeddings(embedding)
                 emb_data["embedding"] = embedding[0]
                 
-                self.embedding_cache.put(emb_data["video_path"], emb_data["embedding"])
+                # Cache embedding using input_path
+                self.embedding_cache.put(emb_data["input_path"], emb_data["embedding"])
             
             embeddings_data.extend(new_embeddings)
         
@@ -644,13 +703,13 @@ class VideoSearchEngine:
         
         # Map ParquetVectorDatabase stats to expected format
         if 'total_embeddings' in stats:
-            stats['num_videos'] = stats.pop('total_embeddings', 0)
+            stats['num_inputs'] = stats.pop('total_embeddings', 0)
         
         stats.update({
             "cache_size": len(self.embedding_cache._cache),
             "cache_capacity": self.embedding_cache.cache_size,
             "using_gpu": torch.cuda.is_available() and self.config.device == "cuda",
-            "search_backend": "FAISS" if self.database.use_faiss else "NumPy"
+            "search_backend": "FAISS" if hasattr(self.search_strategy, 'use_gpu') else "NumPy"
         })
         
         # No separate query database in unified system
@@ -674,7 +733,7 @@ class VideoSearchEngine:
                     database_size_mb = self.database.database_path.stat().st_size / (1024 * 1024)
             
             info = {
-                'num_videos': stats.get('num_videos', 0),
+                'num_inputs': stats.get('num_inputs', 0),
                 'embedding_dim': stats.get('embedding_dim', 0),
                 'database_size_mb': database_size_mb,
                 'slice_ids': slice_ids,
@@ -688,7 +747,7 @@ class VideoSearchEngine:
             
         except Exception as e:
             return {
-                'num_videos': 0,
+                'num_inputs': 0,
                 'embedding_dim': 0,
                 'database_size_mb': 0,
                 'slice_ids': [],

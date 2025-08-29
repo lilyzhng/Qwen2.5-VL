@@ -75,7 +75,7 @@ def load_database_info(_engine: VideoSearchEngine) -> Dict:
         return _engine.get_statistics()
     except Exception as e:
         return {
-            "num_videos": 0,
+            "num_inputs": 0,
             "categories": 0,
             "embedding_dim": 768,
             "search_backend": "FAISS",
@@ -1780,7 +1780,7 @@ def main():
         st.markdown(f"""
         <div class="stats-container">
             <div class="stat-card">
-                <div class="stat-value">{db_info.get('num_videos', 10000)}</div>
+                <div class="stat-value">{db_info.get('num_inputs', 10000)}</div>
                 <div class="stat-label">Database Videos</div>
             </div>
             <div class="stat-card">

@@ -183,7 +183,7 @@ class MockSearchEngine:
     def get_statistics(self) -> Dict:
         """Get mock database statistics."""
         return {
-            "num_videos": len(self.data.mock_videos),
+            "num_inputs": len(self.data.mock_videos),
             "embedding_dim": 768,
             "categories": list(set(v["category"] for v in self.data.mock_videos)),
             "total_duration": sum(v["duration"] for v in self.data.mock_videos),
@@ -367,7 +367,7 @@ class MockVisualizer:
             f"  • Backend: Mock FAISS",
             "",
             "📊 Database:",
-            f"  • Videos: {search_engine.get_statistics()['num_videos']}",
+            f"  • Videos: {search_engine.get_statistics()['num_inputs']}",
             f"  • Categories: {len(search_engine.get_statistics()['categories'])}"
         ]
         

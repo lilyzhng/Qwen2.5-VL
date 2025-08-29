@@ -161,7 +161,7 @@ class TestInteractiveVisualizer:
         # Simulate dataset selection
         print("\n1. Dataset Selection:")
         db_info = self.search_engine.get_statistics()
-        print(f"   Loaded dataset with {db_info['num_videos']} videos")
+        print(f"   Loaded dataset with {db_info['num_inputs']} videos")
         print(f"   Using {db_info['search_backend']} for search")
         
         # Simulate text search
@@ -273,7 +273,7 @@ class TestSearchEngineIntegration(unittest.TestCase):
         # Mock search engine with fake data
         self.search_engine = Mock(spec=VideoSearchEngine)
         self.search_engine.get_statistics.return_value = {
-            "num_videos": 8,
+            "num_inputs": 8,
             "embedding_dim": 768,
             "search_backend": "FAISS",
             "using_gpu": False
