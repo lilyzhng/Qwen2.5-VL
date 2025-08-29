@@ -12,7 +12,7 @@ import time
 from functools import wraps
 
 from .base import EmbeddingModel
-from .embedder import CosmosVideoEmbedder
+from .embedder import CosmosVideoEmbedder, _is_zip_path, _parse_zip_path
 from .faiss_backend import (
     FaissSearchStrategy, EmbeddingCache,
     batch_normalize_embeddings
@@ -22,6 +22,18 @@ from .exceptions import VideoNotFoundError, SearchError, NoResultsError
 from .database import ParquetVectorDatabase
 
 logger = logging.getLogger(__name__)
+
+
+def _path_exists(path: Union[str, Path]) -> bool:
+    """
+    Check if a path exists, handling zip files with fragments.
+    For zip fragments like 'file.zip#subfolder', only checks if the zip file exists.
+    """
+    if _is_zip_path(path):
+        zip_path, _ = _parse_zip_path(path)
+        return zip_path.exists()
+    else:
+        return Path(path).exists()
 
 
 def time_it(func):
@@ -136,10 +148,10 @@ class VideoSearchEngine:
                 all_paths.extend(frame_paths)
                 logger.info(f"Found {len(frame_paths)} frame file entries")
             
-            # Filter for existing files
-            valid_files = [Path(path) for path in all_paths if Path(path).exists()]
+            # Filter for existing files (handle zip fragments correctly)
+            valid_files = [path for path in all_paths if _path_exists(path)]
             
-            missing_files = [path for path in all_paths if not Path(path).exists()]
+            missing_files = [path for path in all_paths if not _path_exists(path)]
             if missing_files:
                 logger.warning(f"Found {len(missing_files)} missing input files")
                 for missing in missing_files[:5]:  # Show first 5 missing files
@@ -322,11 +334,11 @@ class VideoSearchEngine:
                     # Check for sensor_video_file first, then sensor_frame_zip
                     query_path = None
                     if 'sensor_video_file' in row and pd.notna(row['sensor_video_file']):
-                        query_path = Path(row['sensor_video_file'])
+                        query_path = row['sensor_video_file']
                     elif 'sensor_frame_zip' in row and pd.notna(row['sensor_frame_zip']):
-                        query_path = Path(row['sensor_frame_zip'])
+                        query_path = row['sensor_frame_zip']
                     
-                    if query_path and query_path.exists():
+                    if query_path and _path_exists(query_path):
                         return self.search_by_video(query_path, top_k)
                     else:
                         logger.warning(f"Query file not found for slice_id: {slice_id}, path: {query_path}")
@@ -392,14 +404,20 @@ class VideoSearchEngine:
         Returns:
             Search results
         """
-        query_path = Path(query_video_path)
-        if not query_path.exists():
-            raise VideoNotFoundError(f"Query video not found: {query_path}")
+        # Handle both regular paths and zip fragments
+        if not _path_exists(query_video_path):
+            raise VideoNotFoundError(f"Query video not found: {query_video_path}")
+        
+        query_path = query_video_path  # Keep original path for processing
         
         top_k = top_k or self.config.default_top_k
         
         # Extract slice_id from video path for self-matching avoidance
-        query_slice_id = query_path.name
+        if _is_zip_path(query_path):
+            zip_path, _ = _parse_zip_path(query_path)
+            query_slice_id = zip_path.name
+        else:
+            query_slice_id = Path(query_path).name
         
         try:
             cache_key = str(query_path)
@@ -409,7 +427,7 @@ class VideoSearchEngine:
                 query_embedding = self.embedding_cache.get(cache_key)
                 
             if query_embedding is None:
-                logger.info(f"Extracting embedding for: {query_path.name}")
+                logger.info(f"Extracting embedding for: {query_path}")
                 query_embedding = self.embedder.extract_video_embedding(query_path)
                 
                 query_embedding = query_embedding.astype('float32').reshape(1, -1)
