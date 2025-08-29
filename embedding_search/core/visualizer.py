@@ -9,8 +9,36 @@ from pathlib import Path
 from typing import List, Dict, Union, Optional
 import logging
 from datetime import datetime
+import zipfile
+import tempfile
+from PIL import Image
 
 logger = logging.getLogger(__name__)
+
+
+def _is_zip_path(input_path: Union[str, Path]) -> bool:
+    """Check if input path is a zip file, including paths with fragments like file.zip#subfolder."""
+    path_str = str(input_path)
+    
+    # Handle fragment syntax (file.zip#subfolder)
+    if '#' in path_str:
+        actual_path = path_str.split('#')[0]
+        return Path(actual_path).suffix.lower() == '.zip'
+    
+    # Handle regular zip file
+    return Path(path_str).suffix.lower() == '.zip'
+
+
+def _parse_zip_path(input_path: Union[str, Path]) -> tuple[Path, str]:
+    """Parse zip path and return (zip_file_path, subfolder_or_None)."""
+    path_str = str(input_path)
+    
+    if '#' in path_str:
+        zip_path_str, subfolder = path_str.split('#', 1)
+        return Path(zip_path_str), subfolder
+    
+    return Path(path_str), None
+
 
 class VideoResultsVisualizer:
     """Visualize video search results with thumbnails and similarity scores."""
@@ -26,15 +54,20 @@ class VideoResultsVisualizer:
     
     def extract_thumbnail(self, video_path: Union[str, Path], frame_position: float = 0.5) -> np.ndarray:
         """
-        Extract a thumbnail from a video.
+        Extract a thumbnail from a video file or zip file containing frames.
         
         Args:
-            video_path: Path to the video file
-            frame_position: Position in video to extract frame (0.0 to 1.0)
+            video_path: Path to the video file or zip file (supports zip#subfolder syntax)
+            frame_position: Position in video to extract frame (0.0 to 1.0) - ignored for zip files
             
         Returns:
             Thumbnail image as numpy array
         """
+        # Handle zip files (sensor_frame_zip)
+        if _is_zip_path(video_path):
+            return self._extract_thumbnail_from_zip(video_path)
+        
+        # Handle regular video files
         video_path = Path(video_path)
         
         cap = cv2.VideoCapture(str(video_path))
@@ -49,14 +82,86 @@ class VideoResultsVisualizer:
         
         if not ret:
             # Create placeholder if frame extraction fails
-            frame = np.zeros((*self.thumbnail_size[::-1], 3), dtype=np.uint8)
-            cv2.putText(frame, "No Preview", (10, self.thumbnail_size[1]//2), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            frame = self._create_placeholder_thumbnail("No Preview")
         else:
             # Convert BGR to RGB and resize with high-quality interpolation
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             frame = cv2.resize(frame, self.thumbnail_size, interpolation=cv2.INTER_LANCZOS4)
         
+        return frame
+    
+    def _extract_thumbnail_from_zip(self, zip_path_input: Union[str, Path]) -> np.ndarray:
+        """
+        Extract thumbnail from the first frame in a zip file.
+        
+        Args:
+            zip_path_input: Path to zip file (supports zip#subfolder syntax)
+            
+        Returns:
+            Thumbnail image as numpy array
+        """
+        try:
+            # Parse zip path and subfolder
+            zip_path, subfolder = _parse_zip_path(zip_path_input)
+            
+            if not zip_path.exists():
+                logger.warning(f"Zip file not found: {zip_path}")
+                return self._create_placeholder_thumbnail("Zip Not Found")
+            
+            with zipfile.ZipFile(zip_path, 'r') as zip_file:
+                # Get all files from zip
+                all_files = zip_file.namelist()
+                
+                # Filter files by subfolder if specified
+                if subfolder:
+                    subfolder_prefix = subfolder + '/' if not subfolder.endswith('/') else subfolder
+                    filtered_files = [f for f in all_files if f.startswith(subfolder_prefix)]
+                else:
+                    filtered_files = all_files
+                
+                # Find image files
+                image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
+                image_files = [f for f in filtered_files 
+                              if Path(f).suffix.lower() in image_extensions and not f.startswith('__MACOSX/')]
+                
+                if not image_files:
+                    logger.warning(f"No image files found in zip: {zip_path}")
+                    return self._create_placeholder_thumbnail("No Images")
+                
+                # Sort to get the first frame (typically frame_0000.jpg or similar)
+                image_files.sort()
+                first_image = image_files[0]
+                
+                # Extract and load the first image
+                with zip_file.open(first_image) as img_file:
+                    img_data = img_file.read()
+                    
+                # Convert to PIL Image using BytesIO
+                from io import BytesIO
+                pil_image = Image.open(BytesIO(img_data))
+                
+                # Convert to RGB if needed
+                if pil_image.mode != 'RGB':
+                    pil_image = pil_image.convert('RGB')
+                
+                # Resize to thumbnail size
+                pil_image = pil_image.resize(self.thumbnail_size, Image.Resampling.LANCZOS)
+                
+                # Convert to numpy array
+                thumbnail_array = np.array(pil_image)
+                
+                logger.debug(f"Extracted thumbnail from zip {zip_path.name}, first frame: {first_image}")
+                return thumbnail_array
+                
+        except Exception as e:
+            logger.warning(f"Failed to extract thumbnail from zip {zip_path_input}: {e}")
+            return self._create_placeholder_thumbnail("Error")
+    
+    def _create_placeholder_thumbnail(self, message: str = "No Preview") -> np.ndarray:
+        """Create a placeholder thumbnail with a message."""
+        frame = np.zeros((*self.thumbnail_size[::-1], 3), dtype=np.uint8)
+        cv2.putText(frame, message, (10, self.thumbnail_size[1]//2), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         return frame
     
     def visualize_video_search_results(self, query_video_path: Union[str, Path], 

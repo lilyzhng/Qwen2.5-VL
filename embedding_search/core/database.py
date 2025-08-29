@@ -119,11 +119,23 @@ class ParquetVectorDatabase:
             True if successful
         """
         try:
-            video_path = Path(video_path)
+            # Store original path for thumbnail extraction (supports zip#subfolder syntax)
+            original_video_path = video_path
+            video_path = Path(video_path) if not isinstance(video_path, Path) else video_path
             
-            file_stat = video_path.stat() if video_path.exists() else None
-            file_hash = self._get_file_hash(video_path) if video_path.exists() else None
-            thumbnail_b64, thumbnail_size = self._extract_and_encode_thumbnail(video_path) if video_path.exists() else ("", (0, 0))
+            # For file stats and hash, we need to check the actual file path
+            # For zip fragments, extract just the zip file path
+            from .embedder import _is_zip_path, _parse_zip_path
+            if _is_zip_path(original_video_path):
+                actual_file_path, _ = _parse_zip_path(original_video_path)
+            else:
+                actual_file_path = video_path
+            
+            file_stat = actual_file_path.stat() if actual_file_path.exists() else None
+            file_hash = self._get_file_hash(actual_file_path) if actual_file_path.exists() else None
+            
+            # Use original path for thumbnail extraction (handles zip fragments)
+            thumbnail_b64, thumbnail_size = self._extract_and_encode_thumbnail(original_video_path)
             
             row_data = {
                 'slice_id': slice_id,
@@ -291,17 +303,19 @@ class ParquetVectorDatabase:
         else:
             logger.info("No data to save")
 
-    def _extract_and_encode_thumbnail(self, video_path: Path) -> tuple[str, tuple[int, int]]:
+    def _extract_and_encode_thumbnail(self, video_path: Union[str, Path]) -> tuple[str, tuple[int, int]]:
         """
-        Extract thumbnail from video and encode as base64.
+        Extract thumbnail from video file or zip file and encode as base64.
         
         Args:
-            video_path: Path to video file
+            video_path: Path to video file or zip file (supports zip#subfolder syntax)
             
         Returns:
             Tuple of (base64_encoded_thumbnail, (width, height))
         """
         try:
+            # Pass the original path (string or Path) to the thumbnail extractor
+            # The extractor handles zip fragment syntax internally
             thumbnail_array = self.thumbnail_extractor.extract_thumbnail(video_path)
             
             if thumbnail_array is None:
@@ -320,7 +334,7 @@ class ParquetVectorDatabase:
             
             width, height = thumbnail_pil.size
             
-            logger.debug(f"Extracted thumbnail for {video_path.name}: {width}x{height}")
+            logger.debug(f"Extracted thumbnail for {video_path}: {width}x{height}")
             return thumbnail_b64, (width, height)
         except Exception as e:
             logger.warning(f"Failed to extract thumbnail for {video_path}: {e}")
