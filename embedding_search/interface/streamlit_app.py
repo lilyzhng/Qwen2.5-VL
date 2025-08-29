@@ -1016,17 +1016,8 @@ def get_input_gif_path(slice_id: str, search_engine) -> Optional[str]:
         else:
             logger.warning(f"Unified embeddings file not found: {unified_embeddings_path}")
         
-        # Fallback: Try to get GIF path from query database
-        if hasattr(search_engine, 'query_manager') and hasattr(search_engine.query_manager, 'query_db'):
-            query_db = search_engine.query_manager.query_db
-            if hasattr(query_db, 'df') and query_db.df is not None:
-                # Look for the slice_id in query database
-                matching_rows = query_db.df[query_db.df['slice_id'] == slice_id]
-                if not matching_rows.empty:
-                    gif_path = matching_rows.iloc[0].get('gif_file', '')
-                    if gif_path and os.path.exists(gif_path):
-                        logger.info(f"Found GIF in query database: {gif_path}")
-                        return gif_path
+        # Note: With unified embeddings, GIF paths should be in the main unified database
+        # No need for separate query database fallback
         
         logger.warning(f"No GIF found for slice_id: {slice_id}")
         
@@ -1631,7 +1622,8 @@ def main():
                             video_path = str(video_dir / selected_video)
                             input_thumbnail = None
                             try:
-                                input_thumbnail = search_engine.query_manager.query_db.get_thumbnail_base64(selected_video)
+                                # Get thumbnail from unified database
+                                input_thumbnail = search_engine.database.get_thumbnail_base64(selected_video)
                             except:
                                 pass
                             
@@ -1643,7 +1635,8 @@ def main():
                             }
                             
                             try:
-                                cached_embedding = search_engine.query_manager.get_query_embedding(selected_video)
+                                # With unified embeddings, all embeddings are in the main database
+                                cached_embedding = search_engine.database.get_embedding(selected_video)
                                 if cached_embedding is not None:
                                     st.success(f"Found {len(results)} similar videos! ⚡ (Used pre-computed embedding)")
                                 else:
@@ -1723,7 +1716,8 @@ def main():
                         video_path = str(video_dir / selected_video)
                         input_thumbnail = None
                         try:
-                            input_thumbnail = search_engine.query_manager.query_db.get_thumbnail_base64(selected_video)
+                            # Get thumbnail from unified database
+                            input_thumbnail = search_engine.database.get_thumbnail_base64(selected_video)
                         except:
                             pass
                         
@@ -2144,11 +2138,11 @@ def main():
                             
                             if not input_thumbnail:
                                 try:
-                                    # Use the query database to get pre-stored thumbnail
-                                    input_thumbnail = search_engine.query_manager.query_db.get_thumbnail_base64(input_slice_id)
-                                    logger.info(f"Input thumbnail from query DB: {'Success' if input_thumbnail else 'Not found'}")
+                                    # Use the unified database to get pre-stored thumbnail
+                                    input_thumbnail = search_engine.database.get_thumbnail_base64(input_slice_id)
+                                    logger.info(f"Input thumbnail from unified DB: {'Success' if input_thumbnail else 'Not found'}")
                                     
-                                    # Fallback to on-the-fly extraction if not in query database
+                                    # Fallback to on-the-fly extraction if not in database
                                     if not input_thumbnail and input_video_path and Path(input_video_path).exists():
                                         logger.info(f"Falling back to on-the-fly extraction for {input_slice_id}")
                                         input_video_info = {
