@@ -32,10 +32,69 @@ from .exceptions import (
 logger = logging.getLogger(__name__)
 
 
+def _is_zip_path(input_path: Union[str, Path]) -> bool:
+    """Check if input path is a zip file, including paths with fragments like file.zip#subfolder."""
+    path_str = str(input_path)
+    
+    # Handle fragment syntax (file.zip#subfolder)
+    if '#' in path_str:
+        actual_path = path_str.split('#')[0]
+        return Path(actual_path).suffix.lower() == '.zip'
+    
+    # Handle regular zip file
+    return Path(path_str).suffix.lower() == '.zip'
+
+
+def _parse_zip_path(input_path: Union[str, Path]) -> tuple[Path, str]:
+    """Parse zip path and return (zip_file_path, subfolder_or_None)."""
+    path_str = str(input_path)
+    
+    if '#' in path_str:
+        zip_path_str, subfolder = path_str.split('#', 1)
+        return Path(zip_path_str), subfolder
+    
+    return Path(path_str), None
+
+
 def validate_input_path(func):
     """Decorator to validate video paths, frame folders, or zip files."""
     @wraps(func)
     def wrapper(self, input_path: Union[str, Path], *args, **kwargs):
+        # Check if it's a zip file (with or without fragment)
+        if _is_zip_path(input_path):
+            zip_path, subfolder = _parse_zip_path(input_path)
+            
+            if not zip_path.exists():
+                raise VideoNotFoundError(f"Zip file not found: {zip_path}")
+            
+            # Validate that zip contains image files
+            try:
+                with zipfile.ZipFile(zip_path, 'r') as zip_file:
+                    image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
+                    
+                    # Filter files by subfolder if specified
+                    all_files = zip_file.namelist()
+                    if subfolder:
+                        subfolder_prefix = subfolder + '/' if not subfolder.endswith('/') else subfolder
+                        filtered_files = [f for f in all_files if f.startswith(subfolder_prefix)]
+                    else:
+                        filtered_files = all_files
+                    
+                    # Find image files
+                    image_files = [f for f in filtered_files 
+                                  if Path(f).suffix.lower() in image_extensions and not f.startswith('__MACOSX/')]
+                    
+                    if not image_files:
+                        location_msg = f" in subfolder '{subfolder}'" if subfolder else ""
+                        raise InvalidVideoFormatError(
+                            f"Zip file contains no valid image files{location_msg}: {zip_path}. "
+                            f"Supported image formats: {image_extensions}"
+                        )
+                    return func(self, input_path, *args, **kwargs)
+            except zipfile.BadZipFile:
+                raise InvalidVideoFormatError(f"Invalid zip file: {zip_path}")
+        
+        # Regular path validation for non-zip files
         path = Path(input_path)
         if not path.exists():
             raise VideoNotFoundError(f"Input path not found: {path}")
@@ -43,23 +102,6 @@ def validate_input_path(func):
         # Check if it's a video file
         if path.is_file() and path.suffix.lower() in self.config.supported_formats:
             return func(self, path, *args, **kwargs)
-        
-        # Check if it's a zip file containing frames
-        elif path.is_file() and path.suffix.lower() == '.zip':
-            # Validate that zip contains image files
-            try:
-                with zipfile.ZipFile(path, 'r') as zip_file:
-                    image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
-                    image_files = [f for f in zip_file.namelist() 
-                                  if Path(f).suffix.lower() in image_extensions and not f.startswith('__MACOSX/')]
-                    if not image_files:
-                        raise InvalidVideoFormatError(
-                            f"Zip file contains no valid image files: {path}. "
-                            f"Supported image formats: {image_extensions}"
-                        )
-                    return func(self, path, *args, **kwargs)
-            except zipfile.BadZipFile:
-                raise InvalidVideoFormatError(f"Invalid zip file: {path}")
         
         # Check if it's a frame folder
         elif path.is_dir():
@@ -221,22 +263,41 @@ class VideoFrameProcessor(VideoProcessor):
         logger.debug(f"Loaded {len(frames)} frames from folder {folder_path.name}")
         return frames
     
-    def load_frames_from_zip(self, zip_path: Path, num_frames: int = None) -> np.ndarray:
-        """Load and select frames from a zip file containing image files.""" 
+    def load_frames_from_zip(self, zip_path_input: Union[str, Path], num_frames: int = None) -> np.ndarray:
+        """Load and select frames from a zip file containing image files.
+        
+        Supports both regular zip files and zip files with subfolder specification:
+        - file.zip (extracts all image files)
+        - file.zip#camera_front_wide (extracts only from camera_front_wide subfolder)
+        """
         num_frames = num_frames or self.config.num_frames
+        
+        # Parse zip path and subfolder
+        zip_path, subfolder = _parse_zip_path(zip_path_input)
         
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             
             # Extract zip file
             with zipfile.ZipFile(zip_path, 'r') as zip_file:
-                # Get all image files, filtering out system files
+                # Get all files from zip
+                all_files = zip_file.namelist()
+                
+                # Filter by subfolder if specified
+                if subfolder:
+                    subfolder_prefix = subfolder + '/' if not subfolder.endswith('/') else subfolder
+                    filtered_files = [f for f in all_files if f.startswith(subfolder_prefix)]
+                else:
+                    filtered_files = all_files
+                
+                # Get image files, filtering out system files
                 image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
-                image_files = [f for f in zip_file.namelist() 
+                image_files = [f for f in filtered_files 
                               if Path(f).suffix.lower() in image_extensions and not f.startswith('__MACOSX/')]
                 
                 if not image_files:
-                    raise VideoLoadError(f"No image files found in zip: {zip_path}")
+                    location_msg = f" in subfolder '{subfolder}'" if subfolder else ""
+                    raise VideoLoadError(f"No image files found{location_msg} in zip: {zip_path}")
                 
                 # Extract only image files
                 for img_file in image_files:
@@ -299,17 +360,20 @@ class VideoFrameProcessor(VideoProcessor):
         except:
             return False
     
-    def validate_input(self, input_path: Path) -> bool:
+    def validate_input(self, input_path: Union[str, Path]) -> bool:
         """Validate if an input (video file, frame folder, or zip file) can be processed."""
         try:
-            if input_path.is_file():
-                if input_path.suffix.lower() == '.zip':
-                    frames = self.load_frames_from_zip(input_path, num_frames=1)
-                    return frames.shape[0] > 0
-                else:
-                    return self.validate_video(input_path)
-            elif input_path.is_dir():
-                frames = self.load_frames_from_folder(input_path, num_frames=1)
+            # Handle zip files with or without fragments
+            if _is_zip_path(input_path):
+                frames = self.load_frames_from_zip(input_path, num_frames=1)
+                return frames.shape[0] > 0
+            
+            # Handle regular paths
+            path = Path(input_path)
+            if path.is_file():
+                return self.validate_video(path)
+            elif path.is_dir():
+                frames = self.load_frames_from_folder(path, num_frames=1)
                 return frames.shape[0] > 0
             return False
         except:
@@ -382,27 +446,29 @@ class CosmosVideoEmbedder(EmbeddingModel):
         return self._embedding_dim
     
     @validate_input_path
-    def extract_video_embedding(self, input_path: Path) -> np.ndarray:
+    def extract_video_embedding(self, input_path: Union[str, Path]) -> np.ndarray:
         """
         Extract embedding from a single video file, frame folder, or zip file.
         
         Args:
-            input_path: Path to the video file, frame folder, or zip file
+            input_path: Path to the video file, frame folder, or zip file (supports zip#subfolder syntax)
             
         Returns:
             Normalized embedding vector
         """
         try:
-            # Determine input type and load frames accordingly
-            if input_path.is_file():
-                if input_path.suffix.lower() == '.zip':
-                    frames = self.video_processor.load_frames_from_zip(input_path)
-                else:
-                    frames = self.video_processor.load_frames(input_path)
-            elif input_path.is_dir():
-                frames = self.video_processor.load_frames_from_folder(input_path)
+            # Handle zip files with or without fragments first
+            if _is_zip_path(input_path):
+                frames = self.video_processor.load_frames_from_zip(input_path)
             else:
-                raise InvalidVideoFormatError(f"Input path must be a file or directory: {input_path}")
+                # Handle regular paths
+                path = Path(input_path)
+                if path.is_file():
+                    frames = self.video_processor.load_frames(path)
+                elif path.is_dir():
+                    frames = self.video_processor.load_frames_from_folder(path)
+                else:
+                    raise InvalidVideoFormatError(f"Input path must be a file or directory: {path}")
             
             # Prepare batch for model (BTCHW format)
             batch = np.transpose(np.expand_dims(frames, 0), (0, 1, 4, 2, 3))
@@ -460,13 +526,13 @@ class CosmosVideoEmbedder(EmbeddingModel):
             raise EmbeddingExtractionError(f"Failed to extract text embedding: {str(e)}")
     
     def extract_video_embeddings_batch(self, 
-                                     input_paths: List[Path], 
+                                     input_paths: List[Union[str, Path]], 
                                      batch_size: Optional[int] = None) -> List[Dict[str, Any]]:
         """
-        Extract embeddings from multiple videos or frame folders using batch processing.
+        Extract embeddings from multiple videos, frame folders, or zip files using batch processing.
         
         Args:
-            input_paths: List of video file paths or frame folder paths
+            input_paths: List of video file paths, frame folder paths, or zip files (supports zip#subfolder syntax)
             batch_size: Batch size for processing (uses config if not specified)
             
         Returns:
@@ -482,27 +548,36 @@ class CosmosVideoEmbedder(EmbeddingModel):
                 batch_frames = []
                 valid_paths = []
                 
-                for path in batch_paths:
+                for input_path in batch_paths:
                     try:
-                        if not path.exists():
-                            raise VideoNotFoundError(f"Input not found: {path}")
-                        
-                        # Load frames based on input type
-                        if path.is_file():
-                            if not path.suffix.lower() in self.config.supported_formats:
-                                raise InvalidVideoFormatError(f"Unsupported format: {path.suffix}")
-                            frames = self.video_processor.load_frames(path)
-                        elif path.is_dir():
-                            frames = self.video_processor.load_frames_from_folder(path)
+                        # Handle zip files with or without fragments first
+                        if _is_zip_path(input_path):
+                            zip_path, _ = _parse_zip_path(input_path)
+                            if not zip_path.exists():
+                                raise VideoNotFoundError(f"Zip file not found: {zip_path}")
+                            frames = self.video_processor.load_frames_from_zip(input_path)
                         else:
-                            raise InvalidVideoFormatError(f"Input must be a file or directory: {path}")
+                            # Handle regular paths
+                            path = Path(input_path)
+                            if not path.exists():
+                                raise VideoNotFoundError(f"Input not found: {path}")
+                            
+                            # Load frames based on input type
+                            if path.is_file():
+                                if not path.suffix.lower() in self.config.supported_formats:
+                                    raise InvalidVideoFormatError(f"Unsupported format: {path.suffix}")
+                                frames = self.video_processor.load_frames(path)
+                            elif path.is_dir():
+                                frames = self.video_processor.load_frames_from_folder(path)
+                            else:
+                                raise InvalidVideoFormatError(f"Input must be a file or directory: {path}")
                         
                         batch_frames.append(frames)
-                        valid_paths.append(path)
+                        valid_paths.append(input_path)
                         
                     except Exception as e:
-                        logger.error(f"Error loading {path}: {e}")
-                        failed_inputs.append({"path": str(path), "error": str(e)})
+                        logger.error(f"Error loading {input_path}: {e}")
+                        failed_inputs.append({"path": str(input_path), "error": str(e)})
                         pbar.update(1)
                         continue
                 
