@@ -19,6 +19,8 @@ import logging
 from functools import wraps
 import os
 import random
+import zipfile
+import tempfile
 
 from .base import EmbeddingModel, VideoProcessor
 from .config import VideoRetrievalConfig
@@ -31,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 def validate_input_path(func):
-    """Decorator to validate video paths or frame folders."""
+    """Decorator to validate video paths, frame folders, or zip files."""
     @wraps(func)
     def wrapper(self, input_path: Union[str, Path], *args, **kwargs):
         path = Path(input_path)
@@ -41,6 +43,23 @@ def validate_input_path(func):
         # Check if it's a video file
         if path.is_file() and path.suffix.lower() in self.config.supported_formats:
             return func(self, path, *args, **kwargs)
+        
+        # Check if it's a zip file containing frames
+        elif path.is_file() and path.suffix.lower() == '.zip':
+            # Validate that zip contains image files
+            try:
+                with zipfile.ZipFile(path, 'r') as zip_file:
+                    image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
+                    image_files = [f for f in zip_file.namelist() 
+                                  if Path(f).suffix.lower() in image_extensions and not f.startswith('__MACOSX/')]
+                    if not image_files:
+                        raise InvalidVideoFormatError(
+                            f"Zip file contains no valid image files: {path}. "
+                            f"Supported image formats: {image_extensions}"
+                        )
+                    return func(self, path, *args, **kwargs)
+            except zipfile.BadZipFile:
+                raise InvalidVideoFormatError(f"Invalid zip file: {path}")
         
         # Check if it's a frame folder
         elif path.is_dir():
@@ -57,8 +76,8 @@ def validate_input_path(func):
         
         else:
             raise InvalidVideoFormatError(
-                f"Input must be either a video file {self.config.supported_formats} "
-                f"or a directory containing image frames: {path}"
+                f"Input must be either a video file {self.config.supported_formats}, "
+                f"a directory containing image frames, or a zip file with image frames: {path}"
             )
     return wrapper
 
@@ -202,6 +221,76 @@ class VideoFrameProcessor(VideoProcessor):
         logger.debug(f"Loaded {len(frames)} frames from folder {folder_path.name}")
         return frames
     
+    def load_frames_from_zip(self, zip_path: Path, num_frames: int = None) -> np.ndarray:
+        """Load and select frames from a zip file containing image files.""" 
+        num_frames = num_frames or self.config.num_frames
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            
+            # Extract zip file
+            with zipfile.ZipFile(zip_path, 'r') as zip_file:
+                # Get all image files, filtering out system files
+                image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
+                image_files = [f for f in zip_file.namelist() 
+                              if Path(f).suffix.lower() in image_extensions and not f.startswith('__MACOSX/')]
+                
+                if not image_files:
+                    raise VideoLoadError(f"No image files found in zip: {zip_path}")
+                
+                # Extract only image files
+                for img_file in image_files:
+                    zip_file.extract(img_file, temp_path)
+                
+                # Get paths of extracted files
+                extracted_files = []
+                for img_file in image_files:
+                    extracted_path = temp_path / img_file
+                    if extracted_path.exists():
+                        extracted_files.append(extracted_path)
+                
+                # Sort files to ensure consistent ordering
+                extracted_files.sort()
+                
+                # Select frames uniformly if we have more frames than needed
+                if len(extracted_files) >= num_frames:
+                    # Sample frames uniformly across the available frames
+                    indices = np.linspace(0, len(extracted_files) - 1, num_frames, dtype=int)
+                    selected_files = [extracted_files[i] for i in indices]
+                else:
+                    # If we have fewer frames than needed, use all available frames
+                    # and repeat the last frame to reach the desired count
+                    selected_files = extracted_files[:]
+                    while len(selected_files) < num_frames:
+                        selected_files.append(extracted_files[-1])
+                    logger.warning(f"Zip {zip_path.name} has only {len(extracted_files)} frames, "
+                                  f"repeating last frame to reach {num_frames} frames")
+                
+                # Load and resize frames
+                frames = []
+                target_height, target_width = self.config.resolution
+                
+                for img_path in selected_files:
+                    try:
+                        # Load image using OpenCV
+                        img = cv2.imread(str(img_path))
+                        if img is None:
+                            raise VideoLoadError(f"Failed to load image: {img_path}")
+                        
+                        # Convert BGR to RGB
+                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        
+                        # Resize to target resolution
+                        img = cv2.resize(img, (target_width, target_height))
+                        frames.append(img)
+                        
+                    except Exception as e:
+                        raise VideoLoadError(f"Failed to process image {img_path}: {str(e)}")
+                
+                frames = np.array(frames)
+                logger.debug(f"Loaded {len(frames)} frames from zip {zip_path.name}")
+                return frames
+    
     def validate_video(self, video_path: Path) -> bool:
         """Validate if a video file can be processed."""
         try:
@@ -211,10 +300,14 @@ class VideoFrameProcessor(VideoProcessor):
             return False
     
     def validate_input(self, input_path: Path) -> bool:
-        """Validate if an input (video file or frame folder) can be processed."""
+        """Validate if an input (video file, frame folder, or zip file) can be processed."""
         try:
             if input_path.is_file():
-                return self.validate_video(input_path)
+                if input_path.suffix.lower() == '.zip':
+                    frames = self.load_frames_from_zip(input_path, num_frames=1)
+                    return frames.shape[0] > 0
+                else:
+                    return self.validate_video(input_path)
             elif input_path.is_dir():
                 frames = self.load_frames_from_folder(input_path, num_frames=1)
                 return frames.shape[0] > 0
@@ -291,18 +384,21 @@ class CosmosVideoEmbedder(EmbeddingModel):
     @validate_input_path
     def extract_video_embedding(self, input_path: Path) -> np.ndarray:
         """
-        Extract embedding from a single video file or frame folder.
+        Extract embedding from a single video file, frame folder, or zip file.
         
         Args:
-            input_path: Path to the video file or frame folder
+            input_path: Path to the video file, frame folder, or zip file
             
         Returns:
             Normalized embedding vector
         """
         try:
-            # Determine if input is a video file or frame folder
+            # Determine input type and load frames accordingly
             if input_path.is_file():
-                frames = self.video_processor.load_frames(input_path)
+                if input_path.suffix.lower() == '.zip':
+                    frames = self.video_processor.load_frames_from_zip(input_path)
+                else:
+                    frames = self.video_processor.load_frames(input_path)
             elif input_path.is_dir():
                 frames = self.video_processor.load_frames_from_folder(input_path)
             else:

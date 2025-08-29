@@ -89,10 +89,10 @@ class VideoSearchEngine:
 
     def _get_video_files_from_parquet(self) -> List[Path]:
         """
-        Get video files from parquet input file.
+        Get video files from parquet input file, supporting both sensor_video_file and sensor_frame_zip columns.
         
         Returns:
-            List of video file paths
+            List of video/frame file paths
         """
         if not hasattr(self.config, 'input_path') or not self.config.input_path:
             raise ValueError("input_path must be specified in config")
@@ -109,22 +109,46 @@ class VideoSearchEngine:
             logger.info(f"Loading video files from parquet: {index_path}")
             df = pd.read_parquet(index_path)
             
-            if 'sensor_video_file' not in df.columns:
-                raise ValueError(f"Column 'sensor_video_file' not found in parquet file. Available columns: {list(df.columns)}")
+            # Check for both sensor_video_file and sensor_frame_zip columns
+            video_column = None
+            frame_column = None
             
-            video_paths = df['sensor_video_file'].drop_duplicates().tolist()
-            video_files = [Path(path) for path in video_paths if Path(path).exists()]
+            if 'sensor_video_file' in df.columns:
+                video_column = 'sensor_video_file'
+            if 'sensor_frame_zip' in df.columns:
+                frame_column = 'sensor_frame_zip'
+                
+            if not video_column and not frame_column:
+                raise ValueError(f"Neither 'sensor_video_file' nor 'sensor_frame_zip' columns found in parquet file. Available columns: {list(df.columns)}")
             
-            missing_files = [path for path in video_paths if not Path(path).exists()]
+            # Collect all input paths
+            all_paths = []
+            
+            # Add video files if column exists
+            if video_column:
+                video_paths = df[video_column].dropna().drop_duplicates().tolist()
+                all_paths.extend(video_paths)
+                logger.info(f"Found {len(video_paths)} video file entries")
+            
+            # Add frame files if column exists  
+            if frame_column:
+                frame_paths = df[frame_column].dropna().drop_duplicates().tolist()
+                all_paths.extend(frame_paths)
+                logger.info(f"Found {len(frame_paths)} frame file entries")
+            
+            # Filter for existing files
+            valid_files = [Path(path) for path in all_paths if Path(path).exists()]
+            
+            missing_files = [path for path in all_paths if not Path(path).exists()]
             if missing_files:
-                logger.warning(f"Found {len(missing_files)} missing video files")
+                logger.warning(f"Found {len(missing_files)} missing input files")
                 for missing in missing_files[:5]:  # Show first 5 missing files
                     logger.warning(f"  Missing: {missing}")
                 if len(missing_files) > 5:
                     logger.warning(f"  ... and {len(missing_files) - 5} more")
             
-            logger.info(f"Loaded {len(video_files)} valid video files from parquet")
-            return video_files
+            logger.info(f"Loaded {len(valid_files)} valid input files from parquet")
+            return valid_files
             
         except Exception as e:
             raise RuntimeError(f"Error reading parquet file {index_path}: {e}")
@@ -293,11 +317,21 @@ class VideoSearchEngine:
                 
                 matching_rows = df[df['slice_id'] == slice_id]
                 if len(matching_rows) > 0:
-                    query_path = Path(matching_rows.iloc[0]['sensor_video_file'])
-                    if query_path.exists():
+                    row = matching_rows.iloc[0]
+                    
+                    # Check for sensor_video_file first, then sensor_frame_zip
+                    query_path = None
+                    if 'sensor_video_file' in row and pd.notna(row['sensor_video_file']):
+                        query_path = Path(row['sensor_video_file'])
+                    elif 'sensor_frame_zip' in row and pd.notna(row['sensor_frame_zip']):
+                        query_path = Path(row['sensor_frame_zip'])
+                    
+                    if query_path and query_path.exists():
                         return self.search_by_video(query_path, top_k)
+                    else:
+                        logger.warning(f"Query file not found for slice_id: {slice_id}, path: {query_path}")
         
-        raise VideoNotFoundError(f"Query video not found for slice_id: {slice_id}. Please ensure it's listed in input_path.")
+        raise VideoNotFoundError(f"Query video/frame file not found for slice_id: {slice_id}. Please ensure it's listed in input_path.")
 
     def _extract_embeddings(self, video_paths: List[Path]) -> List[Dict[str, Any]]:
         """
