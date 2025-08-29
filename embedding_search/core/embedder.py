@@ -481,8 +481,8 @@ class CosmosVideoEmbedder(EmbeddingModel):
                 )
                 video_out = self.model.get_video_embeddings(**video_inputs)
                 
-            # Extract normalized embedding
-            embedding = video_out.visual_proj[0].cpu().numpy()
+            # Extract normalized embedding - convert to float32 to handle bfloat16 on GPU
+            embedding = video_out.visual_proj[0].float().cpu().numpy()
             
             # Normalize
             embedding = embedding / np.linalg.norm(embedding)
@@ -515,7 +515,8 @@ class CosmosVideoEmbedder(EmbeddingModel):
                 )
                 text_out = self.model.get_text_embeddings(**text_inputs)
                 
-            embedding = text_out.text_proj[0].cpu().numpy()
+            # Convert to float32 to handle bfloat16 on GPU
+            embedding = text_out.text_proj[0].float().cpu().numpy()
             
             # Normalize
             embedding = embedding / np.linalg.norm(embedding)
@@ -603,7 +604,8 @@ class CosmosVideoEmbedder(EmbeddingModel):
                     
                     # Extract embeddings
                     for j, path in enumerate(valid_paths):
-                        embedding = outputs.visual_proj[j].cpu().numpy()
+                        # Convert to float32 before numpy conversion to handle bfloat16 on GPU
+                        embedding = outputs.visual_proj[j].float().cpu().numpy()
                         
                         # Normalize
                         embedding = embedding / np.linalg.norm(embedding)
