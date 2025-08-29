@@ -17,3 +17,13 @@ enable_caching: true
 cache_size: 1000
 log_level: "INFO"
 log_format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# LakeFS Configuration
+use_lakefs: true  # Set to true to enable LakeFS storage
+lakefs_endpoint: null  # Read from ~/.lakectl.yaml
+lakefs_access_key_id: null  # Read from ~/.lakectl.yaml
+lakefs_secret_access_key: null  # Read from ~/.lakectl.yaml
+lakefs_repository: "embedding-search"  # Your repository name
+lakefs_branch: "main"  # LakeFS branch to use
+lakefs_embeddings_path: "data/unified_embeddings.parquet"  # Path within LakeFS repository
+lakefs_input_path: "data/unified_input_path.parquet"  # Input path within LakeFS repository

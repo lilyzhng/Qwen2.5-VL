@@ -33,6 +33,16 @@ class VideoRetrievalConfig:
     log_level: str = "INFO"
     log_format: str = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     
+    # LakeFS Configuration
+    use_lakefs: bool = False  # Enable LakeFS storage
+    lakefs_endpoint: Optional[str] = None  # LakeFS server endpoint
+    lakefs_access_key_id: Optional[str] = None  # LakeFS access key
+    lakefs_secret_access_key: Optional[str] = None  # LakeFS secret key
+    lakefs_repository: Optional[str] = None  # LakeFS repository name
+    lakefs_branch: str = "main"  # LakeFS branch name
+    lakefs_embeddings_path: str = "data/unified_embeddings.parquet"  # Path within LakeFS repo
+    lakefs_input_path: str = "data/unified_input_path.parquet"  # Input path within LakeFS repo
+    
     @classmethod
     def from_yaml(cls, path: str) -> 'VideoRetrievalConfig':
         """Load configuration from YAML file."""

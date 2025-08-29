@@ -47,6 +47,98 @@ embedding_search/
 pip install -r requirements.txt
 ```
 
+## Storage Backends
+
+The system supports two storage backends for embeddings:
+
+### Local Storage (Default)
+Stores embeddings in local Parquet files:
+- `data/unified_embeddings.parquet` - Video embeddings
+- `data/unified_input_path.parquet` - Video file paths
+
+### LakeFS Storage
+Store embeddings in a LakeFS repository for versioned data management.
+
+#### Setup LakeFS
+1. Install LakeFS dependencies (already included in requirements.txt):
+   ```bash
+   pip install lakefs-spec
+   ```
+
+2. Configure LakeFS credentials in `~/.lakectl.yaml`:
+   ```yaml
+   # Create or update ~/.lakectl.yaml
+   credentials:
+       access_key_id: your-access-key-id
+       secret_access_key: your-secret-access-key
+   server:
+       endpoint_url: http://localhost:8000/api/v1
+   ```
+
+3. Update configuration to enable LakeFS:
+   ```yaml
+   # In core/config.yaml or your custom config
+   use_lakefs: true
+   lakefs_repository: "your-repo-name"
+   lakefs_branch: "main"
+   lakefs_embeddings_path: "data/unified_embeddings.parquet"
+   lakefs_input_path: "data/unified_input_path.parquet"
+   # Credentials are automatically read from ~/.lakectl.yaml
+   ```
+
+#### LakeFS Features
+- **Automatic Sync**: Embeddings are saved to both local cache and LakeFS
+- **Fallback**: Falls back to local storage if LakeFS is unavailable
+- **Version Control**: Leverage LakeFS branching and versioning for embeddings
+- **Collaboration**: Share embeddings across teams via LakeFS repository
+
+### Pushing Parquet Files to LakeFS
+
+Once LakeFS is configured, the system automatically manages parquet files for you:
+
+```bash
+# Build embeddings - automatically saves to LakeFS
+python interface/main.py build --input-path data/unified_input_path.parquet
+
+# Any search operations also trigger automatic saves to LakeFS
+python interface/main.py search --query-video data/videos/user_input/car2cyclist_2.mp4 --top-k 5
+```
+
+You can also manually push existing embeddings:
+
+```python
+from core.config import VideoRetrievalConfig
+from core.search import VideoSearchEngine
+
+# Initialize with LakeFS enabled
+config = VideoRetrievalConfig()
+config.use_lakefs = True
+config.lakefs_repository = "embedding-search"
+
+# Create search engine (loads existing embeddings)
+search_engine = VideoSearchEngine(config=config)
+
+# Manually save to LakeFS
+search_engine.database.save()
+print("✅ Embeddings pushed to LakeFS!")
+```
+
+#### Verify Upload
+Check your files in LakeFS web UI at http://localhost:8000 or programmatically:
+
+```python
+from lakefs_spec import LakeFSFileSystem
+
+fs = LakeFSFileSystem()
+repo_path = "embedding-search/main/data/unified_embeddings.parquet"
+
+if fs.exists(repo_path):
+    info = fs.info(repo_path)
+    print(f"✅ File uploaded: {info['size'] / (1024*1024):.2f} MB")
+else:
+    print("❌ File not found in LakeFS")
+```
+
 ## Commands
 ### 1. Generate Unified Embeddings Database
 Build the unified video database for fast similarity search:
@@ -75,11 +167,6 @@ Interactive dashboard for analyzing recall performance and triaging low-performi
 ```
 Available at: `http://localhost:8502`
 
-**Features:**
-- 📊 **Overall Performance**: Comprehensive recall metrics with interactive charts
-- 🏷️ **Keyword Analysis**: Analyze specific keywords and categories separately  
-- 🎬 **Video Triaging**: Individual video analysis with search testing and GIF previews
-- 📈 **Custom Evaluation**: Run custom evaluations with your own parameters
 
 ### 4. Performance Benchmarks (Optional)
 
@@ -91,33 +178,7 @@ python benchmarks/inference_benchmark.py --video-dir data/videos/video_database/
 
 python benchmarks/cosmos_cpu_benchmark.py --max-videos 2 --output my_results.json
 ```
-Performance
-🤖 MODEL CONFIGURATION:
-   Model: /Users/lilyzhang/Desktop/Qwen2.5-VL/cookbooks/nvidia_cosmos_embed_1
-   Device: CPU (forced)
-   Load Time: 0.71s
 
-📊 PERFORMANCE SUMMARY:
-   Total Videos: 5
-   Successful: 5
-   Failed: 0
-
-⏱️  INFERENCE PERFORMANCE:
-   Average Time: 23.049s per video
-   Range: 22.736s - 23.351s
-   Std Dev: 0.245s
-   Average FPS: 0.04
-
-🚀 THROUGHPUT:
-   Videos per minute: 2.6
-   Videos per hour: 156
-
-💻 CPU UTILIZATION:
-   Peak Usage: 30.2%
-   Average Usage: 27.6%
-
-🧠 MEMORY USAGE:
-   Peak RAM: 17967.0 MB (17.5 GB)
 
 ## Search Commands
 

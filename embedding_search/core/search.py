@@ -19,7 +19,7 @@ from .faiss_backend import (
 )
 from .config import VideoRetrievalConfig
 from .exceptions import VideoNotFoundError, SearchError, NoResultsError
-from .database import ParquetVectorDatabase
+from .database import ParquetVectorDatabase, LakeFSParquetDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +63,13 @@ class VideoSearchEngine:
         # Use unified embeddings path
         db_path = self._resolve_path(self.config.embeddings_path)
         
-        # Use ParquetVectorDatabase for unified database to support thumbnails
-        self.database = ParquetVectorDatabase(db_path, self.config)
+        # Choose database backend based on configuration
+        if self.config.use_lakefs:
+            logger.info("Using LakeFS storage backend")
+            self.database = LakeFSParquetDatabase(db_path, self.config)
+        else:
+            logger.info("Using local Parquet storage backend")
+            self.database = ParquetVectorDatabase(db_path, self.config)
         
         # FAISS provides faster similarity search with optional GPU acceleration
         self.search_strategy = FaissSearchStrategy(use_gpu=use_gpu_faiss)

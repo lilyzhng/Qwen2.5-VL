@@ -19,3 +19,4 @@ psutil>=5.9.0
 GPUtil>=1.4.0
 nvidia-ml-py>=12.535.108
 ray>=2.8.0
+lakefs-spec>=0.6.0
