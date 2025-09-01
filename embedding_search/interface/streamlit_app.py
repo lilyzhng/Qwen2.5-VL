@@ -2275,22 +2275,33 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                 
-                # Display selected video info - only slice_id
+                # Display selected video info with duration
+                span_start = featured_video.get('span_start', 0.0)
+                config = VideoRetrievalConfig()
+                span_end = featured_video.get('span_end', config.default_clip_duration)
+                duration = span_end - span_start
                 st.markdown(f"""
                 <div style="text-align: center; margin-top: 0rem;">
                     <div style="font-size: 0.95rem; font-weight: 600; color: #1e293b;">
                         Selected Result: {featured_video['slice_id']}
+                    </div>
+                    <div style="font-size: 0.85rem; color: #64748b; margin-top: 0.3rem;">
+                        📊 Duration: {duration:.1f}s | Span: {span_start:.1f}s - {span_end:.1f}s
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
         
 
         with st.expander("📊 Detailed Results Table"):
+            config = VideoRetrievalConfig()
             results_df = pd.DataFrame([
                 {
                     'Rank': r['rank'],
                     'Video Name': r['slice_id'],
                     'Similarity Score': f"{r['similarity_score']:.4f}",
+                    'Span Start (s)': f"{r.get('span_start', 0.0):.1f}",
+                    'Span End (s)': f"{r.get('span_end', config.default_clip_duration):.1f}",
+                    'Duration (s)': f"{r.get('span_end', config.default_clip_duration) - r.get('span_start', 0.0):.1f}",
                     'Video Path': r['video_path']
                 }
                 for r in st.session_state.search_results

@@ -13,6 +13,7 @@ supported_formats: [".mp4", ".avi", ".mov", ".mkv", ".webm"]
 thumbnail_size: [480, 270]  # 16:9 aspect ratio, higher resolution
 default_top_k: 5              # Default number of results to return
 similarity_threshold: 0.0     # Minimum similarity score (0-1)
+default_clip_duration: 20     # Default clip duration in seconds when span_end cannot be determined
 enable_caching: true
 cache_size: 1000
 log_level: "INFO"

@@ -73,7 +73,9 @@ class ParquetVectorDatabase:
             'access_count': pd.Series(dtype='int'),
             'category': pd.Series(dtype='str'),
             'thumbnail': pd.Series(dtype='str'),
-            'thumbnail_size': pd.Series(dtype='object')  # Will hold tuples
+            'thumbnail_size': pd.Series(dtype='object'),  # Will hold tuples
+            'span_start': pd.Series(dtype='int'),
+            'span_end': pd.Series(dtype='int')
         })
         
         # Set slice_id as index
@@ -137,6 +139,32 @@ class ParquetVectorDatabase:
             # Use original path for thumbnail extraction (handles zip fragments)
             thumbnail_b64, thumbnail_size = self._extract_and_encode_thumbnail(original_video_path)
             
+            # Handle span information intelligently
+            span_start = int(metadata.get('span_start', 0)) if metadata and 'span_start' in metadata else 0
+            span_end = None
+            
+            if metadata and 'span_end' in metadata:
+                span_end = int(metadata.get('span_end'))
+            else:
+                # Try to get actual video duration if no span_end provided
+                try:
+                    from .embedder import get_video_duration, _is_zip_path
+                    if _is_zip_path(original_video_path):
+                        # For zip files, estimate based on frame count or use config default
+                        span_end = span_start + (self.config.num_frames if hasattr(self.config, 'num_frames') else 20)
+                    else:
+                        duration = get_video_duration(actual_file_path) if actual_file_path.exists() else None
+                        if duration:
+                            span_end = int(duration)
+                        else:
+                            # Fallback to config-based default
+                            span_end = span_start + self.config.default_clip_duration
+                            logger.warning(f"Could not determine duration for {original_video_path}, using default {default_duration}s")
+                except Exception as e:
+                    # Ultimate fallback
+                    span_end = span_start + self.config.default_clip_duration
+                    logger.warning(f"Error determining duration for {original_video_path}: {e}, using default {self.config.default_clip_duration}s")
+            
             row_data = {
                 'slice_id': slice_id,
                 'video_path': str(video_path.absolute()),
@@ -150,7 +178,9 @@ class ParquetVectorDatabase:
                 'access_count': 1,
                 'category': metadata.get('category', 'query') if metadata else 'query',
                 'thumbnail': thumbnail_b64,
-                'thumbnail_size': thumbnail_size
+                'thumbnail_size': thumbnail_size,
+                'span_start': span_start,
+                'span_end': span_end
             }
             
             if metadata:

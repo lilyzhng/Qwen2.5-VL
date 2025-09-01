@@ -21,6 +21,8 @@ import os
 import random
 import zipfile
 import tempfile
+import subprocess
+import json
 
 from .base import EmbeddingModel, VideoProcessor
 from .config import VideoRetrievalConfig
@@ -54,6 +56,55 @@ def _parse_zip_path(input_path: Union[str, Path]) -> tuple[Path, str]:
         return Path(zip_path_str), subfolder
     
     return Path(path_str), None
+
+
+def get_video_duration(video_path: Union[str, Path]) -> Optional[float]:
+    """Get video duration in seconds using ffprobe."""
+    try:
+        cmd = [
+            'ffprobe', 
+            '-v', 'error', 
+            '-show_entries', 'format=duration', 
+            '-of', 'json', 
+            str(video_path)
+        ]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode != 0:
+            logger.warning(f"Error getting duration for {video_path}: {result.stderr}")
+            return None
+        
+        data = json.loads(result.stdout)
+        return float(data['format']['duration'])
+    except (KeyError, json.JSONDecodeError, subprocess.SubprocessError, FileNotFoundError) as e:
+        logger.warning(f"Error parsing duration for {video_path}: {e}")
+        # Fallback to OpenCV if ffprobe is not available
+        return _get_video_duration_opencv(video_path)
+
+
+def _get_video_duration_opencv(video_path: Union[str, Path]) -> Optional[float]:
+    """Get video duration using OpenCV as fallback."""
+    try:
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            return None
+        
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        cap.release()
+        
+        if fps > 0 and frame_count > 0:
+            return frame_count / fps
+        return None
+    except Exception as e:
+        logger.warning(f"Error getting duration with OpenCV for {video_path}: {e}")
+        return None
+
+
+def estimate_frames_duration(frame_count: int, fps: float = 30.0) -> float:
+    """Estimate duration from frame count assuming a default FPS."""
+    if frame_count <= 0:
+        return 0.0
+    return frame_count / fps
 
 
 def validate_input_path(func):
@@ -130,8 +181,15 @@ class VideoFrameProcessor(VideoProcessor):
     def __init__(self, config: VideoRetrievalConfig):
         self.config = config
     
-    def load_frames(self, video_path: Path, num_frames: int = None) -> np.ndarray:
-        """Load frames from a video file with error handling and automatic resolution scaling."""
+    def load_frames(self, video_path: Path, num_frames: int = None, span_start: float = None, span_end: float = None) -> np.ndarray:
+        """Load frames from a video file with error handling and automatic resolution scaling.
+        
+        Args:
+            video_path: Path to the video file
+            num_frames: Number of frames to extract
+            span_start: Start time in seconds for frame extraction
+            span_end: End time in seconds for frame extraction
+        """
         num_frames = num_frames or self.config.num_frames
         
         # Use OpenCV as fallback if decord is not available
@@ -141,12 +199,24 @@ class VideoFrameProcessor(VideoProcessor):
         try:
             reader = decord.VideoReader(str(video_path))
             total_frames = len(reader)
+            fps = reader.get_avg_fps()
             
             if total_frames == 0:
                 raise VideoLoadError(f"Video has no frames: {video_path}")
             
-            # Sample frames uniformly
-            frame_ids = np.linspace(0, total_frames - 1, num_frames, dtype=int).tolist()
+            # Calculate frame range based on span if provided
+            if span_start is not None and span_end is not None:
+                start_frame = int(span_start * fps)
+                end_frame = int(span_end * fps)
+                # Ensure frame indices are within bounds
+                start_frame = max(0, min(start_frame, total_frames - 1))
+                end_frame = max(start_frame + 1, min(end_frame, total_frames))
+                # Sample frames uniformly within the span
+                frame_ids = np.linspace(start_frame, end_frame - 1, num_frames, dtype=int).tolist()
+                logger.debug(f"Extracting {num_frames} frames from span {span_start}s-{span_end}s (frames {start_frame}-{end_frame})")
+            else:
+                # Sample frames uniformly across entire video
+                frame_ids = np.linspace(0, total_frames - 1, num_frames, dtype=int).tolist()
             frames = reader.get_batch(frame_ids).asnumpy()
             
             target_height, target_width = self.config.resolution
@@ -178,11 +248,24 @@ class VideoFrameProcessor(VideoProcessor):
                 raise VideoLoadError(f"Cannot open video: {video_path}")
             
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            
             if total_frames == 0:
                 raise VideoLoadError(f"Video has no frames: {video_path}")
             
-            # Sample frames uniformly
-            frame_ids = np.linspace(0, total_frames - 1, num_frames, dtype=int)
+            # Calculate frame range based on span if provided
+            if span_start is not None and span_end is not None:
+                start_frame = int(span_start * fps)
+                end_frame = int(span_end * fps)
+                # Ensure frame indices are within bounds
+                start_frame = max(0, min(start_frame, total_frames - 1))
+                end_frame = max(start_frame + 1, min(end_frame, total_frames))
+                # Sample frames uniformly within the span
+                frame_ids = np.linspace(start_frame, end_frame - 1, num_frames, dtype=int)
+                logger.debug(f"Extracting {num_frames} frames from span {span_start}s-{span_end}s (frames {start_frame}-{end_frame})")
+            else:
+                # Sample frames uniformly across entire video
+                frame_ids = np.linspace(0, total_frames - 1, num_frames, dtype=int)
             frames = []
             
             target_height, target_width = self.config.resolution
@@ -262,6 +345,13 @@ class VideoFrameProcessor(VideoProcessor):
         frames = np.array(frames)
         logger.debug(f"Loaded {len(frames)} frames from folder {folder_path.name}")
         return frames
+    
+    def get_folder_duration(self, folder_path: Path, fps: float = 30.0) -> float:
+        """Estimate duration of frame folder assuming default FPS."""
+        image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
+        image_files = [f for f in folder_path.iterdir() 
+                      if f.is_file() and f.suffix.lower() in image_extensions]
+        return estimate_frames_duration(len(image_files), fps)
     
     def load_frames_from_zip(self, zip_path_input: Union[str, Path], num_frames: int = None) -> np.ndarray:
         """Load and select frames from a zip file containing image files.
@@ -351,6 +441,31 @@ class VideoFrameProcessor(VideoProcessor):
                 frames = np.array(frames)
                 logger.debug(f"Loaded {len(frames)} frames from zip {zip_path.name}")
                 return frames
+    
+    def get_zip_duration(self, zip_path_input: Union[str, Path], fps: float = 30.0) -> float:
+        """Estimate duration of zip file containing frames assuming default FPS."""
+        zip_path, subfolder = _parse_zip_path(zip_path_input)
+        
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zip_file:
+                all_files = zip_file.namelist()
+                
+                # Filter by subfolder if specified
+                if subfolder:
+                    subfolder_prefix = subfolder + '/' if not subfolder.endswith('/') else subfolder
+                    filtered_files = [f for f in all_files if f.startswith(subfolder_prefix)]
+                else:
+                    filtered_files = all_files
+                
+                # Count image files
+                image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
+                image_files = [f for f in filtered_files 
+                              if Path(f).suffix.lower() in image_extensions and not f.startswith('__MACOSX/')]
+                
+                return estimate_frames_duration(len(image_files), fps)
+        except Exception as e:
+            logger.warning(f"Error getting zip duration for {zip_path}: {e}")
+            return 0.0
     
     def validate_video(self, video_path: Path) -> bool:
         """Validate if a video file can be processed."""
@@ -446,12 +561,31 @@ class CosmosVideoEmbedder(EmbeddingModel):
         return self._embedding_dim
     
     @validate_input_path
-    def extract_video_embedding(self, input_path: Union[str, Path]) -> np.ndarray:
+    def get_input_duration(self, input_path: Union[str, Path]) -> float:
+        """Get duration of input (video file, frame folder, or zip file)."""
+        try:
+            if _is_zip_path(input_path):
+                return self.video_processor.get_zip_duration(input_path)
+            
+            path = Path(input_path)
+            if path.is_file():
+                return get_video_duration(path) or 0.0
+            elif path.is_dir():
+                return self.video_processor.get_folder_duration(path)
+            else:
+                return 0.0
+        except Exception as e:
+            logger.warning(f"Error getting duration for {input_path}: {e}")
+            return 0.0
+    
+    def extract_video_embedding(self, input_path: Union[str, Path], span_start: float = None, span_end: float = None) -> np.ndarray:
         """
         Extract embedding from a single video file, frame folder, or zip file.
         
         Args:
             input_path: Path to the video file, frame folder, or zip file (supports zip#subfolder syntax)
+            span_start: Start time in seconds for video frame extraction
+            span_end: End time in seconds for video frame extraction
             
         Returns:
             Normalized embedding vector
@@ -464,7 +598,7 @@ class CosmosVideoEmbedder(EmbeddingModel):
                 # Handle regular paths
                 path = Path(input_path)
                 if path.is_file():
-                    frames = self.video_processor.load_frames(path)
+                    frames = self.video_processor.load_frames(path, num_frames=None, span_start=span_start, span_end=span_end)
                 elif path.is_dir():
                     frames = self.video_processor.load_frames_from_folder(path)
                 else:
@@ -610,19 +744,26 @@ class CosmosVideoEmbedder(EmbeddingModel):
                         # Normalize
                         embedding = embedding / np.linalg.norm(embedding)
                         
-                        # Determine input type for metadata
+                        # Determine input type and calculate duration
                         if _is_zip_path(path):
                             input_type = "zip_frames"
+                            duration = self.video_processor.get_zip_duration(path)
                         else:
                             path_obj = Path(path) if isinstance(path, str) else path
-                            input_type = "video" if path_obj.is_file() else "frame_folder"
+                            if path_obj.is_file():
+                                input_type = "video"
+                                duration = get_video_duration(path_obj) or 0.0
+                            else:
+                                input_type = "frame_folder"
+                                duration = self.video_processor.get_folder_duration(path_obj)
                         
                         embeddings_data.append({
                             "input_path": str(path),
                             "input_type": input_type,
                             "embedding": embedding,
                             "embedding_dim": embedding.shape[0],
-                            "num_frames": len(batch_frames[j])
+                            "num_frames": len(batch_frames[j]),
+                            "duration": duration
                         })
                         
                     pbar.update(len(valid_paths))

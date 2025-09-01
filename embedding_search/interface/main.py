@@ -18,6 +18,7 @@ from core.search import VideoSearchEngine
 from core.visualizer import VideoResultsVisualizer
 from core.config import VideoRetrievalConfig
 from core.cluster import EmbeddingClusterer
+from core.preprocessor import ClipPreprocessor
 from core.exceptions import (
     VideoRetrievalError, VideoNotFoundError, NoResultsError
 )
@@ -76,6 +77,32 @@ def main():
         '--batch-size', '-b',
         type=int,
         help='Batch size for processing videos'
+    )
+    
+    # Preprocessing command
+    preprocess_parser = subparsers.add_parser('preprocess', help='Preprocess clips by dividing long clips into segments')
+    preprocess_parser.add_argument(
+        '--input-parquet',
+        type=str,
+        required=True,
+        help='Path to input parquet file'
+    )
+    preprocess_parser.add_argument(
+        '--output-parquet', '-o',
+        type=str,
+        help='Path to output parquet file (defaults to input_processed.parquet)'
+    )
+    preprocess_parser.add_argument(
+        '--target-duration', '-t',
+        type=float,
+        default=20.0,
+        help='Target duration for segments in seconds (default: 20.0)'
+    )
+    preprocess_parser.add_argument(
+        '--min-segment-duration',
+        type=float,
+        default=5.0,
+        help='Minimum duration for the last segment in seconds (default: 5.0)'
     )
     
     search_parser = subparsers.add_parser('search', help='Search for similar videos')
@@ -461,6 +488,39 @@ def main():
                         logger.warning("Visualization requires matplotlib. Install it to generate plots.")
             
             logger.info("Clustering completed successfully!")
+        
+        elif args.command == 'preprocess':
+            logger.info("Preprocessing clips into segments...")
+            
+            # Initialize preprocessor
+            preprocessor = ClipPreprocessor(
+                target_duration=args.target_duration,
+                min_segment_duration=args.min_segment_duration
+            )
+            
+            # Set output path if not provided
+            output_path = args.output_parquet
+            if output_path is None:
+                input_path = Path(args.input_parquet)
+                output_path = str(input_path.parent / f"{input_path.stem}_processed{input_path.suffix}")
+            
+            # Preprocess the parquet file
+            processed_df = preprocessor.preprocess_parquet(args.input_parquet, output_path)
+            
+            # Display statistics
+            stats = preprocessor.get_preprocessing_stats(processed_df)
+            logger.info(f"📊 Preprocessing Statistics:")
+            logger.info(f"Total entries: {stats['total_entries']}")
+            logger.info(f"Duration stats:")
+            logger.info(f"  Mean: {stats['duration_stats']['mean']:.1f}s")
+            logger.info(f"  Median: {stats['duration_stats']['median']:.1f}s")
+            logger.info(f"  Range: {stats['duration_stats']['min']:.1f}s - {stats['duration_stats']['max']:.1f}s")
+            
+            logger.info(f"Duration distribution:")
+            for duration, count in sorted(stats['duration_distribution'].items()):
+                logger.info(f"  {duration:.1f}s: {count} clips")
+            
+            logger.info(f"Preprocessing completed! Output saved to: {output_path}")
     
     except Exception as e:
         return handle_error(e)

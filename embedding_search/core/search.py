@@ -218,9 +218,19 @@ class VideoSearchEngine:
             if not video_column and not zip_frame_column:
                 raise ValueError("Neither 'sensor_video_file' nor 'sensor_frame_zip' columns found in parquet")
             
-            # Build path to slice_id mapping
+            # Build path to slice_id mapping with span information
+            path_to_metadata = {}  # Store additional metadata for each path
             for _, row in df.iterrows():
                 slice_id = row['slice_id']
+                
+                # Extract span information if available
+                span_start = int(row.get('span_start', 0)) if 'span_start' in row and pd.notna(row.get('span_start')) else 0
+                span_end = int(row.get('span_end', self.config.default_clip_duration)) if 'span_end' in row and pd.notna(row.get('span_end')) else self.config.default_clip_duration
+                
+                metadata = {
+                    'span_start': span_start,
+                    'span_end': span_end
+                }
                 
                 # Add input files if column exists
                 if video_column and pd.notna(row[video_column]):
@@ -228,6 +238,8 @@ class VideoSearchEngine:
                     # Use both string and Path as keys for video files
                     path_to_slice_id[video_path] = slice_id
                     path_to_slice_id[Path(video_path)] = slice_id
+                    path_to_metadata[video_path] = metadata
+                    path_to_metadata[Path(video_path)] = metadata
                 
                 # Add zip frame files if column exists
                 if zip_frame_column and pd.notna(row[zip_frame_column]):
@@ -235,10 +247,13 @@ class VideoSearchEngine:
                     # For zip fragments, use the original string path as key
                     if _is_zip_path(zip_frame_path):
                         path_to_slice_id[zip_frame_path] = slice_id
+                        path_to_metadata[zip_frame_path] = metadata
                     else:
                         # Use both string and Path as keys for non-zip frame files
                         path_to_slice_id[zip_frame_path] = slice_id
                         path_to_slice_id[Path(zip_frame_path)] = slice_id
+                        path_to_metadata[zip_frame_path] = metadata
+                        path_to_metadata[Path(zip_frame_path)] = metadata
                         
             logger.info(f"Loaded slice_id mapping for {len(path_to_slice_id)} entries")
         except Exception as e:
@@ -279,7 +294,7 @@ class VideoSearchEngine:
         if new_videos:
             logger.info(f"Processing {len(new_videos)} new input files")
             
-            embeddings_data = self._extract_embeddings(new_videos)
+            embeddings_data = self._extract_embeddings(new_videos, path_to_metadata)
             
             if embeddings_data:
                 # Add embeddings one by one to ParquetVectorDatabase
@@ -303,9 +318,14 @@ class VideoSearchEngine:
                         logger.error(f"No slice_id found for input path: {input_path}")
                         continue
                     embedding = emb_data["embedding"]
+                    
+                    # Get span metadata for this input path
+                    span_metadata = path_to_metadata.get(input_path) or path_to_metadata.get(Path(input_path)) or {}
+                    
                     metadata = {
                         "num_frames": self.config.num_frames,
                         "category": "main",
+                        **span_metadata,  # Include span_start, span_end, duration
                         **{k: v for k, v in emb_data.items() if k not in ["input_path", "embedding"]}
                     }
                     self.database.add_embedding(slice_id, input_path, embedding, metadata)
@@ -403,12 +423,16 @@ class VideoSearchEngine:
         
         raise VideoNotFoundError(f"Query video/zip frame file not found for slice_id: {slice_id}. Please ensure it's listed in input_path.")
 
-    def _extract_embeddings(self, video_paths: List[Union[str, Path]]) -> List[Dict[str, Any]]:
+    def _extract_embeddings(self, video_paths: List[Union[str, Path]], path_to_metadata: Dict = None) -> List[Dict[str, Any]]:
         """
         Extract embeddings with optimizations:
         - Batch processing
         - Caching
         - Normalization using FAISS
+        
+        Args:
+            video_paths: List of video file paths
+            path_to_metadata: Dictionary mapping paths to metadata including span information
         """
         embeddings_data = []
         
@@ -430,10 +454,28 @@ class VideoSearchEngine:
         logger.info(f"Found {len(embeddings_data)} cached embeddings")
         
         if uncached_paths:
-            new_embeddings = self.embedder.extract_video_embeddings_batch(
-                uncached_paths,
-                batch_size=self.config.batch_size
-            )
+            # For now, process uncached paths one by one to handle span information
+            # TODO: Optimize batch processing to handle spans
+            new_embeddings = []
+            for path in uncached_paths:
+                try:
+                    # Get span information for this path
+                    span_metadata = path_to_metadata.get(path) if path_to_metadata else None
+                    span_start = span_metadata.get('span_start') if span_metadata else None
+                    span_end = span_metadata.get('span_end') if span_metadata else None
+                    
+                    # Extract embedding with span information
+                    embedding = self.embedder.extract_video_embedding(path, span_start=span_start, span_end=span_end)
+                    
+                    new_embeddings.append({
+                        "input_path": str(path),
+                        "embedding": embedding,
+                        "embedding_dim": embedding.shape[0],
+                        "num_frames": self.config.num_frames
+                    })
+                except Exception as e:
+                    logger.error(f"Error extracting embedding for {path}: {e}")
+                    continue
             
             for emb_data in new_embeddings:
                 embedding = emb_data["embedding"].astype('float32')

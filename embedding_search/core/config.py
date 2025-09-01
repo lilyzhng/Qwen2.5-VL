@@ -28,6 +28,8 @@ class VideoRetrievalConfig:
     similarity_threshold: float = 0.0
     # Threshold for filtering out low-quality results (e.g., 0.1 means results below 0.1 similarity are filtered)
     quality_threshold: float = 0.1
+    # Default clip duration when span_end cannot be determined
+    default_clip_duration: int = 20
     enable_caching: bool = True
     cache_size: int = 1000
     log_level: str = "INFO"
