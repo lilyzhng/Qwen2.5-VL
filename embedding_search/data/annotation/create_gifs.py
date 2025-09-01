@@ -259,29 +259,9 @@ def get_gif_path(input_path, gif_base_dir):
     actual_path = input_path.split('#')[0] if '#' in input_path else input_path
     input_path = Path(actual_path)
     
-    # Create a relative path structure that mirrors the input structure
-    # Extract the relevant part of the path after 'videos/' or other base dirs
-    path_parts = input_path.parts
-    
-    # Find the index of common base directories
-    base_dirs = ['videos', 'demo_frames', 'data']
-    videos_index = None
-    
-    for base_dir in base_dirs:
-        try:
-            videos_index = path_parts.index(base_dir)
-            relative_parts = path_parts[videos_index + 1:]  # Everything after base dir
-            break
-        except ValueError:
-            continue
-    
-    if videos_index is None:
-        # If no base directory found, use the filename
-        relative_parts = (input_path.name,)
-    
-    # Create GIF path with .gif extension
+    # Simply use the filename with .gif extension directly in gif_base_dir
     gif_filename = input_path.stem + '.gif'
-    gif_path = Path(gif_base_dir) / Path(*relative_parts[:-1]) / gif_filename
+    gif_path = Path(gif_base_dir) / gif_filename
     
     return str(gif_path)
 
@@ -402,7 +382,6 @@ def main():
     
     # Process the unified parquet file
     input_file = args.input_parquet
-    output_filename = 'unified_input_path_with_gifs.parquet'
     
     if not os.path.exists(input_file):
         logger.error(f"Parquet file does not exist: {input_file}")
@@ -437,10 +416,9 @@ def main():
         # Process the file
         updated_df = process_parquet_file(input_file, args.gif_dir, gif_generator, args.overwrite)
         
-        # Save the updated parquet file
-        output_path = os.path.join(os.path.dirname(input_file), output_filename)
-        updated_df.to_parquet(output_path, index=False)
-        logger.info(f"Updated parquet file saved to: {output_path}")
+        # Save back to the same input file (update in place)
+        updated_df.to_parquet(input_file, index=False)
+        logger.info(f"Updated parquet file saved to: {input_file}")
     
     logger.info("GIF generation completed!")
     return 0

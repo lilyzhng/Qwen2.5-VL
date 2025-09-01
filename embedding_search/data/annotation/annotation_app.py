@@ -19,8 +19,8 @@ st.set_page_config(
 
 def load_annotation_data():
     """Load the annotation template data and filter for videos needing annotation."""
-    # Load from unified parquet file
-    parquet_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/unified_input_path_with_gifs.parquet"
+    # Load from unified parquet file (updated in-place with videos and gifs)
+    parquet_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/unified_input_path.parquet"
     annotation_csv = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/annotation/video_annotation.csv"
     
     if not os.path.exists(parquet_file):
