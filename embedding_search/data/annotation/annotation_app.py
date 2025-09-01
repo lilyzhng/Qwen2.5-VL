@@ -19,13 +19,41 @@ st.set_page_config(
 
 def load_annotation_data():
     """Load the annotation template data and filter for videos needing annotation."""
-    template_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/annotation/video_annotation.csv"
+    # Load from unified parquet file
+    parquet_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/unified_input_path_with_gifs.parquet"
+    annotation_csv = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/annotation/video_annotation.csv"
     
-    if not os.path.exists(template_file):
-        st.error(f"Template file not found: {template_file}")
+    if not os.path.exists(parquet_file):
+        st.error(f"Parquet file not found: {parquet_file}")
         st.stop()
     
-    df = pd.read_csv(template_file)
+    # Load the parquet file
+    df = pd.read_parquet(parquet_file)
+    
+    # Map parquet columns to expected annotation app columns
+    df = df.rename(columns={
+        'sensor_video_file': 'video_path',
+        'gif_file': 'gif_path'
+    })
+    
+    # Load existing annotations if they exist and merge them
+    if os.path.exists(annotation_csv):
+        try:
+            existing_annotations = pd.read_csv(annotation_csv)
+            
+            # Merge annotations based on slice_id
+            df = df.merge(existing_annotations[['slice_id', 'object_type', 'actor_behavior', 
+                                             'spatial_relation', 'ego_behavior', 'scene_type']], 
+                         on='slice_id', how='left')
+        except Exception as e:
+            st.warning(f"Could not load existing annotations: {e}")
+            # Add empty annotation columns
+            for col in ['object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']:
+                df[col] = ''
+    else:
+        # Add empty annotation columns
+        for col in ['object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']:
+            df[col] = ''
     
     # Filter for videos with empty semantic group annotations (needing annotation)
     # Check if any of the semantic group columns are empty
@@ -169,10 +197,14 @@ def main():
                 
                 # Load existing annotations into session state for videos currently being annotated
                 for current_idx in range(len(df)):
-                    original_idx = df.iloc[current_idx]['original_index']
+                    current_video = df.iloc[current_idx]
+                    slice_id = current_video['slice_id']
                     
-                    if original_idx < len(existing_df):
-                        row = existing_df.iloc[original_idx]
+                    # Find matching annotation by slice_id
+                    matching_annotations = existing_df[existing_df['slice_id'] == slice_id]
+                    
+                    if len(matching_annotations) > 0:
+                        row = matching_annotations.iloc[0]
                         
                         # Load semantic group annotations
                         annotations = {}
@@ -262,7 +294,7 @@ def main():
         with col_save:
             output_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/annotation/video_annotation.csv"
             if st.button("💾 Save", type="primary", help="Save all annotations to CSV"):
-                # Prepare the full dataframe for saving
+                # Create annotations dataframe with all video data including span information
                 save_df = full_df.copy()
                 
                 # Update annotations for videos that were annotated
@@ -285,7 +317,13 @@ def main():
                             save_df.loc[original_idx, group_name] = keywords_str
                             # Note: We don't touch columns that weren't annotated, preserving existing data
                 
-                if save_annotations(save_df, output_file):
+                # Save with all columns including span information
+                columns_to_save = ['slice_id', 'video_path', 'gif_path', 'span_start', 'span_end', 'category',
+                                 'object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']
+                save_columns = [col for col in columns_to_save if col in save_df.columns]
+                save_df_subset = save_df[save_columns]
+                
+                if save_annotations(save_df_subset, output_file):
                     st.success(f"✅ Saved annotations for {len([k for k in st.session_state.annotations.values() if k])} videos!")
                     # Refresh the page to reload data
                     st.rerun()
@@ -295,10 +333,21 @@ def main():
         # Video info
         st.write(f"**Slice ID:** {current_video['slice_id']}")
         
+        # Display span information
+        if 'span_start' in current_video and 'span_end' in current_video:
+            span_start = current_video['span_start']
+            span_end = current_video['span_end']
+            duration = span_end - span_start
+            st.write(f"**Span:** {span_start}s - {span_end}s ({duration}s duration)")
+        
         # Get folder name for context
         video_path = current_video['video_path']
         folder_name = Path(video_path).parent.name if pd.notna(video_path) else "Unknown"
         st.write(f"**Source:** {folder_name}")
+        
+        # Display category if available
+        if 'category' in current_video and pd.notna(current_video['category']):
+            st.write(f"**Category:** {current_video['category']}")
         
         # Semantic group selections
         st.subheader("🏷️ Semantic Annotation")
@@ -421,10 +470,14 @@ def main():
                 
                 # Load existing annotations into session state for videos currently being annotated
                 for current_idx in range(len(df)):
-                    original_idx = df.iloc[current_idx]['original_index']
+                    current_video = df.iloc[current_idx]
+                    slice_id = current_video['slice_id']
                     
-                    if original_idx < len(existing_df):
-                        row = existing_df.iloc[original_idx]
+                    # Find matching annotation by slice_id
+                    matching_annotations = existing_df[existing_df['slice_id'] == slice_id]
+                    
+                    if len(matching_annotations) > 0:
+                        row = matching_annotations.iloc[0]
                         
                         # Load semantic group annotations
                         annotations = {}
@@ -451,13 +504,14 @@ def main():
         st.markdown("""
         ### How to use this annotation tool:
         
-        **This tool automatically loads only videos with incomplete semantic annotations that need annotation.**
+        **This tool automatically loads videos from the unified parquet dataset with span information.**
         
         1. **View the GIF** on the left to understand the video content
-        2. **Select multiple keywords** that describe the video content
-        3. **Navigate** using Previous/Next buttons or jump to specific videos
-        4. **Save regularly** to preserve your work
-        5. **When all videos are annotated**, the tool will show a completion summary
+        2. **Check the span information** (start/end times) to understand the video segment
+        3. **Select multiple keywords** that describe the video content
+        4. **Navigate** using Previous/Next buttons or jump to specific videos
+        5. **Save regularly** to preserve your work
+        6. **When all videos are annotated**, the tool will show a completion summary
         
         ### Available Keywords (Organized by Semantic Groups):
         
