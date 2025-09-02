@@ -22,7 +22,7 @@ class ClipPreprocessor:
     Preprocessor to divide long video clips into standardized segments.
     """
     
-    def __init__(self, target_duration: float = 20.0, min_segment_duration: float = 5.0, create_video_segments: bool = True, fps: float = 30.0, output_video_dir: str = None):
+    def __init__(self, target_duration: float = 20.0, min_segment_duration: float = 5.0, create_video_segments: bool = True, fps: float = 30.0, output_video_dir: str = None, resolution: tuple = (448, 448)):
         """
         Initialize the clip preprocessor.
         
@@ -32,12 +32,14 @@ class ClipPreprocessor:
             create_video_segments: Whether to create actual video segment files (default: True)
             fps: Frames per second for video generation from frames (default: 30.0)
             output_video_dir: Directory to save generated video segments (default: same as source)
+            resolution: Output video height (width scales proportionally) as (width, height) tuple (default: (448, 448) but only height is used)
         """
         self.target_duration = target_duration
         self.min_segment_duration = min_segment_duration
         self.create_video_segments = create_video_segments
         self.fps = fps
         self.output_video_dir = output_video_dir
+        self.resolution = resolution
     
     def get_input_duration(self, input_path: Union[str, Path]) -> float:
         """
@@ -172,6 +174,7 @@ class ClipPreprocessor:
                 '-i', str(input_video_path),
                 '-ss', str(start_time),
                 '-t', str(duration),
+                '-vf', f'scale=-1:{self.resolution[1]}',  # Scale width proportionally to maintain aspect ratio with fixed height
                 '-c:v', 'libx264',  # Re-encode video for precise timing
                 '-c:a', 'aac',      # Re-encode audio for precise timing
                 '-preset', 'fast',  # Fast encoding preset
@@ -351,6 +354,7 @@ class ClipPreprocessor:
                     '-f', 'concat',
                     '-safe', '0',
                     '-i', str(concat_file),
+                    '-vf', f'scale=-1:{self.resolution[1]}',  # Scale width proportionally to maintain aspect ratio with fixed height
                     '-c:v', 'libx264',
                     '-preset', 'fast',
                     '-crf', '23',
@@ -582,7 +586,7 @@ class ClipPreprocessor:
         return stats
 
 
-def preprocess_clips_cli(input_parquet: str, output_parquet: str = None, target_duration: float = 20.0, create_video_segments: bool = True, output_video_dir: str = None, fps: float = 30.0):
+def preprocess_clips_cli(input_parquet: str, output_parquet: str = None, target_duration: float = 20.0, create_video_segments: bool = True, output_video_dir: str = None, fps: float = 30.0, resolution: tuple = (448, 448)):
     """
     CLI function to preprocess clips.
     
@@ -593,12 +597,13 @@ def preprocess_clips_cli(input_parquet: str, output_parquet: str = None, target_
         create_video_segments: Whether to create actual video segment files
         output_video_dir: Directory to save generated video segments (default: same as source)
         fps: Frames per second for video generation from frames (default: 30.0)
+        resolution: Output video height (width scales proportionally) as (width, height) tuple (default: (448, 448) but only height is used)
     """
     if output_parquet is None:
         input_path = Path(input_parquet)
         output_parquet = str(input_path.parent / f"{input_path.stem}_processed{input_path.suffix}")
     
-    preprocessor = ClipPreprocessor(target_duration=target_duration, create_video_segments=create_video_segments, output_video_dir=output_video_dir, fps=fps)
+    preprocessor = ClipPreprocessor(target_duration=target_duration, create_video_segments=create_video_segments, output_video_dir=output_video_dir, fps=fps, resolution=resolution)
     processed_df = preprocessor.preprocess_parquet(input_parquet, output_parquet)
     
     # Print statistics
@@ -629,8 +634,17 @@ if __name__ == "__main__":
     parser.add_argument("--output-video-dir", help="Directory to save generated video segments (default: same as source)")
     parser.add_argument("--fps", type=float, default=30.0, 
                        help="Frames per second for video generation from frames (default: 30.0)")
+    parser.add_argument("--resolution", type=str, default="448x448",
+                       help="Output video height (width scales proportionally) as WIDTHxHEIGHT (default: 448x448, only height used)")
     
     args = parser.parse_args()
     
+    # Parse resolution string to tuple
+    try:
+        width, height = map(int, args.resolution.split('x'))
+        resolution = (width, height)
+    except ValueError:
+        raise ValueError(f"Invalid resolution format: {args.resolution}. Use WIDTHxHEIGHT format (e.g., 448x448)")
+    
     create_video_segments = not args.no_video_segments
-    preprocess_clips_cli(args.input_parquet, args.output, args.target_duration, create_video_segments, args.output_video_dir, args.fps)
+    preprocess_clips_cli(args.input_parquet, args.output, args.target_duration, create_video_segments, args.output_video_dir, args.fps, resolution)

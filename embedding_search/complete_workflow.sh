@@ -1,11 +1,20 @@
 #!/bin/bash
 # Complete Video Processing Workflow
 # Converts frame zip files to MP4 segments, generates GIFs, and launches annotation app
+#
+# Usage: bash complete_workflow.sh [FPS]
+# Example: bash complete_workflow.sh 10.0  # Use 10 FPS instead of default 30
 
 set -e  # Exit on any error
 
+# Configuration
+FPS=${1:-30.0}  # Default to 30.0 FPS if not provided
+
 echo "🎬 Starting Complete Video Processing Workflow..."
 echo "=================================================="
+echo "📋 Configuration:"
+echo "  - FPS: $FPS"
+echo ""
 
 # Check if input file exists
 INPUT_PARQUET="data/unified_input_path.parquet"
@@ -34,7 +43,8 @@ processed_df = preprocess_clips_cli(
     target_duration=20.0,
     create_video_segments=True,
     output_video_dir='data/video_segments',
-    fps=30.0  # Configurable FPS for video generation from frames
+    fps=$FPS,  # Configurable FPS for video generation from frames
+    resolution=(448, 448)  # Height=448 (width scales proportionally) for embedding model compatibility
 )
 print('✅ Step 1 completed: MP4 segments generated')
 "
