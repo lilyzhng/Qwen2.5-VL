@@ -1,18 +1,27 @@
 #!/bin/bash
 
-# Launch Recall Analysis Streamlit App
-# This script starts the recall evaluation analysis dashboard
+# Get the absolute path of this script, no matter where it's called from
+SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Activate conda environment if needed
+if [[ "$CONDA_DEFAULT_ENV" != "qwen_env" ]]; then
+    echo "🔄 Activating qwen_env conda environment..."
+    eval "$(conda shell.bash hook)"
+    conda deactivate 2>/dev/null || true
+    conda activate qwen_env
+fi
+
+# Set environment variables for OpenMP compatibility
+export KMP_DUPLICATE_LIB_OK=TRUE
 
 echo "🎯 Launching Recall Analysis Dashboard..."
 echo "=========================================="
+echo "📁 Project root: ${PROJECT_ROOT}"
 
-# Check if we're in the right directory
-if [ ! -f "interface/recall_analysis_app.py" ]; then
-    echo "❌ Error: Please run this script from the project root directory"
-    echo "Current directory: $(pwd)"
-    echo "Expected files: interface/recall_analysis_app.py"
-    exit 1
-fi
+# Change to project root to ensure relative paths work correctly
+cd "${PROJECT_ROOT}"
 
 # Check if annotation file exists
 if [ ! -f "data/annotation/video_annotation.csv" ]; then
@@ -44,4 +53,4 @@ echo "Press Ctrl+C to stop the server"
 echo "=========================================="
 
 # Launch Streamlit app on port 8502 (different from main app)
-streamlit run interface/recall_analysis_app.py --server.port 8502 --server.address localhost
+streamlit run "${PROJECT_ROOT}/interface/recall_analysis_app.py" --server.port 8502 --server.address localhost

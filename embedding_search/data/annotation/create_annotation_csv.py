@@ -8,12 +8,20 @@ import pandas as pd
 import os
 from pathlib import Path
 
+# Get project root directory
+def get_project_root():
+    """Get the project root directory (embedding_search folder)."""
+    current_dir = Path(__file__).parent.absolute()
+    # Go up from data/annotation to project root
+    return current_dir.parent.parent
+
 def create_annotation_csv():
     """Create CSV template for manual annotation of video scenes."""
     
     # File paths
-    input_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/unified_input_path.parquet"
-    output_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/annotation/video_annotation.csv"
+    project_root = get_project_root()
+    input_file = project_root / "data" / "unified_input_path.parquet"
+    output_file = project_root / "data" / "annotation" / "video_annotation.csv"
     
     print("📋 Creating annotation CSV template...")
     print(f"Reading from: {input_file}")
@@ -191,7 +199,8 @@ def create_sample_annotations():
     }
     
     sample_df = pd.DataFrame(sample_data)
-    sample_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/annotation/annotation_example.csv"
+    project_root = get_project_root()
+    sample_file = project_root / "data" / "annotation" / "annotation_example.csv"
     sample_df.to_csv(sample_file, index=False)
     
     print(f"\n📋 Created sample annotation file: {sample_file}")

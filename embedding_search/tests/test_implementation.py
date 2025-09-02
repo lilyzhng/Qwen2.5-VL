@@ -59,7 +59,7 @@ def test_video_embedding(embedder):
     """Test video embedding extraction if videos are available."""
     logger.info("Testing video embedding extraction...")
     
-    video_dir = Path("/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/videos/video_database")
+    video_dir = project_root / "data" / "videos" / "video_database"
     if not video_dir.exists():
         logger.warning("✗ Video directory not found, skipping video test")
         return None

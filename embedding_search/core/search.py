@@ -227,19 +227,21 @@ class VideoSearchEngine:
                 span_start = int(row.get('span_start', 0)) if 'span_start' in row and pd.notna(row.get('span_start')) else 0
                 span_end = int(row.get('span_end', self.config.default_clip_duration)) if 'span_end' in row and pd.notna(row.get('span_end')) else self.config.default_clip_duration
                 
+                # Extract gif_file if available
+                gif_file = row.get('gif_file', '') if 'gif_file' in row and pd.notna(row.get('gif_file')) else ''
+                
                 metadata = {
                     'span_start': span_start,
-                    'span_end': span_end
+                    'span_end': span_end,
+                    'gif_file': gif_file
                 }
                 
                 # Add input files if column exists
                 if video_column and pd.notna(row[video_column]):
                     video_path = row[video_column]
-                    # Use both string and Path as keys for video files
+                    # Store only the original string path - lookup strategies will handle Path conversion
                     path_to_slice_id[video_path] = slice_id
-                    path_to_slice_id[Path(video_path)] = slice_id
                     path_to_metadata[video_path] = metadata
-                    path_to_metadata[Path(video_path)] = metadata
                 
                 # Add zip frame files if column exists
                 if zip_frame_column and pd.notna(row[zip_frame_column]):
@@ -249,13 +251,13 @@ class VideoSearchEngine:
                         path_to_slice_id[zip_frame_path] = slice_id
                         path_to_metadata[zip_frame_path] = metadata
                     else:
-                        # Use both string and Path as keys for non-zip frame files
+                        # Store only the original string path for non-zip frame files
                         path_to_slice_id[zip_frame_path] = slice_id
-                        path_to_slice_id[Path(zip_frame_path)] = slice_id
                         path_to_metadata[zip_frame_path] = metadata
-                        path_to_metadata[Path(zip_frame_path)] = metadata
                         
-            logger.info(f"Loaded slice_id mapping for {len(path_to_slice_id)} entries")
+            # Count unique slice_ids to get actual number of videos
+            unique_slice_ids = set(path_to_slice_id.values())
+            logger.info(f"Loaded slice_id mapping for {len(unique_slice_ids)} unique videos ({len(path_to_slice_id)} total path mappings)")
         except Exception as e:
             raise RuntimeError(f"Error loading slice_id mapping from parquet: {e}")
         
@@ -524,9 +526,49 @@ class VideoSearchEngine:
             cache_key = str(query_path)
             query_embedding = None
             
+            # First check in-memory cache
             if use_cache:
                 query_embedding = self.embedding_cache.get(cache_key)
                 
+            # If not in cache, try to load from parquet database
+            if query_embedding is None:
+                # Try to find the slice_id for this video path
+                slice_id_for_path = None
+                
+                # Method 1: Direct lookup by filename (for video_segments)
+                query_filename = Path(query_path).stem  # Get filename without extension
+                try:
+                    # Check if this filename matches a slice_id in the database
+                    if hasattr(self.database, 'df') and self.database.df is not None and len(self.database.df) > 0:
+                        # Look for exact slice_id match
+                        if query_filename in self.database.df.index:
+                            slice_id_for_path = query_filename
+                            logger.info(f"Found direct slice_id match: {slice_id_for_path}")
+                        else:
+                            # Look through video paths to find matching file
+                            for idx, row in self.database.df.iterrows():
+                                if 'video_path' in row and pd.notna(row['video_path']):
+                                    if Path(str(row['video_path'])).name == Path(query_path).name:
+                                        slice_id_for_path = idx
+                                        logger.info(f"Found video path match for slice_id: {slice_id_for_path}")
+                                        break
+                except Exception as e:
+                    logger.debug(f"Error during database lookup: {e}")
+                
+                # Try to load from database if we found a slice_id
+                if slice_id_for_path:
+                    try:
+                        query_embedding = self.database.get_embedding(slice_id_for_path)
+                        if query_embedding is not None:
+                            logger.info(f"Loaded pre-computed embedding from database for slice_id: {slice_id_for_path}")
+                            # Cache the loaded embedding
+                            if use_cache:
+                                self.embedding_cache.put(cache_key, query_embedding)
+                    except Exception as e:
+                        logger.warning(f"Failed to load embedding from database for {slice_id_for_path}: {e}")
+                        query_embedding = None
+                
+            # If still no embedding found, fall back to real-time extraction
             if query_embedding is None:
                 logger.info(f"Extracting embedding for: {query_path}")
                 query_embedding = self.embedder.extract_video_embedding(query_path)
@@ -538,7 +580,10 @@ class VideoSearchEngine:
                 if use_cache:
                     self.embedding_cache.put(cache_key, query_embedding)
             else:
-                logger.info(f"Using cached embedding for: {query_path.name}")
+                if slice_id_for_path:
+                    logger.info(f"Using pre-computed embedding for: {Path(query_path).name}")
+                else:
+                    logger.info(f"Using cached embedding for: {Path(query_path).name}")
             
             # Pass slice_id to avoid self-matching
             return self._search_by_embedding(query_embedding, top_k, exclude_slice_id=query_slice_id)

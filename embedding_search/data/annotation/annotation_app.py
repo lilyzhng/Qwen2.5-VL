@@ -10,6 +10,13 @@ import os
 from pathlib import Path
 import base64
 
+# Get project root directory
+def get_project_root():
+    """Get the project root directory (embedding_search folder)."""
+    current_dir = Path(__file__).parent.absolute()
+    # Go up from data/annotation to project root
+    return current_dir.parent.parent
+
 # Page config
 st.set_page_config(
     page_title="Video Annotation Tool",
@@ -20,8 +27,9 @@ st.set_page_config(
 def load_annotation_data():
     """Load the annotation template data and filter for videos needing annotation."""
     # Load from unified parquet file (updated in-place with videos and gifs)
-    parquet_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/unified_input_path.parquet"
-    annotation_csv = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/annotation/video_annotation.csv"
+    project_root = get_project_root()
+    parquet_file = project_root / "data" / "unified_input_path.parquet"
+    annotation_csv = project_root / "data" / "annotation" / "video_annotation.csv"
     
     if not os.path.exists(parquet_file):
         st.error(f"Parquet file not found: {parquet_file}")
@@ -190,7 +198,8 @@ def main():
         
     if not st.session_state.annotations_loaded:
         # Load existing annotations automatically
-        output_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/annotation/video_annotation.csv"
+        project_root = get_project_root()
+        output_file = project_root / "data" / "annotation" / "video_annotation.csv"
         if os.path.exists(output_file):
             try:
                 existing_df = pd.read_csv(output_file)
@@ -258,9 +267,19 @@ def main():
         st.session_state.current_index = 0
     
     # Progress bar
-    progress = st.session_state.current_index / len(df) if len(df) > 0 else 0
-    st.progress(progress)
-    st.write(f"Progress: {st.session_state.current_index + 1} / {len(df)} videos")
+    if len(df) > 0:
+        # Calculate progress: (current_index + 1) / total to show completion properly
+        progress_value = (st.session_state.current_index + 1) / len(df)
+        # Ensure progress is between 0.0 and 1.0
+        progress_value = max(0.0, min(1.0, progress_value))
+        st.progress(progress_value)
+        
+        # Display progress text with percentage
+        progress_percentage = int(progress_value * 100)
+        st.write(f"Progress: {st.session_state.current_index + 1} / {len(df)} videos ({progress_percentage}%)")
+    else:
+        st.progress(0.0)
+        st.write("Progress: 0 / 0 videos (0%)")
     
     # Safety check for empty dataframe
     if len(df) == 0:
@@ -292,7 +311,8 @@ def main():
             st.subheader("🏷️ Annotation")
         
         with col_save:
-            output_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/annotation/video_annotation.csv"
+            project_root = get_project_root()
+            output_file = project_root / "data" / "annotation" / "video_annotation.csv"
             if st.button("💾 Save", type="primary", help="Save all annotations to CSV"):
                 # Create annotations dataframe with all video data including span information
                 save_df = full_df.copy()
@@ -463,7 +483,8 @@ def main():
     st.markdown("---")
     
     if st.button("📥 Load Previous Annotations"):
-        output_file = "/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/annotation/video_annotation.csv"
+        project_root = get_project_root()
+        output_file = project_root / "data" / "annotation" / "video_annotation.csv"
         if os.path.exists(output_file):
             try:
                 existing_df = pd.read_csv(output_file)

@@ -427,7 +427,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="Benchmark NVIDIA Cosmos Embed inference performance")
     parser.add_argument('--video-dir', '-d', type=str, 
-                       default='/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/videos/video_database',
+                       default=str(project_root / "data" / "videos" / "video_database"),
                        help='Directory containing video files')
     parser.add_argument('--max-videos', '-n', type=int, default=10,
                        help='Maximum number of videos to benchmark')

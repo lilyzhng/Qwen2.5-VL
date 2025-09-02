@@ -194,7 +194,7 @@ class VideoFrameProcessor(VideoProcessor):
         
         # Use OpenCV as fallback if decord is not available
         if not DECORD_AVAILABLE:
-            return self._load_frames_opencv(video_path, num_frames)
+            return self._load_frames_opencv(video_path, num_frames, span_start, span_end)
             
         try:
             reader = decord.VideoReader(str(video_path))
@@ -240,7 +240,7 @@ class VideoFrameProcessor(VideoProcessor):
                 raise
             raise VideoLoadError(f"Failed to load video {video_path}: {str(e)}")
     
-    def _load_frames_opencv(self, video_path: Path, num_frames: int) -> np.ndarray:
+    def _load_frames_opencv(self, video_path: Path, num_frames: int, span_start: float = None, span_end: float = None) -> np.ndarray:
         """Load frames using OpenCV as fallback."""
         try:
             cap = cv2.VideoCapture(str(video_path))

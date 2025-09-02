@@ -22,6 +22,13 @@ import cv2
 import numpy as np
 from PIL import Image
 
+# Get project root directory
+def get_project_root():
+    """Get the project root directory (embedding_search folder)."""
+    current_dir = Path(__file__).parent.absolute()
+    # Go up from data/annotation to project root
+    return current_dir.parent.parent
+
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -346,11 +353,12 @@ def process_parquet_file(parquet_path, gif_base_dir, gif_generator, overwrite=Fa
 
 def main():
     parser = argparse.ArgumentParser(description='Create GIFs from videos in parquet files')
+    project_root = get_project_root()
     parser.add_argument('--input-parquet', 
-                       default='/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/unified_input_path.parquet',
+                       default=str(project_root / "data" / "unified_input_path.parquet"),
                        help='Path to unified input parquet file')
     parser.add_argument('--gif-dir',
-                       default='/Users/lilyzhang/Desktop/Qwen2.5-VL/embedding_search/data/gifs_new',
+                       default=str(project_root / "data" / "gifs_new"),
                        help='Base directory for generated GIFs')
     parser.add_argument('--gif-width', type=int, default=320,
                        help='Width of generated GIFs (default: 320)')
