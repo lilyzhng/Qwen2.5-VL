@@ -554,8 +554,9 @@ class CosmosVideoEmbedder(EmbeddingModel):
             dummy_batch = np.transpose(np.expand_dims(dummy_frames, 0), (0, 1, 4, 2, 3))
             
             with torch.no_grad():
-                inputs = self.preprocess(videos=dummy_batch).to(self.device, dtype=self.dtype)
-                outputs = self.model.get_video_embeddings(**inputs)
+                processed = self.preprocess(videos=dummy_batch)
+                video_tensor = processed["videos"].to(self.device, dtype=self.dtype)
+                outputs = self.model.get_video_embeddings(video_tensor)
                 self._embedding_dim = outputs.visual_proj.shape[-1]
         
         return self._embedding_dim
@@ -609,11 +610,12 @@ class CosmosVideoEmbedder(EmbeddingModel):
             
             # Disable gradients for inference to save memory and improve speed
             with torch.no_grad():
-                video_inputs = self.preprocess(videos=batch).to(
+                processed = self.preprocess(videos=batch)
+                video_tensor = processed["videos"].to(
                     self.device, 
                     dtype=self.dtype
                 )
-                video_out = self.model.get_video_embeddings(**video_inputs)
+                video_out = self.model.get_video_embeddings(video_tensor)
                 
             # Extract normalized embedding - convert to float32 to handle bfloat16 on GPU
             embedding = video_out.visual_proj[0].float().cpu().numpy()
@@ -730,11 +732,12 @@ class CosmosVideoEmbedder(EmbeddingModel):
                     batch_tensor = np.stack(batch_videos, axis=0)
                     
                     with torch.no_grad():
-                        inputs = self.preprocess(videos=batch_tensor).to(
+                        processed = self.preprocess(videos=batch_tensor)
+                        video_tensor = processed["videos"].to(
                             self.device,
                             dtype=self.dtype
                         )
-                        outputs = self.model.get_video_embeddings(**inputs)
+                        outputs = self.model.get_video_embeddings(video_tensor)
                     
                     # Extract embeddings
                     for j, path in enumerate(valid_paths):
