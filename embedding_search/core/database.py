@@ -36,6 +36,9 @@ class ParquetVectorDatabase:
         self.database_path = Path(database_path)
         self.df = None
         
+        # Store project root for relative path conversion
+        self.project_root = Path(__file__).parent.parent
+        
         # Initialize thumbnail extractor
         self.thumbnail_extractor = VideoResultsVisualizer(thumbnail_size=self.config.thumbnail_size)
         
@@ -83,6 +86,26 @@ class ParquetVectorDatabase:
         self.df = self.df.set_index('slice_id', drop=False)
         
         logger.info(f"Created empty database with columns: {self.df.columns.tolist()}")
+    
+    def _make_path_relative(self, path: Union[str, Path]) -> str:
+        """Convert absolute path to relative path from project root."""
+        try:
+            path_obj = Path(path)
+            if path_obj.is_absolute():
+                # Try to make it relative to project root
+                try:
+                    relative_path = path_obj.relative_to(self.project_root)
+                    return str(relative_path)
+                except ValueError:
+                    # Path is not under project root, return as-is but log warning
+                    logger.warning(f"Path {path} is not under project root {self.project_root}, storing as absolute path")
+                    return str(path)
+            else:
+                # Already relative
+                return str(path)
+        except Exception as e:
+            logger.warning(f"Error converting path to relative: {e}, storing as-is")
+            return str(path)
     
     @property
     def embedding_matrix(self) -> Optional[np.ndarray]:
@@ -160,7 +183,7 @@ class ParquetVectorDatabase:
                         else:
                             # Fallback to config-based default
                             span_end = span_start + self.config.default_clip_duration
-                            logger.warning(f"Could not determine duration for {original_video_path}, using default {default_duration}s")
+                            logger.warning(f"Could not determine duration for {original_video_path}, using default {self.config.default_clip_duration}s")
                 except Exception as e:
                     # Ultimate fallback
                     span_end = span_start + self.config.default_clip_duration
@@ -168,8 +191,8 @@ class ParquetVectorDatabase:
             
             row_data = {
                 'slice_id': slice_id,
-                'video_path': str(video_path.absolute()),
-                'gif_path': metadata.get('gif_path', '') if metadata else '',
+                'video_path': self._make_path_relative(original_video_path),
+                'gif_path': self._make_path_relative(metadata.get('gif_path', '')) if metadata and metadata.get('gif_path', '') else '',
                 'embedding': embedding.tolist(),
                 'embedding_dim': embedding.shape[0],
                 'num_frames': metadata.get('num_frames', self.config.num_frames) if metadata else self.config.num_frames,

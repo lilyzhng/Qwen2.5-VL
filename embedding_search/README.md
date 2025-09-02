@@ -31,7 +31,7 @@ embedding_search/
 │   ├── unified_embeddings.parquet    # video database embeddings
 │   ├── unified_input_path.parquet     # video file paths
 │   ├── annotation/                # Ground truth annotations
-│   │   ├── video_annotation.csv   # Annotated video clips with keywords
+│   │   ├── unified_annotation.csv   # Annotated video clips with keywords
 ├── tests/                         # Unit tests
 │   ├── test_evaluate.py           # Evaluation framework tests
 ├── benchmarks/                    # Performance testing
@@ -203,7 +203,7 @@ The framework measures **Recall@K** for K=1,3,5:
 ### Ground Truth Data
 The evaluation uses annotated data from:
 ```
-data/annotation/video_annotation.csv
+data/annotation/unified_annotation.csv
 ```
 
 This file contains 29 annotated video clips with keywords describing:

@@ -96,7 +96,7 @@ bash data/annotation/launch_annotation_app.sh
 ### Access
 - **URL**: http://localhost:8502
 - **Data**: Video segments with GIF previews
-- **Annotations**: Saved to `data/annotation/video_annotation.csv`
+- **Annotations**: Saved to `data/annotation/unified_annotation.csv`
 
 ## Complete Workflow Script
 
@@ -158,7 +158,7 @@ data/
 │   ├── 87tB8RTtetg_short_0040_0060.gif
 │   └── 87tB8RTtetg_short_0060_0069.gif
 └── annotation/
-    └── video_annotation.csv                     # Manual annotations
+    └── unified_annotation.csv                     # Manual annotations
 ```
 
 ## Troubleshooting

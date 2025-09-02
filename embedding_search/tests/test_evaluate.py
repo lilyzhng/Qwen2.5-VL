@@ -103,14 +103,14 @@ class TestGroundTruthProcessor(unittest.TestCase):
         processor = GroundTruthProcessor(str(self.temp_annotation_file))
         
         # Check that all new semantic groups exist
-        self.assertIn('object_type', processor.semantic_groups)
-        self.assertIn('actor_behavior', processor.semantic_groups)
-        self.assertIn('spatial_relation', processor.semantic_groups)
+        self.assertIn('pv_object_type', processor.semantic_groups)
+        self.assertIn('pv_actor_behavior', processor.semantic_groups)
+        self.assertIn('pv_spatial_relation', processor.semantic_groups)
         self.assertIn('ego_behavior', processor.semantic_groups)
         self.assertIn('scene_type', processor.semantic_groups)
         
         # Check that specific keywords are in the correct groups
-        self.assertIn('pedestrian', processor.semantic_groups['object_type'])
+        self.assertIn('pedestrian', processor.semantic_groups['pv_object_type'])
         self.assertIn('intersection', processor.semantic_groups['scene_type'])
         self.assertIn('crosswalk', processor.semantic_groups['scene_type'])
 
@@ -186,7 +186,7 @@ class TestIntegration(unittest.TestCase):
     
     def test_run_recall_evaluation_with_real_annotation_file(self):
         """Test running evaluation with the real annotation file if it exists."""
-        annotation_path = project_root / "data" / "annotation" / "video_annotation.csv"
+        annotation_path = project_root / "data" / "annotation" / "unified_annotation.csv"
         
         if not annotation_path.exists():
             self.skipTest(f"Real annotation file not found: {annotation_path}")

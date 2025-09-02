@@ -283,9 +283,9 @@ def _filter_keywords_by_semantic_groups(keywords: List[str], selected_groups: Li
     
     # Get semantic groups from ground truth processor
     semantic_groups = getattr(ground_truth, 'semantic_groups', {
-        'object_type': ['small vehicle', 'large vehicle', 'bollard', 'stationary object', 'pedestrian', 'motorcyclist', 'bicyclist', 'other', 'unknown'],
-        'actor_behavior': ['entering ego path', 'stationary', 'traveling in same direction', 'traveling in opposite direction', 'straight crossing path', 'oncoming turn across path'],
-        'spatial_relation': ['corridor front', 'corridor behind', 'left adjacent', 'right adjacent', 'left adjacent front', 'left adjacent behind', 'right adjacent front', 'right adjacent behind', 'left split', 'right split', 'left split front', 'left split behind', 'right split front', 'right split behind'],
+        'pv_object_type': ['small vehicle', 'large vehicle', 'bollard', 'stationary object', 'pedestrian', 'motorcyclist', 'bicyclist', 'other', 'unknown'],
+        'pv_actor_behavior': ['entering ego path', 'stationary', 'traveling in same direction', 'traveling in opposite direction', 'straight crossing path', 'oncoming turn across path'],
+        'pv_spatial_relation': ['corridor front', 'corridor behind', 'left adjacent', 'right adjacent', 'left adjacent front', 'left adjacent behind', 'right adjacent front', 'right adjacent behind', 'left split', 'right split', 'left split front', 'left split behind', 'right split front', 'right split behind'],
         'ego_behavior': ['ego turning', 'proceeding straight', 'ego lane change'],
         'scene_type': ['test track', 'parking lot/depot', 'intersection', 'non-intersection', 'crosswalk', 'highway', 'urban', 'bridge/tunnel', 'curved road', 'positive road grade', 'negative road grade', 'street parked vehicle', 'vulnerable road user present', 'nighttime', 'daytime', 'rainy', 'sunny', 'overcast', 'other']
     })
@@ -369,9 +369,9 @@ def _group_keywords_by_semantic_category(keywords: List[str], ground_truth: Grou
     """
     # Get semantic groups from ground truth processor
     semantic_groups = getattr(ground_truth, 'semantic_groups', {
-        'object_type': ['small vehicle', 'large vehicle', 'bollard', 'stationary object', 'pedestrian', 'motorcyclist', 'bicyclist', 'other', 'unknown'],
-        'actor_behavior': ['entering ego path', 'stationary', 'traveling in same direction', 'traveling in opposite direction', 'straight crossing path', 'oncoming turn across path'],
-        'spatial_relation': ['corridor front', 'corridor behind', 'left adjacent', 'right adjacent', 'left adjacent front', 'left adjacent behind', 'right adjacent front', 'right adjacent behind', 'left split', 'right split', 'left split front', 'left split behind', 'right split front', 'right split behind'],
+        'pv_object_type': ['small vehicle', 'large vehicle', 'bollard', 'stationary object', 'pedestrian', 'motorcyclist', 'bicyclist', 'other', 'unknown'],
+        'pv_actor_behavior': ['entering ego path', 'stationary', 'traveling in same direction', 'traveling in opposite direction', 'straight crossing path', 'oncoming turn across path'],
+        'pv_spatial_relation': ['corridor front', 'corridor behind', 'left adjacent', 'right adjacent', 'left adjacent front', 'left adjacent behind', 'right adjacent front', 'right adjacent behind', 'left split', 'right split', 'left split front', 'left split behind', 'right split front', 'right split behind'],
         'ego_behavior': ['ego turning', 'proceeding straight', 'ego lane change'],
         'scene_type': ['test track', 'parking lot/depot', 'intersection', 'non-intersection', 'crosswalk', 'highway', 'urban', 'bridge/tunnel', 'curved road', 'positive road grade', 'negative road grade', 'street parked vehicle', 'vulnerable road user present', 'nighttime', 'daytime', 'rainy', 'sunny', 'overcast', 'other']
     })
@@ -384,9 +384,9 @@ def _group_keywords_by_semantic_category(keywords: List[str], ground_truth: Grou
     
     # Group the input keywords by category
     grouped = {
-        'object_type': [],
-        'actor_behavior': [],
-        'spatial_relation': [],
+        'pv_object_type': [],
+        'pv_actor_behavior': [],
+        'pv_spatial_relation': [],
         'ego_behavior': [],
         'scene_type': [],
         'other': []  # For keywords that don't fit into predefined categories
@@ -413,9 +413,9 @@ def _display_keywords_by_semantic_groups(keywords: List[str], primary_keywords: 
     
     # Category display names and emojis
     category_display = {
-        'object_type': {'name': 'Objects', 'emoji': '🚗'},
-        'actor_behavior': {'name': 'Actor Behavior', 'emoji': '🏃'},
-        'spatial_relation': {'name': 'Spatial Relation', 'emoji': '📍'},
+        'pv_object_type': {'name': 'Objects', 'emoji': '🚗'},
+        'pv_actor_behavior': {'name': 'Actor Behavior', 'emoji': '🏃'},
+        'pv_spatial_relation': {'name': 'Spatial Relation', 'emoji': '📍'},
         'ego_behavior': {'name': 'Ego Behavior', 'emoji': '🚙'},
         'scene_type': {'name': 'Scene Type', 'emoji': '🌆'},
         'other': {'name': 'Other', 'emoji': '🏷️'}
@@ -458,16 +458,16 @@ def _display_focused_keyword_comparison(video_keywords: List[str], query_keyword
     
     # Category display names (no emojis)
     category_display = {
-        'object_type': 'Objects',
-        'actor_behavior': 'Actor Behavior',
-        'spatial_relation': 'Spatial Relation',
+        'pv_object_type': 'Objects',
+        'pv_actor_behavior': 'Actor Behavior',
+        'pv_spatial_relation': 'Spatial Relation',
         'ego_behavior': 'Ego Behavior',
         'scene_type': 'Scene Type',
         'other': 'Other'
     }
     
     # Define the display order (Objects first, then Actor Behavior, then others)
-    category_order = ['object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type', 'other']
+    category_order = ['pv_object_type', 'pv_actor_behavior', 'pv_spatial_relation', 'ego_behavior', 'scene_type', 'other']
     
     # Filter by selected groups if specified
     if selected_groups is not None:
@@ -595,7 +595,7 @@ st.markdown("""
 @st.cache_data
 def load_ground_truth_data(_annotation_file_mtime=None):
     """Load and cache ground truth data. Cache invalidates when file is modified."""
-    annotation_path = project_root / "data" / "annotation" / "video_annotation.csv"
+    annotation_path = project_root / "data" / "annotation" / "unified_annotation.csv"
     if not annotation_path.exists():
         st.error(f"Annotation file not found: {annotation_path}")
         return None
@@ -605,7 +605,7 @@ def load_ground_truth_data(_annotation_file_mtime=None):
 
 def get_ground_truth_data():
     """Get ground truth data with automatic cache invalidation on file changes."""
-    annotation_path = project_root / "data" / "annotation" / "video_annotation.csv"
+    annotation_path = project_root / "data" / "annotation" / "unified_annotation.csv"
     if annotation_path.exists():
         import os
         file_mtime = os.path.getmtime(annotation_path)
@@ -626,7 +626,7 @@ def load_evaluation_results(_annotation_file_mtime=None, quality_threshold=0.0):
 
 def get_evaluation_results(quality_threshold=0.0):
     """Get evaluation results with automatic cache invalidation on annotation file changes."""
-    annotation_path = project_root / "data" / "annotation" / "video_annotation.csv"
+    annotation_path = project_root / "data" / "annotation" / "unified_annotation.csv"
     if annotation_path.exists():
         import os
         file_mtime = os.path.getmtime(annotation_path)
@@ -654,7 +654,7 @@ def load_keyword_evaluation(keywords: List[str], mode: str, _annotation_file_mti
 
 def get_keyword_evaluation(keywords: List[str], mode: str, quality_threshold=0.0):
     """Get keyword evaluation results with automatic cache invalidation."""
-    annotation_path = project_root / "data" / "annotation" / "video_annotation.csv"
+    annotation_path = project_root / "data" / "annotation" / "unified_annotation.csv"
     if annotation_path.exists():
         import os
         file_mtime = os.path.getmtime(annotation_path)
@@ -1113,8 +1113,8 @@ def display_text_search_analysis(ground_truth: GroundTruthProcessor, quality_thr
                         'Video ID': result['slice_id'],
                         'Similarity': f"{result.get('similarity_score', result.get('similarity', 0.0)):.3f}",
                         'Keyword Match': _get_keyword_match_status(result['slice_id'], primary_keywords, ground_truth, selected_semantic_groups, selected_keywords_by_group),
-                        'Objects': ground_truth.get_video_info(result['slice_id']).get('object_type', '')[:50] + 
-                                  ('...' if len(ground_truth.get_video_info(result['slice_id']).get('object_type', '')) > 50 else ''),
+                        'Objects': ground_truth.get_video_info(result['slice_id']).get('pv_object_type', '')[:50] + 
+                                  ('...' if len(ground_truth.get_video_info(result['slice_id']).get('pv_object_type', '')) > 50 else ''),
                         'Scene': ground_truth.get_video_info(result['slice_id']).get('scene_type', '')[:40] + 
                                 ('...' if len(ground_truth.get_video_info(result['slice_id']).get('scene_type', '')) > 40 else ''),
                         'Ego Behavior': ground_truth.get_video_info(result['slice_id']).get('ego_behavior', '')
@@ -1384,8 +1384,8 @@ def display_video_analysis(ground_truth: GroundTruthProcessor, quality_threshold
                     'Video ID': result['slice_id'],
                     'Similarity': f"{result.get('similarity_score', result.get('similarity', 0.0)):.3f}",
                     'Keyword Match': _get_keyword_match_status(result['slice_id'], list(video_info['keywords']), ground_truth, selected_semantic_groups, selected_keywords_by_group),
-                    'Objects': ground_truth.get_video_info(result['slice_id']).get('object_type', '')[:50] + 
-                              ('...' if len(ground_truth.get_video_info(result['slice_id']).get('object_type', '')) > 50 else ''),
+                    'Objects': ground_truth.get_video_info(result['slice_id']).get('pv_object_type', '')[:50] + 
+                              ('...' if len(ground_truth.get_video_info(result['slice_id']).get('pv_object_type', '')) > 50 else ''),
                     'Scene': ground_truth.get_video_info(result['slice_id']).get('scene_type', '')[:40] + 
                             ('...' if len(ground_truth.get_video_info(result['slice_id']).get('scene_type', '')) > 40 else ''),
                     'Ego Behavior': ground_truth.get_video_info(result['slice_id']).get('ego_behavior', '')
@@ -1471,9 +1471,9 @@ def main():
     # Semantic group selection
     st.sidebar.subheader("Semantic Groups")
     available_groups = [
-        ("Objects", "object_type"),
-        ("Actor Behavior", "actor_behavior"),
-        ("Spatial Relation", "spatial_relation"),
+        ("Objects", "pv_object_type"),
+        ("Actor Behavior", "pv_actor_behavior"),
+        ("Spatial Relation", "pv_spatial_relation"),
         ("Ego Behavior", "ego_behavior"),
         ("Scene Type", "scene_type"),
         ("Other", "other")
@@ -1483,7 +1483,7 @@ def main():
         "Select semantic groups to display:",
         options=[group[1] for group in available_groups],
         format_func=lambda x: next(group[0] for group in available_groups if group[1] == x),
-        default=["object_type", "actor_behavior"],
+        default=["pv_object_type", "pv_actor_behavior"],
         help="Choose which semantic categories to show in keyword comparisons. Objects and Actor Behavior are selected by default."
     )
     
@@ -1495,18 +1495,18 @@ def main():
         
         # Define semantic groups with their keywords
         semantic_groups_keywords = {
-            'object_type': ['small vehicle', 'large vehicle', 'bollard', 'stationary object', 'pedestrian', 'motorcyclist', 'bicyclist', 'other', 'unknown'],
-            'actor_behavior': ['entering ego path', 'stationary', 'traveling in same direction', 'traveling in opposite direction', 'straight crossing path', 'oncoming turn across path'],
-            'spatial_relation': ['corridor front', 'corridor behind', 'left adjacent', 'right adjacent', 'left adjacent front', 'left adjacent behind', 'right adjacent front', 'right adjacent behind', 'left split', 'right split', 'left split front', 'left split behind', 'right split front', 'right split behind'],
+            'pv_object_type': ['small vehicle', 'large vehicle', 'bollard', 'stationary object', 'pedestrian', 'motorcyclist', 'bicyclist', 'other', 'unknown'],
+            'pv_actor_behavior': ['entering ego path', 'stationary', 'traveling in same direction', 'traveling in opposite direction', 'straight crossing path', 'oncoming turn across path'],
+            'pv_spatial_relation': ['corridor front', 'corridor behind', 'left adjacent', 'right adjacent', 'left adjacent front', 'left adjacent behind', 'right adjacent front', 'right adjacent behind', 'left split', 'right split', 'left split front', 'left split behind', 'right split front', 'right split behind'],
             'ego_behavior': ['ego turning', 'proceeding straight', 'ego lane change'],
             'scene_type': ['test track', 'parking lot/depot', 'intersection', 'non-intersection', 'crosswalk', 'highway', 'urban', 'bridge/tunnel', 'curved road', 'positive road grade', 'negative road grade', 'street parked vehicle', 'vulnerable road user present', 'nighttime', 'daytime', 'rainy', 'sunny', 'overcast', 'other']
         }
         
         # Group display names
         group_display_names = {
-            'object_type': 'Objects',
-            'actor_behavior': 'Actor Behavior',
-            'spatial_relation': 'Spatial Relation',
+            'pv_object_type': 'Objects',
+            'pv_actor_behavior': 'Actor Behavior',
+            'pv_spatial_relation': 'Spatial Relation',
             'ego_behavior': 'Ego Behavior',
             'scene_type': 'Scene Type',
             'other': 'Other'

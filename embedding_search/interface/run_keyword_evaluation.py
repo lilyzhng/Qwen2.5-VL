@@ -77,7 +77,7 @@ def print_video_to_video_results(results, keywords):
 
 def list_available_keywords():
     """List all available keywords in the annotation file."""
-    annotation_path = project_root / "data" / "annotation" / "video_annotation.csv"
+    annotation_path = project_root / "data" / "annotation" / "unified_annotation.csv"
     if not annotation_path.exists():
         print(f"❌ Annotation file not found: {annotation_path}")
         return

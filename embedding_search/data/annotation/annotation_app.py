@@ -29,7 +29,7 @@ def load_annotation_data():
     # Load from unified parquet file (updated in-place with videos and gifs)
     project_root = get_project_root()
     parquet_file = project_root / "data" / "unified_input_path.parquet"
-    annotation_csv = project_root / "data" / "annotation" / "video_annotation.csv"
+    annotation_csv = project_root / "data" / "annotation" / "unified_annotation.csv"
     
     if not os.path.exists(parquet_file):
         st.error(f"Parquet file not found: {parquet_file}")
@@ -50,22 +50,22 @@ def load_annotation_data():
             existing_annotations = pd.read_csv(annotation_csv)
             
             # Merge annotations based on slice_id
-            df = df.merge(existing_annotations[['slice_id', 'object_type', 'actor_behavior', 
-                                             'spatial_relation', 'ego_behavior', 'scene_type']], 
+            df = df.merge(existing_annotations[['slice_id', 'pv_object_type', 'pv_actor_behavior', 
+                                             'pv_spatial_relation', 'ego_behavior', 'scene_type']], 
                          on='slice_id', how='left')
         except Exception as e:
             st.warning(f"Could not load existing annotations: {e}")
             # Add empty annotation columns
-            for col in ['object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']:
+            for col in ['pv_object_type', 'pv_actor_behavior', 'pv_spatial_relation', 'ego_behavior', 'scene_type']:
                 df[col] = ''
     else:
         # Add empty annotation columns
-        for col in ['object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']:
+        for col in ['pv_object_type', 'pv_actor_behavior', 'pv_spatial_relation', 'ego_behavior', 'scene_type']:
             df[col] = ''
     
     # Filter for videos with empty semantic group annotations (needing annotation)
     # Check if any of the semantic group columns are empty
-    semantic_columns = ['object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']
+    semantic_columns = ['pv_object_type', 'pv_actor_behavior', 'pv_spatial_relation', 'ego_behavior', 'scene_type']
     
     # Convert semantic columns to string to handle NaN values properly
     for col in semantic_columns:
@@ -137,7 +137,7 @@ def main():
         total_videos = len(full_df)
         
         # Count videos that have annotations in ALL semantic groups (fully annotated)
-        semantic_columns = ['object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']
+        semantic_columns = ['pv_object_type', 'pv_actor_behavior', 'pv_spatial_relation', 'ego_behavior', 'scene_type']
         fully_annotated_mask = True
         for col in semantic_columns:
             if col in full_df.columns:
@@ -199,7 +199,7 @@ def main():
     if not st.session_state.annotations_loaded:
         # Load existing annotations automatically
         project_root = get_project_root()
-        output_file = project_root / "data" / "annotation" / "video_annotation.csv"
+        output_file = project_root / "data" / "annotation" / "unified_annotation.csv"
         if os.path.exists(output_file):
             try:
                 existing_df = pd.read_csv(output_file)
@@ -217,7 +217,7 @@ def main():
                         
                         # Load semantic group annotations
                         annotations = {}
-                        for group_name in ['object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']:
+                        for group_name in ['pv_object_type', 'pv_actor_behavior', 'pv_spatial_relation', 'ego_behavior', 'scene_type']:
                             if group_name in row and pd.notna(row[group_name]) and str(row[group_name]).strip() and str(row[group_name]) != 'nan':
                                 keywords_str = str(row[group_name])
                                 keywords = [k.strip() for k in keywords_str.split(',') if k.strip()]
@@ -233,16 +233,16 @@ def main():
     
     # Semantic groups with their respective keywords
     semantic_groups = {
-        'object_type': [
+        'pv_object_type': [
             "small vehicle", "large vehicle", "bollard", "stationary object", 
             "pedestrian", "motorcyclist", "bicyclist", "other", "unknown"
         ],
-        'actor_behavior': [
+        'pv_actor_behavior': [
             "entering ego path", "stationary", "traveling in same direction", 
             "traveling in opposite direction", "straight crossing path", 
             "oncoming turn across path"
         ],
-        'spatial_relation': [
+        'pv_spatial_relation': [
             "corridor front", "corridor behind", "left adjacent", "right adjacent",
             "left adjacent front", "left adjacent behind", "right adjacent front", 
             "right adjacent behind", "left split", "right split", "left split front",
@@ -312,7 +312,7 @@ def main():
         
         with col_save:
             project_root = get_project_root()
-            output_file = project_root / "data" / "annotation" / "video_annotation.csv"
+            output_file = project_root / "data" / "annotation" / "unified_annotation.csv"
             if st.button("💾 Save", type="primary", help="Save all annotations to CSV"):
                 # Create annotations dataframe with all video data including span information
                 save_df = full_df.copy()
@@ -327,7 +327,7 @@ def main():
                     original_idx = df.iloc[idx]['original_index']
                     
                     # Only update semantic group columns that have new annotations
-                    for group_name in ['object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']:
+                    for group_name in ['pv_object_type', 'pv_actor_behavior', 'pv_spatial_relation', 'ego_behavior', 'scene_type']:
                         if group_name in annotations:  # Only update if this group was annotated
                             group_keywords = annotations.get(group_name, [])
                             if isinstance(group_keywords, str):
@@ -339,7 +339,7 @@ def main():
                 
                 # Save with all columns including span information
                 columns_to_save = ['slice_id', 'video_path', 'gif_path', 'span_start', 'span_end', 'category',
-                                 'object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']
+                                 'pv_object_type', 'pv_actor_behavior', 'pv_spatial_relation', 'ego_behavior', 'scene_type']
                 save_columns = [col for col in columns_to_save if col in save_df.columns]
                 save_df_subset = save_df[save_columns]
                 
@@ -484,7 +484,7 @@ def main():
     
     if st.button("📥 Load Previous Annotations"):
         project_root = get_project_root()
-        output_file = project_root / "data" / "annotation" / "video_annotation.csv"
+        output_file = project_root / "data" / "annotation" / "unified_annotation.csv"
         if os.path.exists(output_file):
             try:
                 existing_df = pd.read_csv(output_file)
@@ -502,7 +502,7 @@ def main():
                         
                         # Load semantic group annotations
                         annotations = {}
-                        for group_name in ['object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']:
+                        for group_name in ['pv_object_type', 'pv_actor_behavior', 'pv_spatial_relation', 'ego_behavior', 'scene_type']:
                             if group_name in row and pd.notna(row[group_name]) and str(row[group_name]).strip() and str(row[group_name]) != 'nan':
                                 keywords_str = str(row[group_name])
                                 keywords = [k.strip() for k in keywords_str.split(',') if k.strip()]

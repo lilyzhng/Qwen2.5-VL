@@ -3,7 +3,7 @@
 Recall Evaluation Framework for Video Search System.
 
 This module implements comprehensive recall measurement using the annotated ground truth
-from video_annotation.csv to evaluate the performance of video-to-video and text-to-video
+from unified_annotation.csv to evaluate the performance of video-to-video and text-to-video
 search capabilities.
 """
 
@@ -72,7 +72,7 @@ class GroundTruthProcessor:
             keywords = set()
             
             # Define the semantic columns to extract keywords from
-            semantic_columns = ['object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']
+            semantic_columns = ['pv_object_type', 'pv_actor_behavior', 'pv_spatial_relation', 'ego_behavior', 'scene_type']
             
             for col in semantic_columns:
                 if col in row and pd.notna(row[col]) and str(row[col]).strip():
@@ -96,16 +96,16 @@ class GroundTruthProcessor:
     def _build_semantic_groups(self):
         """Build semantic groups for related concepts."""
         # Define semantic groupings
-        object_type = ['small vehicle', 'large vehicle', 'bollard', 'stationary object', 'pedestrian', 'motorcyclist', 'bicyclist', 'other', 'unknown']
-        actor_behavior = ['entering ego path', 'stationary', 'traveling in same direction', 'traveling in opposite direction', 'straight crossing path', 'oncoming turn across path']
-        spatial_relation = ['corridor front', 'corridor behind', 'left adjacent', 'right adjacent', 'left adjacent front', 'left adjacent behind', 'right adjacent front', 'right adjacent behind', 'left split', 'right split', 'left split front', 'left split behind', 'right split front', 'right split behind']
+        pv_object_type = ['small vehicle', 'large vehicle', 'bollard', 'stationary object', 'pedestrian', 'motorcyclist', 'bicyclist', 'other', 'unknown']
+        pv_actor_behavior = ['entering ego path', 'stationary', 'traveling in same direction', 'traveling in opposite direction', 'straight crossing path', 'oncoming turn across path']
+        pv_spatial_relation = ['corridor front', 'corridor behind', 'left adjacent', 'right adjacent', 'left adjacent front', 'left adjacent behind', 'right adjacent front', 'right adjacent behind', 'left split', 'right split', 'left split front', 'left split behind', 'right split front', 'right split behind']
         ego_behavior = ['ego turning', 'proceeding straight', 'ego lane change']
         scene_type = ['test track', 'parking lot/depot', 'intersection', 'non-intersection', 'crosswalk', 'highway', 'urban',  'bridge/tunnel', 'curved road', 'positive road grade', 'negative road grade', 'street parked vehicle', 'vulnerable road user present', 'nighttime', 'daytime', 'rainy', 'sunny', 'overcast', 'other']
 
         self.semantic_groups = {
-            'object_type': object_type,
-            'actor_behavior': actor_behavior,
-            'spatial_relation': spatial_relation,
+            'pv_object_type': pv_object_type,
+            'pv_actor_behavior': pv_actor_behavior,
+            'pv_spatial_relation': pv_spatial_relation,
             'ego_behavior': ego_behavior,
             'scene_type': scene_type
         }
@@ -198,12 +198,12 @@ class GroundTruthProcessor:
         row = self.annotations_df[self.annotations_df['slice_id'] == video_id].iloc[0]
         return {
             'slice_id': video_id,
-            'video_path': row['video_path'],
-            'gif_path': row['gif_path'],
+            'video_path': row.get('video_path', '') if pd.notna(row.get('video_path', '')) else '',
+            'gif_path': row.get('gif_path', '') if pd.notna(row.get('gif_path', '')) else '',
             'keywords': list(self.video_to_keywords[video_id]),
-            'object_type': row.get('object_type', '') if pd.notna(row.get('object_type', '')) else '',
-            'actor_behavior': row.get('actor_behavior', '') if pd.notna(row.get('actor_behavior', '')) else '',
-            'spatial_relation': row.get('spatial_relation', '') if pd.notna(row.get('spatial_relation', '')) else '',
+            'pv_object_type': row.get('pv_object_type', '') if pd.notna(row.get('pv_object_type', '')) else '',
+            'pv_actor_behavior': row.get('pv_actor_behavior', '') if pd.notna(row.get('pv_actor_behavior', '')) else '',
+            'pv_spatial_relation': row.get('pv_spatial_relation', '') if pd.notna(row.get('pv_spatial_relation', '')) else '',
             'ego_behavior': row.get('ego_behavior', '') if pd.notna(row.get('ego_behavior', '')) else '',
             'scene_type': row.get('scene_type', '') if pd.notna(row.get('scene_type', '')) else ''
         }
@@ -577,6 +577,80 @@ class RecallEvaluator:
         return report
 
 
+def create_joint_dataframe(embeddings_parquet_path: str = None, annotation_csv_path: str = None, force_rebuild: bool = False) -> pd.DataFrame:
+    """
+    Create a joint dataframe by merging unified_embeddings.parquet with unified_annotation.csv.
+    
+    Args:
+        embeddings_parquet_path: Path to unified embeddings parquet file
+        annotation_csv_path: Path to annotation CSV file
+        force_rebuild: If True, rebuild even if unified_joint.parquet exists
+        
+    Returns:
+        Joint dataframe with embeddings and annotations merged on slice_id
+    """
+    if embeddings_parquet_path is None:
+        embeddings_parquet_path = str(project_root / "data" / "unified_embeddings.parquet")
+    
+    if annotation_csv_path is None:
+        annotation_csv_path = str(project_root / "data" / "annotation" / "unified_annotation.csv")
+    
+    output_path = project_root / "data" / "unified_joint.parquet"
+    
+    # Check if we can use existing unified_joint.parquet
+    if not force_rebuild and output_path.exists():
+        try:
+            # Check if unified_joint.parquet is newer than source files
+            joint_mtime = output_path.stat().st_mtime
+            embeddings_mtime = Path(embeddings_parquet_path).stat().st_mtime
+            annotations_mtime = Path(annotation_csv_path).stat().st_mtime
+            
+            if joint_mtime > embeddings_mtime and joint_mtime > annotations_mtime:
+                logger.info(f"📁 Loading existing joint dataframe from: {output_path}")
+                joint_df = pd.read_parquet(output_path)
+                logger.info(f"✅ Loaded existing joint dataframe with {len(joint_df)} records")
+                return joint_df
+            else:
+                logger.info("🔄 Source files are newer than unified_joint.parquet, rebuilding...")
+        except Exception as e:
+            logger.warning(f"Could not load existing joint dataframe: {e}, rebuilding...")
+    
+    logger.info(f"Creating joint dataframe from:")
+    logger.info(f"  Embeddings: {embeddings_parquet_path}")
+    logger.info(f"  Annotations: {annotation_csv_path}")
+    
+    # Load embeddings data
+    if not Path(embeddings_parquet_path).exists():
+        raise FileNotFoundError(f"Embeddings file not found: {embeddings_parquet_path}")
+    
+    embeddings_df = pd.read_parquet(embeddings_parquet_path)
+    logger.info(f"Loaded {len(embeddings_df)} embeddings")
+    
+    # Load annotation data
+    if not Path(annotation_csv_path).exists():
+        raise FileNotFoundError(f"Annotation file not found: {annotation_csv_path}")
+    
+    annotations_df = pd.read_csv(annotation_csv_path)
+    logger.info(f"Loaded {len(annotations_df)} annotations")
+    
+    # Merge on slice_id (inner join to only include annotated videos)
+    joint_df = pd.merge(embeddings_df, annotations_df, on='slice_id', how='inner', suffixes=('', '_annotation'))
+    
+    # Remove duplicate columns (keep the embeddings version for paths)
+    if 'video_path_annotation' in joint_df.columns:
+        joint_df = joint_df.drop('video_path_annotation', axis=1)
+    
+    logger.info(f"Created joint dataframe with {len(joint_df)} records")
+    logger.info(f"Joint dataframe columns: {list(joint_df.columns)}")
+    
+    # Save joint dataframe as unified_joint.parquet
+    output_path = project_root / "data" / "unified_joint.parquet"
+    joint_df.to_parquet(output_path, index=False)
+    logger.info(f"💾 Saved joint dataframe to: {output_path}")
+    
+    return joint_df
+
+
 def run_recall_evaluation(annotation_csv_path: str = None, search_engine: VideoSearchEngine = None, quality_threshold: float = 0.0) -> Dict[str, Any]:
     """
     Run complete recall evaluation and return results.
@@ -590,17 +664,28 @@ def run_recall_evaluation(annotation_csv_path: str = None, search_engine: VideoS
     """
     if annotation_csv_path is None:
         # Default to project annotation file
-        annotation_csv_path = str(project_root / "data" / "annotation" / "video_annotation.csv")
+        annotation_csv_path = str(project_root / "data" / "annotation" / "unified_annotation.csv")
     
     if search_engine is None:
         config = VideoRetrievalConfig()
         search_engine = VideoSearchEngine(config=config)
+    
+    # Create joint dataframe before evaluation
+    try:
+        joint_df = create_joint_dataframe(annotation_csv_path=annotation_csv_path)
+        logger.info("✅ Successfully created joint dataframe for evaluation")
+    except Exception as e:
+        logger.error(f"❌ Failed to create joint dataframe: {e}")
+        raise
     
     # Initialize ground truth processor
     ground_truth = GroundTruthProcessor(annotation_csv_path)
     
     # Initialize evaluator
     evaluator = RecallEvaluator(search_engine, ground_truth)
+    
+    # Store joint dataframe in evaluator for potential use
+    evaluator.joint_df = joint_df
     
     # Generate comprehensive report
     report = evaluator.generate_comprehensive_report(k_values=[1, 3, 5], quality_threshold=quality_threshold)
@@ -624,14 +709,19 @@ def run_text_to_video_evaluation(keywords: List[str] = None, k_values: List[int]
         Text-to-video evaluation results
     """
     if annotation_csv_path is None:
-        annotation_csv_path = str(project_root / "data" / "annotation" / "video_annotation.csv")
+        annotation_csv_path = str(project_root / "data" / "annotation" / "unified_annotation.csv")
     
     if search_engine is None:
         config = VideoRetrievalConfig()
         search_engine = VideoSearchEngine(config=config)
     
+    # Create joint dataframe
+    joint_df = create_joint_dataframe(annotation_csv_path=annotation_csv_path)
+    logger.info("✅ Created joint dataframe for text-to-video evaluation")
+    
     ground_truth = GroundTruthProcessor(annotation_csv_path)
     evaluator = RecallEvaluator(search_engine, ground_truth)
+    evaluator.joint_df = joint_df
     
     # Filter keywords if specified
     if keywords is not None:
@@ -708,14 +798,19 @@ def run_video_to_video_evaluation(keywords: List[str] = None, k_values: List[int
         Video-to-video evaluation results
     """
     if annotation_csv_path is None:
-        annotation_csv_path = str(project_root / "data" / "annotation" / "video_annotation.csv")
+        annotation_csv_path = str(project_root / "data" / "annotation" / "unified_annotation.csv")
     
     if search_engine is None:
         config = VideoRetrievalConfig()
         search_engine = VideoSearchEngine(config=config)
     
+    # Create joint dataframe
+    joint_df = create_joint_dataframe(annotation_csv_path=annotation_csv_path)
+    logger.info("✅ Created joint dataframe for video-to-video evaluation")
+    
     ground_truth = GroundTruthProcessor(annotation_csv_path)
     evaluator = RecallEvaluator(search_engine, ground_truth)
+    evaluator.joint_df = joint_df
     
     # Filter videos by keywords if specified
     target_videos = None
@@ -854,10 +949,10 @@ if __name__ == '__main__':
     print("=" * 50)
     
     # Check if annotation file exists
-    annotation_path = project_root / "data" / "annotation" / "video_annotation.csv"
+    annotation_path = project_root / "data" / "annotation" / "unified_annotation.csv"
     if not annotation_path.exists():
         print(f"❌ Annotation file not found: {annotation_path}")
-        print("Please ensure the video_annotation.csv file exists.")
+        print("Please ensure the unified_annotation.csv file exists.")
         sys.exit(1)
     
     try:

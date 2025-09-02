@@ -24,8 +24,8 @@ echo "📁 Project root: ${PROJECT_ROOT}"
 cd "${PROJECT_ROOT}"
 
 # Check if annotation file exists
-if [ ! -f "data/annotation/video_annotation.csv" ]; then
-    echo "❌ Error: Annotation file not found: data/annotation/video_annotation.csv"
+if [ ! -f "data/annotation/unified_annotation.csv" ]; then
+    echo "❌ Error: Annotation file not found: data/annotation/unified_annotation.csv"
     echo "Please ensure the annotation file exists before running the analysis."
     exit 1
 fi
@@ -39,6 +39,34 @@ if [ ! -f "data/unified_embeddings.parquet" ]; then
 fi
 
 echo "✅ Prerequisites check passed"
+echo ""
+
+# Create joint dataframe from embeddings and annotations
+echo "🔗 Creating joint dataframe from embeddings and annotations..."
+echo "   This will create data/unified_joint.parquet for future use..."
+python -c "
+import sys
+sys.path.insert(0, '.')
+from core.evaluate import create_joint_dataframe
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+
+try:
+    joint_df = create_joint_dataframe()
+    print(f'✅ Successfully created joint dataframe with {len(joint_df)} records')
+    annotation_cols = [col for col in joint_df.columns if col in ['pv_object_type', 'pv_actor_behavior', 'pv_spatial_relation', 'ego_behavior', 'scene_type']]
+    print(f'📊 Available annotation columns: {annotation_cols}')
+except Exception as e:
+    print(f'❌ Failed to create joint dataframe: {e}')
+    sys.exit(1)
+"
+
+if [ $? -ne 0 ]; then
+    echo "❌ Failed to create joint dataframe. Exiting..."
+    exit 1
+fi
+
 echo ""
 echo "🚀 Starting Streamlit app..."
 echo "📊 The dashboard will be available at: http://localhost:8502"

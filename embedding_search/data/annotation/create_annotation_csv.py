@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Script to create a CSV annotation template for manual scene description annotation.
-This will be used to create ground truth for recall evaluation.
+This reads from unified_embeddings.parquet and creates unified_embedding_annotation.csv
+for ground truth recall evaluation.
 """
 
 import pandas as pd
@@ -16,14 +17,14 @@ def get_project_root():
     return current_dir.parent.parent
 
 def create_annotation_csv():
-    """Create CSV template for manual annotation of video scenes."""
+    """Create CSV and parquet templates for manual annotation of video scenes from unified embeddings."""
     
     # File paths
     project_root = get_project_root()
-    input_file = project_root / "data" / "unified_input_path.parquet"
-    output_file = project_root / "data" / "annotation" / "video_annotation.csv"
+    input_file = project_root / "data" / "unified_embeddings.parquet"
+    output_csv_file = project_root / "data" / "annotation" / "unified_annotation.csv"
     
-    print("📋 Creating annotation CSV template...")
+    print("📋 Creating annotation CSV and parquet templates...")
     print(f"Reading from: {input_file}")
     
     if not os.path.exists(input_file):
@@ -41,45 +42,51 @@ def create_annotation_csv():
         print(f"\nSample data:")
         print(df.head())
         
-        # Create annotation template
-        annotation_df = pd.DataFrame()
+        # Create annotation template starting with all columns from unified_embeddings.parquet
+        annotation_df = df.copy()
         
-        # Add slice_id as the primary identifier
-        if 'slice_id' in df.columns:
-            annotation_df['slice_id'] = df['slice_id']
-        else:
+        # Verify slice_id exists
+        if 'slice_id' not in df.columns:
             print("❌ 'slice_id' column not found")
             return
         
-        # Add full video path for reference
-        annotation_df['video_path'] = df['sensor_video_file']
-        
-        # Add GIF path if available (for easier viewing during annotation)
-        if 'gif_path' in df.columns:
-            annotation_df['gif_path'] = df['gif_path']
-        
-        # Add separate columns for each semantic group
-        annotation_df['object_type'] = ''
-        annotation_df['actor_behavior'] = ''
-        annotation_df['spatial_relation'] = ''
+        # Add separate columns for each semantic group (for manual annotation)
+        annotation_df['pv_object_type'] = ''
+        annotation_df['pv_actor_behavior'] = ''
+        annotation_df['pv_spatial_relation'] = ''
         annotation_df['ego_behavior'] = ''
         annotation_df['scene_type'] = ''
         
         # Sort by slice_id for easier annotation
         annotation_df = annotation_df.sort_values('slice_id').reset_index(drop=True)
         
-        # Save to CSV
-        annotation_df.to_csv(output_file, index=False)
+        # Save to both CSV (for easy editing) and parquet (for later use)
+        # For CSV: Remove embedding and thumbnail columns as they can't be saved to CSV
+        csv_df = annotation_df.copy()
+        if 'embedding' in csv_df.columns:
+            csv_df = csv_df.drop('embedding', axis=1)
+            print("ℹ️  Removed 'embedding' column from CSV (not suitable for CSV format)")
+        if 'thumbnail' in csv_df.columns:
+            csv_df = csv_df.drop('thumbnail', axis=1)
+            print("ℹ️  Removed 'thumbnail' column from CSV (binary data not suitable for CSV)")
         
-        print(f"✅ Created annotation template: {output_file}")
+        csv_df.to_csv(output_csv_file, index=False)
+        
+        print(f"✅ Created annotation template CSV: {output_csv_file}")
         print(f"📊 Template contains {len(annotation_df)} videos to annotate")
         
-        # Show sample of the template
-        print(f"\n📋 Sample annotation template:")
-        print(annotation_df[['slice_id', 'object_type', 'actor_behavior', 'spatial_relation', 'ego_behavior', 'scene_type']].head(5))
+        # Show sample of the template (key columns)
+        print(f"\n📋 Sample annotation template (key columns):")
+        display_cols = ['slice_id', 'video_path', 'gif_path', 'pv_object_type', 'pv_actor_behavior', 'pv_spatial_relation', 'ego_behavior', 'scene_type']
+        available_display_cols = [col for col in display_cols if col in annotation_df.columns]
+        print(annotation_df[available_display_cols].head(3))
+        
+        print(f"\n📊 All columns in the annotation file:")
+        print(f"Total columns: {len(annotation_df.columns)}")
+        print(f"Columns: {list(annotation_df.columns)}")
         
         # Print instructions
-        print_annotation_instructions(output_file)
+        print_annotation_instructions(output_csv_file)
         
         return annotation_df
         
@@ -141,79 +148,20 @@ def print_annotation_instructions(csv_file):
    - Use GIF files (if available) for easier viewing during annotation
 
 📋 EXAMPLE ANNOTATION:
-   object_type: "pedestrian"
-   actor_behavior: "entering ego path"
-   spatial_relation: "corridor front"
+   pv_object_type: "pedestrian"
+   pv_actor_behavior: "entering ego path"
+   pv_spatial_relation: "corridor front"
    ego_behavior: "proceeding straight"
    scene_type: "intersection, daytime"
     """)
     
     print("="*80)
 
-def create_sample_annotations():
-    """Create a few sample annotations to show the expected format."""
-    
-    sample_data = {
-        'slice_id': [
-            'car2cyclist_1.mp4',
-            'car2cyclist_2.mp4',
-            'car2ped_1.mp4', 
-            'car2car_1.mp4'
-        ],
-        'video_path': [
-            '/path/to/car2cyclist_1.mp4',
-            '/path/to/car2cyclist_2.mp4',
-            '/path/to/car2ped_1.mp4',
-            '/path/to/car2car_1.mp4'
-        ],
-        'object_type': [
-            'bicyclist',
-            'bicyclist',
-            'pedestrian',
-            'small vehicle'
-        ],
-        'actor_behavior': [
-            'traveling in same direction',
-            'entering ego path',
-            'straight crossing path',
-            'traveling in same direction'
-        ],
-        'spatial_relation': [
-            'corridor front',
-            'left adjacent',
-            'corridor front',
-            'right adjacent'
-        ],
-        'ego_behavior': [
-            'proceeding straight',
-            'ego lane change',
-            'proceeding straight',
-            'proceeding straight'
-        ],
-        'scene_type': [
-            'non-intersection, daytime',
-            'intersection, daytime',
-            'crosswalk, daytime',
-            'highway, daytime'
-        ]
-    }
-    
-    sample_df = pd.DataFrame(sample_data)
-    project_root = get_project_root()
-    sample_file = project_root / "data" / "annotation" / "annotation_example.csv"
-    sample_df.to_csv(sample_file, index=False)
-    
-    print(f"\n📋 Created sample annotation file: {sample_file}")
-    print("Use this as a reference for annotation format:")
-    print(sample_df.to_string(index=False))
-
 if __name__ == "__main__":
     # Create the annotation template
     result = create_annotation_csv()
     
     if result is not None:
-        # Create sample annotations for reference
-        create_sample_annotations()
         
         print(f"\n🎉 Ready for annotation!")
         print(f"📝 Edit the CSV file to add your scene descriptions")

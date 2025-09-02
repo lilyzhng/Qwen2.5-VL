@@ -21,10 +21,10 @@ def main():
     print("=" * 50)
     
     # Check if annotation file exists
-    annotation_path = project_root / "data" / "annotation" / "video_annotation.csv"
+    annotation_path = project_root / "data" / "annotation" / "unified_annotation.csv"
     if not annotation_path.exists():
         print(f"❌ Annotation file not found: {annotation_path}")
-        print("Please ensure the video_annotation.csv file exists.")
+        print("Please ensure the unified_annotation.csv file exists.")
         return 1
     
     try:
