@@ -302,22 +302,33 @@ class ClipPreprocessor:
                         logger.error(f"No frames found in range {start_frame}-{end_frame} for {zip_path}")
                         return False
                     
-                    # Extract selected frames to temp directory
-                    for i, frame_file in enumerate(selected_frames):
-                        # Create sequential filename for FFmpeg
-                        frame_name = f"frame_{i:05d}{Path(frame_file).suffix}"
-                        frame_path = temp_path / frame_name
+                    # Extract selected frames to temp directory using original filenames
+                    extracted_filenames = []
+                    for frame_file in selected_frames:
+                        # Use the original filename from the zip
+                        original_filename = Path(frame_file).name
+                        frame_path = temp_path / original_filename
                         
                         with zip_file.open(frame_file) as src, open(frame_path, 'wb') as dst:
                             dst.write(src.read())
+                        
+                        extracted_filenames.append(original_filename)
                 
-                # Use FFmpeg to create video from frames
-                frame_pattern = str(temp_path / "frame_%05d.jpg")  # Assume jpg, adjust if needed
+                # Create a text file listing all frame files for FFmpeg concat demuxer
+                concat_file = temp_path / "frame_list.txt"
+                with open(concat_file, 'w') as f:
+                    for filename in extracted_filenames:
+                        f.write(f"file '{filename}'\n")
+                        f.write(f"duration {1/self.fps}\n")  # Duration per frame
+                    # Add the last frame again to ensure proper duration
+                    if extracted_filenames:
+                        f.write(f"file '{extracted_filenames[-1]}'\n")
                 
                 cmd = [
                     'ffmpeg',
-                    '-framerate', str(self.fps),
-                    '-i', frame_pattern,
+                    '-f', 'concat',
+                    '-safe', '0',
+                    '-i', str(concat_file),
                     '-c:v', 'libx264',
                     '-preset', 'fast',
                     '-crf', '23',
@@ -356,8 +367,8 @@ class ClipPreprocessor:
             New slice_id with format: <original_slice_id>_<start>_<end>
         """
         # Format times as 4-digit integers (e.g., 0020, 0040)
-        start_str = f"{start_time:04d}"
-        end_str = f"{end_time:04d}"
+        start_str = f"{int(start_time):04d}"
+        end_str = f"{int(end_time):04d}"
         
         # Remove file extension if present
         base_id = original_slice_id
