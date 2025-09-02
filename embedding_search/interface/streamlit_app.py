@@ -965,14 +965,14 @@ def get_gif_path_from_result(video_info: Dict) -> Optional[str]:
     Returns:
         GIF file path or None if not available
     """
-    # First check if gif_file is directly available in video_info
-    gif_path = video_info.get('gif_file', '')
+    # First check if gif_path is directly available in video_info
+    gif_path = video_info.get('gif_path', '')
     if gif_path and os.path.exists(gif_path):
         return gif_path
     
     # Check in metadata
     metadata = video_info.get('metadata', {})
-    gif_path = metadata.get('gif_file', '')
+    gif_path = metadata.get('gif_path', '')
     if gif_path and os.path.exists(gif_path):
         return gif_path
     
@@ -991,7 +991,7 @@ def get_input_gif_path(slice_id: str, search_engine) -> Optional[str]:
         GIF file path or None if not available
     """
     try:
-        # Load unified embeddings parquet file to get gif_file path
+        # Load unified embeddings parquet file to get gif_path path
         from pathlib import Path
         project_root = Path(__file__).parent.parent
         unified_embeddings_path = project_root / "data" / "unified_embeddings.parquet"
@@ -1003,14 +1003,14 @@ def get_input_gif_path(slice_id: str, search_engine) -> Optional[str]:
             # Look for the slice_id in the dataframe
             matching_rows = df[df['slice_id'] == slice_id]
             if not matching_rows.empty:
-                gif_path = matching_rows.iloc[0].get('gif_file', '')
+                gif_path = matching_rows.iloc[0].get('gif_path', '')
                 if gif_path and os.path.exists(gif_path):
                     logger.info(f"Found GIF in unified embeddings: {gif_path}")
                     return gif_path
                 elif gif_path:
                     logger.warning(f"GIF path exists in database but file not found: {gif_path}")
                 else:
-                    logger.warning(f"No gif_file entry for slice_id: {slice_id}")
+                    logger.warning(f"No gif_path entry for slice_id: {slice_id}")
             else:
                 logger.warning(f"slice_id not found in unified embeddings: {slice_id}")
         else:

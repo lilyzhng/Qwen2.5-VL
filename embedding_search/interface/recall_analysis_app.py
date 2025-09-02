@@ -778,9 +778,14 @@ def display_detailed_results(results: Dict[str, Any], result_type: str):
     
     detailed_results = data['detailed_results']
     
+    # Debug: Check the structure of detailed_results
+    if not detailed_results:
+        st.warning(f"No detailed results found for {result_type}")
+        return
+    
     # Convert to DataFrame for better display
     df_data = []
-    for result in detailed_results:
+    for i, result in enumerate(detailed_results):
         if result_type == 'video_to_video':
             query_id = result['query_video']
             query_info = f"Keywords: {', '.join(result['query_keywords'])}"
@@ -788,20 +793,47 @@ def display_detailed_results(results: Dict[str, Any], result_type: str):
             query_id = result['query_text']
             query_info = f"Relevant videos: {result['relevant_count']}"
         
-        recalls = result['recalls']
+        recalls = result.get('recalls', {})
         retrieved_ids = result.get('retrieved_ids', [])
+        
+        # Debug: Check recalls structure for first few items (can be removed after debugging)
+        # if i < 3:
+        #     st.write(f"Debug - Result {i}: recalls = {recalls}, type = {type(recalls)}")
+        
+        # Handle different recall data formats
+        if isinstance(recalls, dict):
+            recall_1 = recalls.get(1, recalls.get('recall@1', recalls.get('1', 0)))
+            recall_3 = recalls.get(3, recalls.get('recall@3', recalls.get('3', 0)))
+            recall_5 = recalls.get(5, recalls.get('recall@5', recalls.get('5', 0)))
+        else:
+            # If recalls is not a dict, set defaults
+            recall_1 = recall_3 = recall_5 = 0
+            if i == 0:  # Only show this warning once
+                st.warning(f"Unexpected recalls format: {type(recalls)}. Using default values.")
         
         df_data.append({
             'Query': query_id,
             'Query Info': query_info,
-            'Relevant Count': result['relevant_count'],
-            'Recall@1': recalls.get(1, recalls.get('recall@1', 0)),
-            'Recall@3': recalls.get(3, recalls.get('recall@3', 0)),
-            'Recall@5': recalls.get(5, recalls.get('recall@5', 0)),
+            'Relevant Count': result.get('relevant_count', 0),
+            'Recall@1': recall_1,
+            'Recall@3': recall_3,
+            'Recall@5': recall_5,
             'Top Retrieved': ', '.join(retrieved_ids[:3]) if retrieved_ids else 'None'
         })
     
     df = pd.DataFrame(df_data)
+    
+    # Check if DataFrame is empty or missing expected columns
+    if df.empty:
+        st.warning(f"No data available for {result_type}")
+        return
+    
+    # Check if required columns exist before sorting
+    if 'Recall@1' not in df.columns:
+        st.error(f"Missing 'Recall@1' column in results. Available columns: {list(df.columns)}")
+        st.write("DataFrame content:")
+        st.write(df)
+        return
     
     # Sort by Recall@1 to identify problematic queries
     df = df.sort_values('Recall@1', ascending=True)
@@ -812,20 +844,32 @@ def display_detailed_results(results: Dict[str, Any], result_type: str):
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        avg_r1 = df['Recall@1'].mean()
-        st.metric("Avg Recall@1", f"{avg_r1:.3f}")
+        if 'Recall@1' in df.columns:
+            avg_r1 = df['Recall@1'].mean()
+            st.metric("Avg Recall@1", f"{avg_r1:.3f}")
+        else:
+            st.metric("Avg Recall@1", "N/A")
     
     with col2:
-        avg_r3 = df['Recall@3'].mean()
-        st.metric("Avg Recall@3", f"{avg_r3:.3f}")
+        if 'Recall@3' in df.columns:
+            avg_r3 = df['Recall@3'].mean()
+            st.metric("Avg Recall@3", f"{avg_r3:.3f}")
+        else:
+            st.metric("Avg Recall@3", "N/A")
     
     with col3:
-        avg_r5 = df['Recall@5'].mean()
-        st.metric("Avg Recall@5", f"{avg_r5:.3f}")
+        if 'Recall@5' in df.columns:
+            avg_r5 = df['Recall@5'].mean()
+            st.metric("Avg Recall@5", f"{avg_r5:.3f}")
+        else:
+            st.metric("Avg Recall@5", "N/A")
     
     with col4:
-        zero_recall = (df['Recall@1'] == 0).sum()
-        st.metric("Zero Recall@1", f"{zero_recall}/{len(df)}")
+        if 'Recall@1' in df.columns:
+            zero_recall = (df['Recall@1'] == 0).sum()
+            st.metric("Zero Recall@1", f"{zero_recall}/{len(df)}")
+        else:
+            st.metric("Zero Recall@1", "N/A")
     
     # Show the detailed table
     st.dataframe(
@@ -1045,7 +1089,8 @@ def display_text_search_analysis(ground_truth: GroundTruthProcessor, quality_thr
                                     try:
                                         st.image(str(result_gif_path), width=180, use_container_width=True)
                                     except Exception as e:
-                                        st.write("❌ GIF not available")
+                                        st.write(f"❌ GIF error: {str(e)}")
+                                        st.write(f"📁 Path: {result_gif_path}")
                                 else:
                                     st.write("❌ GIF not available")
                                 
@@ -1269,7 +1314,8 @@ def display_video_analysis(ground_truth: GroundTruthProcessor, quality_threshold
                     try:
                         st.image(str(query_gif_path), width=180, use_container_width=True)
                     except Exception as e:
-                        st.write("❌ GIF not available")
+                        st.write(f"❌ GIF error: {str(e)}")
+                        st.write(f"📁 Path: {query_gif_path}")
                 else:
                     st.write("❌ GIF not available")
                 
@@ -1313,7 +1359,8 @@ def display_video_analysis(ground_truth: GroundTruthProcessor, quality_threshold
                                 try:
                                     st.image(str(result_gif_path), width=180, use_container_width=True)
                                 except Exception as e:
-                                    st.write("❌ GIF not available")
+                                    st.write(f"❌ GIF error: {str(e)}")
+                                    st.write(f"📁 Path: {result_gif_path}")
                             else:
                                 st.write("❌ GIF not available")
                             
@@ -1498,7 +1545,12 @@ def main():
     st.sidebar.subheader("Analysis Mode")
     analysis_mode = st.sidebar.selectbox(
         "Mode",
-        ["📊 Overall Performance", "🏷️ Keyword Analysis", "🎬 Video Search Triage", "📝 Text Search Triage", "📈 Custom Evaluation"]
+        ["📊 Overall Performance", 
+        #  "🏷️ Keyword Analysis", 
+         "🎬 Video Search Triage", 
+         "📝 Text Search Triage", 
+        #  "📈 Custom Evaluation"
+         ]
     )
     
     if analysis_mode == "📊 Overall Performance":
@@ -1561,89 +1613,89 @@ def main():
         with tab2:
             display_detailed_results(results, 'text_to_video')
     
-    elif analysis_mode == "🏷️ Keyword Analysis":
-        st.header("🏷️ Keyword-Specific Analysis")
+    # elif analysis_mode == "🏷️ Keyword Analysis":
+    #     st.header("🏷️ Keyword-Specific Analysis")
         
-        # Keyword selection
-        all_keywords = ground_truth.get_all_keywords()
+    #     # Keyword selection
+    #     all_keywords = ground_truth.get_all_keywords()
         
-        col1, col2 = st.columns([2, 1])
+    #     col1, col2 = st.columns([2, 1])
         
-        with col1:
-            selected_keywords = st.multiselect(
-                "Select keywords to analyze:",
-                all_keywords,
-                default=['urban', 'car2pedestrian']
-            )
+    #     with col1:
+    #         selected_keywords = st.multiselect(
+    #             "Select keywords to analyze:",
+    #             all_keywords,
+    #             default=['urban', 'car2pedestrian']
+    #         )
         
-        with col2:
-            eval_mode = st.selectbox(
-                "Evaluation Mode:",
-                ["both", "text", "video"]
-            )
+    #     with col2:
+    #         eval_mode = st.selectbox(
+    #             "Evaluation Mode:",
+    #             ["both", "text", "video"]
+    #         )
         
-        if selected_keywords:
-            # Load keyword-specific results
-            keyword_results = get_keyword_evaluation(selected_keywords, eval_mode, quality_threshold=global_quality_threshold)
+    #     if selected_keywords:
+    #         # Load keyword-specific results
+    #         keyword_results = get_keyword_evaluation(selected_keywords, eval_mode, quality_threshold=global_quality_threshold)
             
-            if keyword_results:
-                if eval_mode == "both":
-                    # Display both modes
-                    col1, col2 = st.columns(2)
+    #         if keyword_results:
+    #             if eval_mode == "both":
+    #                 # Display both modes
+    #                 col1, col2 = st.columns(2)
                     
-                    with col1:
-                        st.subheader("📝 Text-to-Video")
-                        if 'text' in keyword_results:
-                            text_results = keyword_results['text']
-                            if 'average_recalls' in text_results:
-                                for metric, value in text_results['average_recalls'].items():
-                                    st.metric(metric, f"{value:.3f}")
+    #                 with col1:
+    #                     st.subheader("📝 Text-to-Video")
+    #                     if 'text' in keyword_results:
+    #                         text_results = keyword_results['text']
+    #                         if 'average_recalls' in text_results:
+    #                             for metric, value in text_results['average_recalls'].items():
+    #                                 st.metric(metric, f"{value:.3f}")
                     
-                    with col2:
-                        st.subheader("🎬 Video-to-Video")
-                        if 'video' in keyword_results:
-                            video_results = keyword_results['video']
-                            if 'average_recalls' in video_results:
-                                for metric, value in video_results['average_recalls'].items():
-                                    st.metric(metric, f"{value:.3f}")
+    #                 with col2:
+    #                     st.subheader("🎬 Video-to-Video")
+    #                     if 'video' in keyword_results:
+    #                         video_results = keyword_results['video']
+    #                         if 'average_recalls' in video_results:
+    #                             for metric, value in video_results['average_recalls'].items():
+    #                                 st.metric(metric, f"{value:.3f}")
                 
-                else:
-                    # Display single mode results
-                    if 'average_recalls' in keyword_results:
-                        st.subheader(f"📊 {eval_mode.title()}-to-Video Results")
+    #             else:
+    #                 # Display single mode results
+    #                 if 'average_recalls' in keyword_results:
+    #                     st.subheader(f"📊 {eval_mode.title()}-to-Video Results")
                         
-                        cols = st.columns(len(keyword_results['average_recalls']))
-                        for i, (metric, value) in enumerate(keyword_results['average_recalls'].items()):
-                            with cols[i]:
-                                st.metric(metric, f"{value:.3f}")
+    #                     cols = st.columns(len(keyword_results['average_recalls']))
+    #                     for i, (metric, value) in enumerate(keyword_results['average_recalls'].items()):
+    #                         with cols[i]:
+    #                             st.metric(metric, f"{value:.3f}")
                     
-                    # Show keyword breakdown if available
-                    if 'keyword_breakdown' in keyword_results:
-                        st.subheader("🏷️ Per-Keyword Breakdown")
+    #                 # Show keyword breakdown if available
+    #                 if 'keyword_breakdown' in keyword_results:
+    #                     st.subheader("🏷️ Per-Keyword Breakdown")
                         
-                        breakdown_data = []
-                        for keyword, data in keyword_results['keyword_breakdown'].items():
-                            recalls = data['recalls']
-                            breakdown_data.append({
-                                'Keyword': keyword,
-                                'Relevant Videos': data['relevant_count'],
-                                'Recall@1': recalls.get('recall@1', 0),
-                                'Recall@3': recalls.get('recall@3', 0),
-                                'Recall@5': recalls.get('recall@5', 0)
-                            })
+    #                     breakdown_data = []
+    #                     for keyword, data in keyword_results['keyword_breakdown'].items():
+    #                         recalls = data['recalls']
+    #                         breakdown_data.append({
+    #                             'Keyword': keyword,
+    #                             'Relevant Videos': data['relevant_count'],
+    #                             'Recall@1': recalls.get('recall@1', 0),
+    #                             'Recall@3': recalls.get('recall@3', 0),
+    #                             'Recall@5': recalls.get('recall@5', 0)
+    #                         })
                         
-                        breakdown_df = pd.DataFrame(breakdown_data)
-                        st.dataframe(breakdown_df, use_container_width=True)
+    #                     breakdown_df = pd.DataFrame(breakdown_data)
+    #                     st.dataframe(breakdown_df, use_container_width=True)
                         
-                        # Create chart
-                        fig = px.bar(
-                            breakdown_df,
-                            x='Keyword',
-                            y=['Recall@1', 'Recall@3', 'Recall@5'],
-                            title='Per-Keyword Recall Performance',
-                            barmode='group'
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
+    #                     # Create chart
+    #                     fig = px.bar(
+    #                         breakdown_df,
+    #                         x='Keyword',
+    #                         y=['Recall@1', 'Recall@3', 'Recall@5'],
+    #                         title='Per-Keyword Recall Performance',
+    #                         barmode='group'
+    #                     )
+    #                     st.plotly_chart(fig, use_container_width=True)
     
     elif analysis_mode == "🎬 Video Search Triage":
         display_video_analysis(ground_truth, quality_threshold=global_quality_threshold, selected_semantic_groups=selected_semantic_groups, selected_keywords_by_group=selected_keywords_by_group)
@@ -1651,50 +1703,50 @@ def main():
     elif analysis_mode == "📝 Text Search Triage":
         display_text_search_analysis(ground_truth, quality_threshold=global_quality_threshold, selected_semantic_groups=selected_semantic_groups, selected_keywords_by_group=selected_keywords_by_group)
     
-    elif analysis_mode == "📈 Custom Evaluation":
-        st.header("📈 Custom Evaluation")
+    # elif analysis_mode == "📈 Custom Evaluation":
+    #     st.header("📈 Custom Evaluation")
         
-        col1, col2 = st.columns(2)
+    #     col1, col2 = st.columns(2)
         
-        with col1:
-            custom_keywords = st.text_input(
-                "Enter keywords (comma-separated):",
-                placeholder="urban, highway, car2pedestrian"
-            )
+    #     with col1:
+    #         custom_keywords = st.text_input(
+    #             "Enter keywords (comma-separated):",
+    #             placeholder="urban, highway, car2pedestrian"
+    #         )
         
-        with col2:
-            custom_k_values = st.text_input(
-                "Enter K values (comma-separated):",
-                value="1,3,5",
-                placeholder="1,3,5"
-            )
+    #     with col2:
+    #         custom_k_values = st.text_input(
+    #             "Enter K values (comma-separated):",
+    #             value="1,3,5",
+    #             placeholder="1,3,5"
+    #         )
         
-        if st.button("🚀 Run Custom Evaluation"):
-            if custom_keywords:
-                keywords = [k.strip() for k in custom_keywords.split(',')]
-                k_values = [int(k.strip()) for k in custom_k_values.split(',')]
+    #     if st.button("🚀 Run Custom Evaluation"):
+    #         if custom_keywords:
+    #             keywords = [k.strip() for k in custom_keywords.split(',')]
+    #             k_values = [int(k.strip()) for k in custom_k_values.split(',')]
                 
-                try:
-                    with st.spinner("Running custom evaluation..."):
-                        text_results = run_text_to_video_evaluation(keywords=keywords, k_values=k_values, quality_threshold=global_quality_threshold)
-                        video_results = run_video_to_video_evaluation(keywords=keywords, k_values=k_values)
+    #             try:
+    #                 with st.spinner("Running custom evaluation..."):
+    #                     text_results = run_text_to_video_evaluation(keywords=keywords, k_values=k_values, quality_threshold=global_quality_threshold)
+    #                     video_results = run_video_to_video_evaluation(keywords=keywords, k_values=k_values)
                     
-                    col1, col2 = st.columns(2)
+    #                 col1, col2 = st.columns(2)
                     
-                    with col1:
-                        st.subheader("📝 Text-to-Video Results")
-                        for metric, value in text_results['average_recalls'].items():
-                            st.metric(metric, f"{value:.3f}")
+    #                 with col1:
+    #                     st.subheader("📝 Text-to-Video Results")
+    #                     for metric, value in text_results['average_recalls'].items():
+    #                         st.metric(metric, f"{value:.3f}")
                     
-                    with col2:
-                        st.subheader("🎬 Video-to-Video Results")
-                        for metric, value in video_results['average_recalls'].items():
-                            st.metric(metric, f"{value:.3f}")
+    #                 with col2:
+    #                     st.subheader("🎬 Video-to-Video Results")
+    #                     for metric, value in video_results['average_recalls'].items():
+    #                         st.metric(metric, f"{value:.3f}")
                 
-                except Exception as e:
-                    st.error(f"Custom evaluation failed: {e}")
-            else:
-                st.warning("Please enter keywords to evaluate")
+    #             except Exception as e:
+    #                 st.error(f"Custom evaluation failed: {e}")
+    #         else:
+    #             st.warning("Please enter keywords to evaluate")
 
 
 if __name__ == "__main__":

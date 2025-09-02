@@ -80,7 +80,7 @@ python data/annotation/create_gifs.py \
 
 ### Output
 - **GIF files**: `data/gifs/filename_0000_0020.gif`, etc.
-- **Updated parquet**: Same file now includes `gif_file` column
+- **Updated parquet**: Same file now includes `gif_path` column
 
 ## Step 3: Launch Annotation App
 

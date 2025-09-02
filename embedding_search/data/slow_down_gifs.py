@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Simple script to slow down GIF files from a parquet file.
-Reads gif_file column from parquet and saves slowed-down GIFs to output directory.
+Reads gif_path column from parquet and saves slowed-down GIFs to output directory.
 """
 
 import pandas as pd
@@ -76,13 +76,13 @@ def process_parquet_gifs(parquet_path, output_dir, slowdown_factor=2.0):
     # Read the parquet file
     df = pd.read_parquet(parquet_path)
     
-    if 'gif_file' not in df.columns:
-        print(f"No 'gif_file' column found in {parquet_path}")
+    if 'gif_path' not in df.columns:
+        print(f"No 'gif_path' column found in {parquet_path}")
         print(f"Available columns: {list(df.columns)}")
         return 0, 0
     
     # Get all non-null GIF paths
-    gif_paths = df['gif_file'].dropna().tolist()
+    gif_paths = df['gif_path'].dropna().tolist()
     
     if not gif_paths:
         print(f"No GIF files found in {parquet_path}")
@@ -96,14 +96,14 @@ def process_parquet_gifs(parquet_path, output_dir, slowdown_factor=2.0):
     for gif_path in tqdm(gif_paths, desc="Processing GIFs"):
         if os.path.exists(gif_path):
             # Create output path maintaining the same filename
-            gif_filename = os.path.basename(gif_path)
-            output_gif_path = os.path.join(output_dir, gif_filename)
+            gif_pathname = os.path.basename(gif_path)
+            output_gif_path = os.path.join(output_dir, gif_pathname)
             
             if slow_down_gif(gif_path, output_gif_path, slowdown_factor):
                 successful += 1
-                print(f"✓ {gif_filename}")
+                print(f"✓ {gif_pathname}")
             else:
-                print(f"✗ Failed: {gif_filename}")
+                print(f"✗ Failed: {gif_pathname}")
         else:
             print(f"✗ File not found: {gif_path}")
     
@@ -112,7 +112,7 @@ def process_parquet_gifs(parquet_path, output_dir, slowdown_factor=2.0):
 def main():
     parser = argparse.ArgumentParser(description='Slow down GIFs from a parquet file')
     parser.add_argument('parquet_file', 
-                       help='Path to parquet file containing gif_file column')
+                       help='Path to parquet file containing gif_path column')
     parser.add_argument('output_dir',
                        help='Output directory for slowed GIFs')
     parser.add_argument('--factor', '-f', type=float, default=2.0,

@@ -267,8 +267,8 @@ def get_gif_path(input_path, gif_base_dir):
     input_path = Path(actual_path)
     
     # Simply use the filename with .gif extension directly in gif_base_dir
-    gif_filename = input_path.stem + '.gif'
-    gif_path = Path(gif_base_dir) / gif_filename
+    gif_pathname = input_path.stem + '.gif'
+    gif_path = Path(gif_base_dir) / gif_pathname
     
     return str(gif_path)
 
@@ -343,7 +343,7 @@ def process_parquet_file(parquet_path, gif_base_dir, gif_generator, overwrite=Fa
             gif_paths.append(None)  # Mark as failed
     
     # Add the GIF paths column to the dataframe
-    df['gif_file'] = gif_paths
+    df['gif_path'] = gif_paths
     
     logger.info(f"Successfully created {successful_gifs}/{len(df)} GIFs")
     if skipped_entries > 0:

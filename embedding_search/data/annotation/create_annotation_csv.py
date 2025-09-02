@@ -55,8 +55,8 @@ def create_annotation_csv():
         annotation_df['video_path'] = df['sensor_video_file']
         
         # Add GIF path if available (for easier viewing during annotation)
-        if 'gif_file' in df.columns:
-            annotation_df['gif_path'] = df['gif_file']
+        if 'gif_path' in df.columns:
+            annotation_df['gif_path'] = df['gif_path']
         
         # Add separate columns for each semantic group
         annotation_df['object_type'] = ''

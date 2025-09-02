@@ -41,7 +41,7 @@ def load_annotation_data():
     # Map parquet columns to expected annotation app columns
     df = df.rename(columns={
         'sensor_video_file': 'video_path',
-        'gif_file': 'gif_path'
+        'gif_path': 'gif_path'
     })
     
     # Load existing annotations if they exist and merge them

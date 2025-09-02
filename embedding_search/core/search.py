@@ -227,13 +227,13 @@ class VideoSearchEngine:
                 span_start = int(row.get('span_start', 0)) if 'span_start' in row and pd.notna(row.get('span_start')) else 0
                 span_end = int(row.get('span_end', self.config.default_clip_duration)) if 'span_end' in row and pd.notna(row.get('span_end')) else self.config.default_clip_duration
                 
-                # Extract gif_file if available
-                gif_file = row.get('gif_file', '') if 'gif_file' in row and pd.notna(row.get('gif_file')) else ''
+                # Extract gif_path if available
+                gif_path = row.get('gif_path', '') if 'gif_path' in row and pd.notna(row.get('gif_path')) else ''
                 
                 metadata = {
                     'span_start': span_start,
                     'span_end': span_end,
-                    'gif_file': gif_file
+                    'gif_path': gif_path
                 }
                 
                 # Add input files if column exists

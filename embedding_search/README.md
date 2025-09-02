@@ -57,7 +57,7 @@ python interface/main.py build --input-path data/unified_input_path.parquet
 ```
 
 **Requirements:**
-- Input must be a parquet file with columns: `slice_id`, `sensor_video_file`, `category`, `gif_file`
+- Input must be a parquet file with columns: `slice_id`, `sensor_video_file`, `category`, `gif_path`
 - All video files referenced in the parquet must exist on disk
 
 ### 2. Launch Streamlit Apps

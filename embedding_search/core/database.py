@@ -63,7 +63,7 @@ class ParquetVectorDatabase:
         self.df = pd.DataFrame({
             'slice_id': pd.Series(dtype='str'),
             'video_path': pd.Series(dtype='str'),
-            'gif_file': pd.Series(dtype='str'),  # Path to the corresponding GIF file
+            'gif_path': pd.Series(dtype='str'),  # Path to the corresponding GIF file
             'embedding': pd.Series(dtype='object'),  # Will hold lists
             'embedding_dim': pd.Series(dtype='int'),
             'num_frames': pd.Series(dtype='int'),
@@ -169,7 +169,7 @@ class ParquetVectorDatabase:
             row_data = {
                 'slice_id': slice_id,
                 'video_path': str(video_path.absolute()),
-                'gif_file': metadata.get('gif_file', '') if metadata else '',
+                'gif_path': metadata.get('gif_path', '') if metadata else '',
                 'embedding': embedding.tolist(),
                 'embedding_dim': embedding.shape[0],
                 'num_frames': metadata.get('num_frames', self.config.num_frames) if metadata else self.config.num_frames,
