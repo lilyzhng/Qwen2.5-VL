@@ -33,7 +33,8 @@ processed_df = preprocess_clips_cli(
     'data/unified_input_path.parquet',  # Update same file
     target_duration=20.0,
     create_video_segments=True,
-    output_video_dir='data/video_segments'
+    output_video_dir='data/video_segments',
+    fps=30.0  # Configurable FPS for video generation from frames
 )
 print('✅ Step 1 completed: MP4 segments generated')
 "

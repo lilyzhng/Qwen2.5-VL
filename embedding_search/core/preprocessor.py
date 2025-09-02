@@ -198,7 +198,7 @@ class ClipPreprocessor:
             logger.error(f"Error creating video segment {output_video_path}: {e}")
             return False
     
-    def generate_segment_video_path(self, original_video_path: Union[str, Path], start_time: float, end_time: float) -> str:
+    def generate_segment_video_path(self, original_video_path: Union[str, Path], start_time: float, end_time: float, slice_id: str = None) -> str:
         """
         Generate the path for a video segment file.
         
@@ -206,26 +206,33 @@ class ClipPreprocessor:
             original_video_path: Original video file path (can be zip#subfolder format)
             start_time: Start time in seconds
             end_time: End time in seconds
+            slice_id: Optional slice_id to use as filename base instead of original path
             
         Returns:
             Path for the segment video file (always .mp4 format)
         """
-        # Handle zip#subfolder format
-        original_path_str = str(original_video_path)
-        if '#' in original_path_str:
-            # For zip files, use the zip filename as base
-            zip_path, subfolder = original_path_str.split('#', 1)
-            original_path = Path(zip_path)
-        else:
-            original_path = Path(original_video_path)
-        
         # Format times as 4-digit integers (e.g., 0000, 0020)
         start_str = f"{int(start_time):04d}"
         end_str = f"{int(end_time):04d}"
         
-        # Create new filename: original_name_start_end.mp4 (always mp4 output)
-        stem = original_path.stem
-        new_filename = f"{stem}_{start_str}_{end_str}.mp4"
+        # Use slice_id as base name if provided, otherwise use original path
+        if slice_id:
+            # Remove any file extension from slice_id
+            base_name = slice_id.rsplit('.', 1)[0] if '.' in slice_id else slice_id
+            new_filename = f"{base_name}_{start_str}_{end_str}.mp4"
+        else:
+            # Handle zip#subfolder format for fallback
+            original_path_str = str(original_video_path)
+            if '#' in original_path_str:
+                # For zip files, use the zip filename as base
+                zip_path, subfolder = original_path_str.split('#', 1)
+                original_path = Path(zip_path)
+            else:
+                original_path = Path(original_video_path)
+            
+            # Create new filename: original_name_start_end.mp4 (always mp4 output)
+            stem = original_path.stem
+            new_filename = f"{stem}_{start_str}_{end_str}.mp4"
         
         # Use custom output directory if specified, otherwise same directory as original
         if self.output_video_dir:
@@ -233,10 +240,21 @@ class ClipPreprocessor:
             output_dir.mkdir(parents=True, exist_ok=True)
             return str(output_dir / new_filename)
         else:
-            return str(original_path.parent / new_filename)
+            # For slice_id based naming, still use the output directory or a default location
+            if slice_id:
+                # Handle zip#subfolder format to get directory
+                original_path_str = str(original_video_path)
+                if '#' in original_path_str:
+                    zip_path, subfolder = original_path_str.split('#', 1)
+                    original_path = Path(zip_path)
+                else:
+                    original_path = Path(original_video_path)
+                return str(original_path.parent / new_filename)
+            else:
+                return str(original_path.parent / new_filename)
     
     def create_video_from_frames_zip(self, zip_path: Union[str, Path], output_video_path: Union[str, Path], 
-                                   start_time: float, end_time: float) -> bool:
+                                   start_time: float, end_time: float, fps: float = None) -> bool:
         """
         Create a video segment from frames stored in a zip file using FFmpeg.
         
@@ -245,6 +263,7 @@ class ClipPreprocessor:
             output_video_path: Path to the output video file
             start_time: Start time in seconds
             end_time: End time in seconds
+            fps: Frames per second for video generation (defaults to self.fps if not specified)
             
         Returns:
             True if successful, False otherwise
@@ -270,9 +289,12 @@ class ClipPreprocessor:
                 actual_zip_path = zip_path_str
                 subfolder = None
             
+            # Use provided FPS or fall back to instance default
+            video_fps = fps if fps is not None else self.fps
+            
             # Calculate frame range based on timing and FPS
-            start_frame = int(start_time * self.fps)
-            end_frame = int(end_time * self.fps)
+            start_frame = int(start_time * video_fps)
+            end_frame = int(end_time * video_fps)
             
             # Create temporary directory for extracted frames
             with tempfile.TemporaryDirectory() as temp_dir:
@@ -319,7 +341,7 @@ class ClipPreprocessor:
                 with open(concat_file, 'w') as f:
                     for filename in extracted_filenames:
                         f.write(f"file '{filename}'\n")
-                        f.write(f"duration {1/self.fps}\n")  # Duration per frame
+                        f.write(f"duration {1/video_fps}\n")  # Duration per frame
                     # Add the last frame again to ensure proper duration
                     if extracted_filenames:
                         f.write(f"file '{extracted_filenames[-1]}'\n")
@@ -449,11 +471,12 @@ class ClipPreprocessor:
                     # Handle video file segmentation
                     original_video_path = row['sensor_video_file']
                     
-                    # Generate segment video path
+                    # Generate segment video path using original slice_id
                     segment_video_path = self.generate_segment_video_path(
                         original_video_path,
                         segment["start"],
-                        segment["end"]
+                        segment["end"],
+                        slice_id=original_slice_id
                     )
                     
                     # Always update the sensor_video_file path to the segmented path
@@ -475,11 +498,12 @@ class ClipPreprocessor:
                     # Handle frame zip segmentation - generate MP4 from frames first
                     original_zip_path = row['sensor_frame_zip']
                     
-                    # Generate segment video path (convert to MP4)
+                    # Generate segment video path (convert to MP4) using original slice_id
                     segment_video_path = self.generate_segment_video_path(
                         original_zip_path,
                         segment["start"],
-                        segment["end"]
+                        segment["end"],
+                        slice_id=original_slice_id
                     )
                     
                     # Update to use sensor_video_file instead of sensor_frame_zip for the segments
@@ -494,7 +518,8 @@ class ClipPreprocessor:
                             original_zip_path,
                             segment_video_path,
                             segment["start"],
-                            segment["end"]
+                            segment["end"],
+                            fps=self.fps
                         )
                         if not success:
                             logger.warning(f"Failed to create video from frames: {segment_video_path}")
@@ -543,7 +568,7 @@ class ClipPreprocessor:
         return stats
 
 
-def preprocess_clips_cli(input_parquet: str, output_parquet: str = None, target_duration: float = 20.0, create_video_segments: bool = True, output_video_dir: str = None):
+def preprocess_clips_cli(input_parquet: str, output_parquet: str = None, target_duration: float = 20.0, create_video_segments: bool = True, output_video_dir: str = None, fps: float = 30.0):
     """
     CLI function to preprocess clips.
     
@@ -553,12 +578,13 @@ def preprocess_clips_cli(input_parquet: str, output_parquet: str = None, target_
         target_duration: Target duration for segments in seconds
         create_video_segments: Whether to create actual video segment files
         output_video_dir: Directory to save generated video segments (default: same as source)
+        fps: Frames per second for video generation from frames (default: 30.0)
     """
     if output_parquet is None:
         input_path = Path(input_parquet)
         output_parquet = str(input_path.parent / f"{input_path.stem}_processed{input_path.suffix}")
     
-    preprocessor = ClipPreprocessor(target_duration=target_duration, create_video_segments=create_video_segments, output_video_dir=output_video_dir)
+    preprocessor = ClipPreprocessor(target_duration=target_duration, create_video_segments=create_video_segments, output_video_dir=output_video_dir, fps=fps)
     processed_df = preprocessor.preprocess_parquet(input_parquet, output_parquet)
     
     # Print statistics
@@ -587,8 +613,10 @@ if __name__ == "__main__":
     parser.add_argument("--no-video-segments", action="store_true", 
                        help="Skip creating actual video segment files (only update metadata)")
     parser.add_argument("--output-video-dir", help="Directory to save generated video segments (default: same as source)")
+    parser.add_argument("--fps", type=float, default=30.0, 
+                       help="Frames per second for video generation from frames (default: 30.0)")
     
     args = parser.parse_args()
     
     create_video_segments = not args.no_video_segments
-    preprocess_clips_cli(args.input_parquet, args.output, args.target_duration, create_video_segments, args.output_video_dir)
+    preprocess_clips_cli(args.input_parquet, args.output, args.target_duration, create_video_segments, args.output_video_dir, args.fps)
