@@ -439,6 +439,7 @@ class ClipPreprocessor:
             
             # Get duration of the input
             duration = self.get_input_duration(input_path)
+            print(f"📏 Measured duration from sensor frames for '{original_slice_id}': {duration:.1f}s")
             
             if duration <= 0:
                 logger.warning(f"Invalid duration ({duration}s) for {original_slice_id}, keeping original")
@@ -449,10 +450,15 @@ class ClipPreprocessor:
             segments = self.calculate_segments(duration)
             
             logger.info(f"Dividing {original_slice_id} ({duration:.1f}s) into {len(segments)} segments")
+            print(f"🎬 Will create {len(segments)} video segments:")
             
             # Create new rows for each segment
-            for segment in segments:
+            for segment_idx, segment in enumerate(segments, 1):
                 new_row = row.to_dict().copy()
+                
+                # Calculate segment duration
+                segment_duration = segment["end"] - segment["start"]
+                print(f"  📹 Clip video {segment_idx} duration: {segment_duration:.1f}s ({segment['start']:.1f}s - {segment['end']:.1f}s)")
                 
                 # Generate new slice_id
                 new_slice_id = self.generate_segment_slice_id(
@@ -485,13 +491,17 @@ class ClipPreprocessor:
                     
                     # Create the actual video segment if enabled
                     if self.create_video_segments:
+                        print(f"    🔄 Creating video segment {segment_idx}: {new_slice_id}")
                         success = self.create_video_segment(
                             original_video_path,
                             segment_video_path,
                             segment["start"],
                             segment["end"]
                         )
-                        if not success:
+                        if success:
+                            print(f"    ✅ Successfully created video segment {segment_idx}: {segment_video_path}")
+                        else:
+                            print(f"    ❌ Failed to create video segment {segment_idx}: {segment_video_path}")
                             logger.warning(f"Failed to create video segment: {segment_video_path}")
                 
                 elif input_type == 'frame_zip':
@@ -514,6 +524,7 @@ class ClipPreprocessor:
                     
                     # Create video from frames if enabled
                     if self.create_video_segments:
+                        print(f"    🔄 Creating video segment {segment_idx}: {new_slice_id}")
                         success = self.create_video_from_frames_zip(
                             original_zip_path,
                             segment_video_path,
@@ -521,7 +532,10 @@ class ClipPreprocessor:
                             segment["end"],
                             fps=self.fps
                         )
-                        if not success:
+                        if success:
+                            print(f"    ✅ Successfully created video segment {segment_idx}: {segment_video_path}")
+                        else:
+                            print(f"    ❌ Failed to create video segment {segment_idx}: {segment_video_path}")
                             logger.warning(f"Failed to create video from frames: {segment_video_path}")
                 
                 processed_rows.append(new_row)
