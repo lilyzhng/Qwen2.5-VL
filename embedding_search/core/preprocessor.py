@@ -68,8 +68,8 @@ class ClipPreprocessor:
             logger.error(f"Error getting duration for {input_path}: {e}")
             return 0.0
     
-    def _get_zip_duration(self, zip_path_input: Union[str, Path], fps: float = 30.0) -> float:
-        """Estimate duration of zip file containing frames assuming default FPS."""
+    def _get_zip_duration(self, zip_path_input: Union[str, Path]) -> float:
+        """Estimate duration of zip file containing frames using instance FPS."""
         zip_path, subfolder = _parse_zip_path(zip_path_input)
         
         try:
@@ -88,17 +88,17 @@ class ClipPreprocessor:
                 image_files = [f for f in filtered_files 
                               if Path(f).suffix.lower() in image_extensions and not f.startswith('__MACOSX/')]
                 
-                return estimate_frames_duration(len(image_files), fps)
+                return estimate_frames_duration(len(image_files), self.fps)
         except Exception as e:
             logger.warning(f"Error getting zip duration for {zip_path}: {e}")
             return 0.0
     
-    def _get_folder_duration(self, folder_path: Path, fps: float = 30.0) -> float:
-        """Estimate duration of frame folder assuming default FPS."""
+    def _get_folder_duration(self, folder_path: Path) -> float:
+        """Estimate duration of frame folder using instance FPS."""
         image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
         image_files = [f for f in folder_path.iterdir() 
                       if f.is_file() and f.suffix.lower() in image_extensions]
-        return estimate_frames_duration(len(image_files), fps)
+        return estimate_frames_duration(len(image_files), self.fps)
     
     def calculate_segments(self, duration: float) -> List[Dict[str, float]]:
         """
