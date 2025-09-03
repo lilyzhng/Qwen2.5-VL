@@ -554,7 +554,11 @@ class CosmosVideoEmbedder(EmbeddingModel):
             dummy_batch = np.transpose(np.expand_dims(dummy_frames, 0), (0, 1, 4, 2, 3))
             
             with torch.no_grad():
-                processed = self.preprocess(videos=dummy_batch)
+                processed = self.preprocess(
+                    text=None,
+                    videos=dummy_batch,
+                    return_tensors="pt"
+                )
                 video_tensor = processed["videos"].to(self.device, dtype=self.dtype)
                 outputs = self.model.get_video_embeddings(video_tensor)
                 self._embedding_dim = outputs.visual_proj.shape[-1]
@@ -608,9 +612,35 @@ class CosmosVideoEmbedder(EmbeddingModel):
             # Prepare batch for model (BTCHW format)
             batch = np.transpose(np.expand_dims(frames, 0), (0, 1, 4, 2, 3))
             
+            # Ensure batch is in the correct format for the processor
+            # Convert to uint8 if needed (processor expects values in [0-255] range)
+            if batch.dtype != np.uint8:
+                if batch.max() <= 1.0:  # If values are normalized [0-1]
+                    batch = (batch * 255).astype(np.uint8)
+                else:
+                    batch = batch.astype(np.uint8)
+            
+            # Debug batch shape and dtype
+            logger.debug(f"Batch shape: {batch.shape}, dtype: {batch.dtype}, min: {batch.min()}, max: {batch.max()}")
+            logger.debug(f"Expected format: BTCHW where B=1, T={self.config.num_frames}, C=3, H={self.config.resolution[0]}, W={self.config.resolution[1]}")
+            
             # Disable gradients for inference to save memory and improve speed
             with torch.no_grad():
-                processed = self.preprocess(videos=batch)
+                try:
+                    # Call processor with explicit parameters to avoid any ambiguity
+                    processed = self.preprocess(
+                        text=None,  # Explicitly set text to None
+                        videos=batch,
+                        return_tensors="pt"
+                    )
+                except Exception as e:
+                    logger.error(f"Processor failed with batch shape {batch.shape}, dtype {batch.dtype}: {e}")
+                    logger.error(f"Processor expects BTCHW tensor with uint8 values [0-255]")
+                    logger.error(f"Full error: {str(e)}")
+                    # Try to get more detailed error information
+                    import traceback
+                    logger.error(f"Traceback: {traceback.format_exc()}")
+                    raise
                 video_tensor = processed["videos"].to(
                     self.device, 
                     dtype=self.dtype
@@ -732,7 +762,11 @@ class CosmosVideoEmbedder(EmbeddingModel):
                     batch_tensor = np.stack(batch_videos, axis=0)
                     
                     with torch.no_grad():
-                        processed = self.preprocess(videos=batch_tensor)
+                        processed = self.preprocess(
+                            text=None,
+                            videos=batch_tensor,
+                            return_tensors="pt"
+                        )
                         video_tensor = processed["videos"].to(
                             self.device,
                             dtype=self.dtype
