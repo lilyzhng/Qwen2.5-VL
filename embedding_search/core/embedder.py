@@ -537,6 +537,10 @@ class CosmosVideoEmbedder(EmbeddingModel):
                 trust_remote_code=True
             )
             
+            # Verify processor is properly loaded
+            logger.info(f"Processor type: {type(self.preprocess)}")
+            logger.info(f"Processor class: {self.preprocess.__class__.__name__}")
+            
             # Cache embedding dimension
             self._embedding_dim = None
             
@@ -675,11 +679,30 @@ class CosmosVideoEmbedder(EmbeddingModel):
         
         try:
             with torch.no_grad():
-                text_inputs = self.preprocess(text=[text]).to(
-                    self.device,
-                    dtype=self.dtype
+                # Call processor with explicit parameters to ensure proper return format
+                text_inputs = self.preprocess(
+                    text=[text],
+                    videos=None,
+                    return_tensors="pt"
                 )
-                text_out = self.model.get_text_embeddings(**text_inputs)
+                
+                # Debug: Check what type of object we got back
+                logger.debug(f"Text processor returned: {type(text_inputs)}")
+                if hasattr(text_inputs, 'keys'):
+                    logger.debug(f"Text inputs keys: {list(text_inputs.keys())}")
+                
+                # Move text inputs to device (BatchEncoding doesn't support dtype parameter)
+                if hasattr(text_inputs, 'to'):
+                    text_inputs = text_inputs.to(self.device)
+                else:
+                    logger.error(f"text_inputs object of type {type(text_inputs)} doesn't have .to() method")
+                    raise AttributeError(f"Expected BatchFeature with .to() method, got {type(text_inputs)}")
+                
+                # Extract input_ids and attention_mask for get_text_embeddings
+                text_out = self.model.get_text_embeddings(
+                    input_ids=text_inputs["input_ids"],
+                    attention_mask=text_inputs["attention_mask"]
+                )
                 
             # Convert to float32 to handle bfloat16 on GPU
             embedding = text_out.text_proj[0].float().cpu().numpy()
