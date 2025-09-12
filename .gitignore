@@ -1,3 +1,17 @@
+# ignore model
+nvidia_cosmos_embed_1/
+# ignore dataset
+v1.0-mini/
+
+# ignore cache 
+.cache/
+
+# ignore mac files
+.DS_Store
+
+# ignore venv
+.venv
+
 # python generated files
 __pycache__/
 *.py[oc]
