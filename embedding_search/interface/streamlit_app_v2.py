@@ -1,3 +1,44 @@
+"""Search for text-to-video, video-to-video over Cosmos embeddings (LanceDB index).
+"""
+
+from __future__ import annotations
+
+import base64
+import logging
+from dataclasses import dataclass
+from io import BytesIO
+from typing import Any, Final, Literal, NamedTuple, Optional, cast
+
+import fsspec
+import grpc
+import imageio
+import lancedb
+import numpy as np
+import numpy.typing as npt
+import pandas as pd
+import streamlit as st
+
+from argo_log_apps_presigned_url_service_sdk.ai.argo.log_apps.presignedurlservice.v1 import (
+    service_pb2 as presigned_url_service_pb2,
+)
+from argo_log_apps_presigned_url_service_sdk.ai.argo.log_apps.presignedurlservice.v1 import (
+    service_pb2_grpc as presigned_url_service_grpc,
+)
+from autonomy.perception.datasets.features.cosmos.config import COSMOS_MODEL_SIZE
+from autonomy.perception.datasets.features.cosmos.infer import Cosmos
+from kits.scalex.dataset.instances.lance_dataset import read_database_path
+from kits.scalex.hpc.zip_uri_reader_utils import parse_uri
+from lat_ojo import ojo
+from liam_common_py.interceptors.client.defaults import get_default_auth_intercepted_channel
+from liam_common_py.providers.defaults import get_default_liam_provider
+from liam_common_py.utils.grpc_utils import get_grpc_ssl_credentials
+from log_apps.python.public.libs.api_client.event import query_event_details
+from platforms.data.streamlat import bq
+from platforms.data.streamlat.visualizing import who_are_you
+from platforms.data.streamlat.visualizing.event_viewer import LatitubeConfig, show_iframe
+from platforms.lakefs.client import LakeFS
+
+
 def parse_row_id(row_id: str) -> tuple[str, str, str, str]:
     """Process row_id to get slice_id, start_ns, end_ns, and camera_name."""
     if "_segment_" not in row_id:

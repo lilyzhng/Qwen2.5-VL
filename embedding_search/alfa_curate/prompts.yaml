@@ -1,0 +1,17 @@
+# Prompt-based active learning configuration
+# Each item defines a text query and optional selection parameters.
+
+prompts:
+  - prompt: "pedestrians crossing street"
+    threshold: 0.20   # minimum similarity (0.0-1.0) to keep a slice
+    top_k: 200        # how many nearest neighbours to retrieve per prompt
+
+  - prompt: "vehicle turning at an intersection"
+    threshold: 0.20
+    top_k: 200
+
+  - prompt: "motorcyclist near ego vehicle at night"
+    threshold: 0.20
+    top_k: 200
+
+
