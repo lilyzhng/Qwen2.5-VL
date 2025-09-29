@@ -5,10 +5,11 @@ This implements a variant of the active learning SliceScorer where:
 - compute_slice_scores aggregates slice ids and runs text queries per prompt
   to score/filter only those slice ids that are in the candidate set (reduce stage)
 
-References:
-- See `alfa_curate/readme.md` for requirements
-- See `dinov2/dino_obstruction.py` for the general pattern of SliceScorer usage
-- See `interface/streamlit_app_v2.py` for Cosmos text search implementation
+Supports two scoring modes:
+1. "independent" (default): Each prompt is scored independently, best score wins
+2. "softmax": Uses softmax to find best matching prompt per slice (like multi_caption.py)
+   - More accurate when prompts are mutually exclusive
+   - Prevents over-selection from dominant prompts
 
 1. Initialization Phase
 Loads configuration (branch, model size, prompt YAML path)
@@ -40,7 +41,6 @@ Final output: ~40 unique slices with scores (some slices may match multiple prom
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
@@ -51,41 +51,42 @@ from autonomy.perception.datasets.active_learning.framework.slice_scorer_base im
     SimpleSliceScorerBase,
 )
 
+import numpy as np
+
+from .config import StrategyConfig, PromptConfig
 from .utils import (  # type: ignore
     run_text_query,
     deduplicate_by_base_slice_id,
     distance_to_similarity,
+    text_to_embedding,
+    load_table,
 )
 
-
-@dataclass
-class PromptSpec:
-    prompt: str
-    threshold: float = 0.2
-    top_k: int = 200
-
-
-@dataclass
-class PromptScorerConfig:
-    branch: str = "main"  # LanceDB branch to read from
-    model_size: str = "medium"  # Cosmos model size
-    prompt_yaml_path: str = str(Path(__file__).with_name("prompts.yaml"))  # Path to prompts YAML
-
-
-def _load_prompts_from_yaml(path: str | Path) -> list[PromptSpec]:
+def _load_prompts_from_yaml(path: str | Path) -> list[PromptConfig]:
     with open(path, "r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
-    return [
-        PromptSpec(
-            prompt=str(item.get("prompt", "")).strip(),
-            threshold=float(item.get("threshold", 0.2)),
-            top_k=int(item.get("top_k", 200)),
-        )
-        for item in data.get("prompts", [])
-    ]
+    
+    configs = []
+    for item in data.get("scenarios", []):
+        # Extract prompt (required field)
+        prompt = str(item.get("prompt", "")).strip()
+        if not prompt:
+            raise ValueError("Each scenario must have a non-empty 'prompt' field")
+            
+        config_args = {"prompt": prompt}
+        
+        if "threshold" in item:
+            config_args["threshold"] = float(item["threshold"])
+        
+        if "top_k" in item:
+            config_args["top_k"] = int(item["top_k"])
+        
+        configs.append(PromptConfig(**config_args))
+    
+    return configs
 
 
-class PromptQuerySliceScorer(SimpleSliceScorerBase[PromptScorerConfig]):
+class SliceScorer(SimpleSliceScorerBase[StrategyConfig]):
     """Active learning scorer that selects slices matching text prompts.
 
     Map stage (process_slice): returns the slice id.
@@ -93,9 +94,12 @@ class PromptQuerySliceScorer(SimpleSliceScorerBase[PromptScorerConfig]):
     filters to the candidate slice ids, assigning scores based on similarity.
     """
 
-    def __init__(self, config: PromptScorerConfig) -> None:
+    def __init__(self, config: StrategyConfig) -> None:
         super().__init__(config)
-        self._prompts: list[PromptSpec] = _load_prompts_from_yaml(self.config.prompt_yaml_path)
+        if config.load_prompts_from_yaml and config.prompt_yaml_path:
+            self._prompts: list[PromptConfig] = _load_prompts_from_yaml(config.prompt_yaml_path)
+        else:
+            self._prompts: list[PromptConfig] = config.prompts
 
     def process_slice(self, data_model_reader: DataModelReader) -> Optional[str]:
         """Return slice id for aggregation in reduce stage."""
@@ -107,6 +111,13 @@ class PromptQuerySliceScorer(SimpleSliceScorerBase[PromptScorerConfig]):
         if not candidate_slice_ids:
             return []
 
+        if self.config.scoring_mode == "softmax":
+            return self._compute_softmax_scores(candidate_slice_ids)
+        else:  # independent mode
+            return self._compute_independent_scores(candidate_slice_ids)
+
+    def _compute_independent_scores(self, candidate_slice_ids: set[str]) -> list[tuple[str, float]]:
+        """Original scoring mode: each prompt scored independently."""
         results: dict[str, float] = {}
 
         for prompt in self._prompts:
@@ -115,12 +126,16 @@ class PromptQuerySliceScorer(SimpleSliceScorerBase[PromptScorerConfig]):
             )
             
             # Noise prevention: skip prompt if best result is below threshold
-            if raw_results:
+            if raw_results and self.config.min_best_similarity > 0:
                 best_similarity = distance_to_similarity(raw_results[0].get("_distance", 2.0))
-                if best_similarity < prompt.threshold:
+                if best_similarity < self.config.min_best_similarity:
                     continue
             
-            query_results = deduplicate_by_base_slice_id(raw_results)
+            # Apply deduplication if configured
+            if self.config.deduplicate_by_base_video:
+                query_results = deduplicate_by_base_slice_id(raw_results)
+            else:
+                query_results = raw_results
 
             for row in query_results:
                 slice_id = str(row.get("row_id", ""))
@@ -134,6 +149,61 @@ class PromptQuerySliceScorer(SimpleSliceScorerBase[PromptScorerConfig]):
                 # Keep best score across prompts
                 results[slice_id] = max(results.get(slice_id, 0), similarity)
 
+        # Lower scores = higher priority
+        return [(slice_id, -score) for slice_id, score in results.items()]
+
+    def _compute_softmax_scores(self, candidate_slice_ids: set[str]) -> list[tuple[str, float]]:
+        """Softmax scoring mode: finds best matching prompt per slice using softmax."""
+        if not self._prompts:
+            return []
+        
+        # Get embeddings for all prompts
+        prompt_embeddings = np.array([
+            text_to_embedding(prompt.prompt, self.config.model_size)
+            for prompt in self._prompts
+        ])  # Shape: (num_prompts, embedding_dim)
+        
+        table = load_table(self.config.branch)
+        results: dict[str, float] = {}
+        
+        # Process in batches to avoid memory issues
+        candidate_list = list(candidate_slice_ids)
+        batch_size = self.config.batch_size
+        
+        for i in range(0, len(candidate_list), batch_size):
+            batch_ids = candidate_list[i:i + batch_size]
+            
+            # Fetch embeddings for this batch of candidates
+            batch_data = table.search().where(f"row_id IN {batch_ids}").limit(len(batch_ids)).to_list()
+            
+            for row in batch_data:
+                slice_id = row.get("row_id")
+                if not slice_id:
+                    continue
+                
+                # Get slice embedding
+                slice_embedding = np.array(row.get("embedding", []))
+                if len(slice_embedding) == 0:
+                    continue
+                
+                # Compute similarities with all prompts
+                similarities = np.dot(prompt_embeddings, slice_embedding)
+                
+                # Apply softmax to get probabilities
+                # Scale by temperature
+                scaled_similarities = similarities * self.config.softmax_temperature
+                exp_sims = np.exp(scaled_similarities - np.max(scaled_similarities))  # Stability
+                softmax_probs = exp_sims / np.sum(exp_sims)
+                
+                # Find best matching prompt
+                best_prompt_idx = np.argmax(softmax_probs)
+                best_prob = softmax_probs[best_prompt_idx]
+                best_prompt = self._prompts[best_prompt_idx]
+                
+                # Apply threshold on probability instead of raw similarity
+                if best_prob >= best_prompt.threshold:
+                    results[slice_id] = best_prob
+        
         # Lower scores = higher priority
         return [(slice_id, -score) for slice_id, score in results.items()]
 

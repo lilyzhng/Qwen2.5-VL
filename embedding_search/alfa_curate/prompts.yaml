@@ -1,7 +1,7 @@
-# Prompt-based active learning configuration
-# Each item defines a text query and optional selection parameters.
+# Scenario-based active learning configuration
+# Each item defines a driving scenario query and optional selection parameters.
 
-prompts:
+scenarios:
   - prompt: "pedestrians crossing street"
     threshold: 0.20   # minimum similarity (0.0-1.0) to keep a slice
     top_k: 200        # how many nearest neighbours to retrieve per prompt
