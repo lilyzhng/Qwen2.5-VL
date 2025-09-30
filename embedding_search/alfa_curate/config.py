@@ -1,101 +1,67 @@
-"""Configuration for prompt-based active learning strategy using Cosmos text search.
-
-This module defines the configuration structure for the ALFA curate active learning
-strategy that uses text prompts to select relevant video slices.
-"""
-
-from typing import List, Optional
-from dataclasses import dataclass, field
 from pathlib import Path
+from typing import List, Optional
 
-# Try to import from autonomy package if available
-try:
-    from autonomy.perception.datasets.active_learning.base_config import (
-        BaseStrategyConfig,  # pragma: ignore-dep
-    )
-    base_class = BaseStrategyConfig
-except ImportError:
-    # Fallback if running outside autonomy environment
-    base_class = object
+from pydantic import BaseModel, Field
 
 
-@dataclass
-class PromptConfig:
-    """Configuration for a single prompt used in active learning selection."""
-    
+class PromptConfig(BaseModel):
+    """Configuration for a single prompt used in selection."""
+
     #: The text prompt to search for
     prompt: str
-    
+
     #: Minimum similarity score (0.0-1.0) to keep a slice
     threshold: float = 0.2
-    
+
     #: Number of nearest neighbors to retrieve per prompt
     top_k: int = 200
 
+    #: Scoring mode override for this specific prompt
+    #: - None: Use the global scoring_mode from StrategyConfig
+    #: - "independent": This prompt retrieves slices independently
+    #: - "softmax": This prompt participates in softmax scoring with other softmax prompts
+    scoring_mode: Optional[str] = None
 
-class StrategyConfig(base_class if base_class is not object else object):
-    """Configuration for the prompt-based active learning selection strategy."""
-    
+    class Config:
+        allow_mutation = False
+
+
+class StrategyConfig(BaseModel):
+    """Configuration for the alfa-based active learning selection strategy."""
+
     #: LanceDB branch to read from
     branch: str = "main"
-    
-    #: Cosmos model size for text embeddings ("small", "medium", or "large")
-    model_size: str = "medium"
-    
-    #: Path to YAML file containing prompt definitions
-    prompt_yaml_path: str = str(Path(__file__).with_name("prompts.yaml"))
-    
-    #: Scoring mode for multiple prompts
-    #: - "softmax": Each slice assigned to best matching prompt (recommended)
-    #: - "independent": Slices can match multiple prompts
+
+    #: Cosmos model size for text embeddings
+    model_size: str = "Cosmos-Embed1-448p"
+
+    #: Path to YAML file containing prompts
+    prompt_yaml_path: Optional[str] = Field(
+        default=str(Path(__file__).with_name("prompts.yaml"))
+    )
+
+    #: Global scoring mode for multiple prompts (can be overridden per-prompt)
+    #: - "softmax": Computes similarities for all prompts using softmax, then selects best matching prompt per slice
+    #: - "independent": Each prompt retrieves top_k slices independently, scores are merged using max
+    #: Mixed mode fusion: If different prompts use different modes, their results are combined
     scoring_mode: str = "softmax"
-    
+
     #: Temperature parameter for softmax scoring (higher = more selective)
     softmax_temperature: float = 10.0
-    
+
     #: Maximum number of slices to process in a single batch (memory optimization)
-    batch_size: int = 100
-    
-    #: Whether to deduplicate results by base video ID
+    batch_size: int = 1000
+
+    #: Whether to deduplicate results by base slice ID after scoring
+    #: When enabled, only the best scoring segment per base video is kept
     deduplicate_by_base_video: bool = True
-    
-    #: Minimum similarity of best result to consider prompt valid (noise prevention)
+
+    #: Minimum similarity of best result to consider prompt valid
     min_best_similarity: float = 0.0
-    
-    #: List of prompts (can be loaded from YAML or defined directly)
-    prompts: List[PromptConfig] = field(default_factory=list)
-    
-    #: Whether to load prompts from YAML file on initialization
-    load_prompts_from_yaml: bool = True
-    
-    #: Number of concurrent workers for processing (if using Ray)
-    num_workers: Optional[int] = None
-    
-    #: Whether to cache text embeddings for prompts
-    cache_prompt_embeddings: bool = True
-    
-    #: Path to cache directory for embeddings
-    cache_dir: Optional[str] = None
-    
-    #: Verbosity level for logging (0=quiet, 1=normal, 2=verbose)
-    verbosity: int = 1
 
+    #: List of prompts
+    prompts: List[PromptConfig] = Field(default_factory=list)
 
-@dataclass
-class EvaluationConfig:
-    """Configuration for evaluating the active learning selection results."""
-    
-    #: Minimum number of slices required per prompt for evaluation
-    min_slices_per_prompt: int = 5
-    
-    #: Whether to generate visualization of selected slices
-    generate_visualizations: bool = True
-    
-    #: Output directory for evaluation results
-    output_dir: str = "./alfa_curate_results"
-    
-    #: Whether to export selected slice IDs to file
-    export_slice_ids: bool = True
-    
-    #: Format for exported slice IDs ("json", "csv", or "parquet")
-    export_format: str = "json"
+    class Config:
+        arbitrary_types_allowed = True
+

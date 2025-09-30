@@ -5,13 +5,20 @@ scenarios:
   - prompt: "pedestrians crossing street"
     threshold: 0.20   # minimum similarity (0.0-1.0) to keep a slice
     top_k: 200        # how many nearest neighbours to retrieve per prompt
+    scoring_mode: "softmax"  # optional: "independent" or "softmax" (defaults to global config if not set)
 
   - prompt: "vehicle turning at an intersection"
     threshold: 0.20
     top_k: 200
+    scoring_mode: "softmax"
 
   - prompt: "motorcyclist near ego vehicle at night"
     threshold: 0.20
     top_k: 200
+    scoring_mode: "softmax"  # this prompt will use softmax mode even if others use independent
 
+  - prompt: "camera obstruction at daytime"
+    threshold: 0.20
+    top_k: 200
+    scoring_mode: "independent"  # this prompt will use softmax mode even if others use independent
 
