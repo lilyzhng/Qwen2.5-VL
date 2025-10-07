@@ -35,6 +35,16 @@ def text_to_embedding(query: str, model_size: str) -> npt.NDArray[np.float32]:
     return model.text_embedding(query)
 
 
+def get_model_logit_scale(model_size: str) -> float:
+    """Get the learned logit_scale parameter from the cached model.
+    
+    Returns the exponentiated logit_scale value (exp(log_scale)) used for scaling
+    similarities in the softmax computation, matching the reference implementation.
+    """
+    model = load_model(model_size)
+    return float(model.logit_scale.exp())
+
+
 def distance_to_similarity(distance: float) -> float:
     """Convert LanceDB distance to similarity in [0, 1]."""
     return max(0.0, 1.0 - (float(distance) / 2.0))

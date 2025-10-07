@@ -7,9 +7,10 @@ from typing import Any, Optional
 import numpy as np
 import yaml
 
-from autonomy.perception.datasets.active_learning.alfa_curate.config import PromptConfig, StrategyConfig
+from autonomy.perception.datasets.active_learning.alfa_curate.config import PromptConfig, StrategyConfig, TaskStrategy
 from autonomy.perception.datasets.active_learning.alfa_curate.utils import (  # type: ignore
     distance_to_similarity,
+    get_model_logit_scale,
     load_table,
     parse_row_id,
     run_text_query,
@@ -21,11 +22,33 @@ from autonomy.perception.datasets.active_learning.framework.slice_scorer_base im
 )
 
 
-def _load_prompts_from_yaml(path: str | Path) -> list[PromptConfig]:
+def _load_config_from_yaml(path: str | Path) -> tuple[list[PromptConfig], dict[str, TaskStrategy]]:
+    """Load both prompts and task strategies from YAML file.
+    
+    Returns:
+        Tuple of (prompts, task_strategies)
+    """
     with open(path, "r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
 
-    configs = []
+    # Load task strategies from "tasks:" section
+    task_strategies: dict[str, TaskStrategy] = {}
+    for task_name, task_config in data.get("tasks", {}).items():
+        strategy_args = {"task_name": task_name}
+        
+        if "priority" in task_config:
+            strategy_args["priority"] = int(task_config["priority"])
+        
+        if "scoring_mode" in task_config:
+            strategy_args["scoring_mode"] = str(task_config["scoring_mode"])
+        
+        if "separate_dataset" in task_config:
+            strategy_args["separate_dataset"] = bool(task_config["separate_dataset"])
+        
+        task_strategies[task_name] = TaskStrategy(**strategy_args)
+
+    # Load prompts from "scenarios:" section
+    prompts = []
     for item in data.get("scenarios", []):
         prompt = str(item.get("prompt", "")).strip()
         if not prompt:
@@ -33,18 +56,18 @@ def _load_prompts_from_yaml(path: str | Path) -> list[PromptConfig]:
 
         config_args = {"prompt": prompt}
 
+        if "task" in item:
+            config_args["task"] = str(item["task"])
+
         if "threshold" in item:
             config_args["threshold"] = float(item["threshold"])
 
         if "top_k" in item:
             config_args["top_k"] = int(item["top_k"])
 
-        if "scoring_mode" in item:
-            config_args["scoring_mode"] = str(item["scoring_mode"])
+        prompts.append(PromptConfig(**config_args))
 
-        configs.append(PromptConfig(**config_args))
-
-    return configs
+    return prompts, task_strategies
 
 
 class SliceScorer(SimpleSliceScorerBase[StrategyConfig]):
@@ -53,48 +76,62 @@ class SliceScorer(SimpleSliceScorerBase[StrategyConfig]):
     def __init__(self, config: StrategyConfig) -> None:
         super().__init__(config)
         if config.prompt_yaml_path:
-            self._prompts: list[PromptConfig] = _load_prompts_from_yaml(config.prompt_yaml_path)
+            self._prompts, yaml_task_strategies = _load_config_from_yaml(config.prompt_yaml_path)
+
+            for task_name, strategy in yaml_task_strategies.items():
+                config.task_strategies[task_name] = strategy
+        else:
+            self._prompts: list[PromptConfig] = []
 
     def process_slice(self, data_model_reader: DataModelReader) -> Optional[str]:
         """Return slice id for aggregation in reduce stage."""
         return getattr(data_model_reader, "id", None)
 
     def compute_slice_scores(self, scores: list[tuple[str, Any]]) -> list[tuple[str, float]]:
-        """Score candidate slices by running text queries for each prompt."""
+        """Score candidate slices using task-based strategies."""
         candidate_slice_ids: set[str] = {slice_id for slice_id, _ in scores if slice_id}
         if not candidate_slice_ids:
             return []
 
-        # Separate prompts by mode
-        independent_prompts = []
-        softmax_prompts = []
-        
+        # Group prompts by task
+        prompts_by_task: dict[str, list[PromptConfig]] = {}
         for prompt in self._prompts:
-            mode = prompt.scoring_mode or self.config.scoring_mode
-            if mode == "softmax":
-                softmax_prompts.append(prompt)
-            else:
-                independent_prompts.append(prompt)
-        
-        # Collect all scores from both modes
-        all_results: dict[str, float] = {}
-        
-        if independent_prompts:
-            independent_scores = self._compute_independent_scores(candidate_slice_ids, independent_prompts)
-            for slice_id, score in independent_scores:
-                all_results[slice_id] = max(all_results.get(slice_id, 0), abs(score))  # abs because scores are negative
-        
-        if softmax_prompts:
-            softmax_scores = self._compute_softmax_scores(candidate_slice_ids, softmax_prompts)
-            for slice_id, score in softmax_scores:
-                all_results[slice_id] = max(all_results.get(slice_id, 0), abs(score))
-        
+            task_name = prompt.task or "default"
+            prompts_by_task.setdefault(task_name, []).append(prompt)
+
+        # Get tasks sorted by priority
+        task_order = sorted(
+            prompts_by_task.keys(),
+            key=lambda t: self._get_task_strategy(t).priority
+        )
+
+        # Process tasks in priority order
+        all_task_results: dict[str, dict[str, float]] = {}  # task -> {slice_id: score}
+        remaining_candidates = candidate_slice_ids.copy()
+
+        for task_name in task_order:
+            task_prompts = prompts_by_task[task_name]
+            task_strategy = self._get_task_strategy(task_name)
+
+            # Score using task-specific strategy
+            task_results = self._score_task(remaining_candidates, task_prompts, task_strategy)
+
+            if task_results:
+                all_task_results[task_name] = task_results
+
+                # If task separates dataset, remove from candidate pool for subsequent tasks
+                if task_strategy.separate_dataset:
+                    remaining_candidates -= set(task_results.keys())
+
+        # Combine all task results
+        combined_results = self._combine_task_results(all_task_results)
+
         # Apply final deduplication by base slice id if configured
         if self.config.deduplicate_by_base_video:
-            all_results = self._deduplicate_by_base_slice_id(all_results)
-        
+            combined_results = self._deduplicate_by_base_slice_id(combined_results)
+
         # Lower scores = higher priority
-        return [(slice_id, -score) for slice_id, score in all_results.items()]
+        return [(slice_id, -score) for slice_id, score in combined_results.items()]
 
     def _compute_independent_scores(self, candidate_slice_ids: set[str], prompts: list[PromptConfig]) -> list[tuple[str, float]]:
         """Independent scoring mode: Each prompt scored independently."""
@@ -135,6 +172,9 @@ class SliceScorer(SimpleSliceScorerBase[StrategyConfig]):
             [text_to_embedding(prompt.prompt, self.config.model_size) for prompt in prompts]
         )  # Shape: (num_prompts, embedding_dim)
 
+        # Get the learned logit_scale from the model (cached, so only loaded once)
+        logit_scale = get_model_logit_scale(self.config.model_size)
+
         table = load_table(self.config.branch)
         results: dict[str, float] = {}
 
@@ -159,8 +199,8 @@ class SliceScorer(SimpleSliceScorerBase[StrategyConfig]):
                 # Compute similarities with all prompts
                 similarities = np.dot(prompt_embeddings, slice_embedding)
 
-                # Apply softmax to get probabilities, scale by temperature
-                scaled_similarities = similarities * self.config.softmax_temperature
+                # Apply softmax to get probabilities, scale by learned logit_scale
+                scaled_similarities = similarities * logit_scale
                 exp_sims = np.exp(scaled_similarities - np.max(scaled_similarities))
                 softmax_probs = exp_sims / np.sum(exp_sims)
 
@@ -185,4 +225,52 @@ class SliceScorer(SimpleSliceScorerBase[StrategyConfig]):
                 best_by_base[base_id] = (slice_id, score)
         
         return {slice_id: score for slice_id, score in best_by_base.values()}
+
+    def _get_task_strategy(self, task_name: str) -> TaskStrategy:
+        """Get strategy for a task, or create default if not configured."""
+        if task_name in self.config.task_strategies:
+            return self.config.task_strategies[task_name]
+        
+        # Create default strategy for unconfigured tasks
+        return TaskStrategy(
+            task_name=task_name,
+            priority=100,  # Default priority
+            scoring_mode=self.config.scoring_mode,  # Use global scoring mode
+            separate_dataset=False,
+        )
+
+    def _score_task(
+        self, 
+        candidate_slice_ids: set[str], 
+        prompts: list[PromptConfig], 
+        strategy: TaskStrategy
+    ) -> dict[str, float]:
+        """Score a task's prompts using the task strategy."""
+        if not candidate_slice_ids or not prompts:
+            return {}
+
+        # All prompts in a task use the task's scoring mode
+        task_results: dict[str, float] = {}
+
+        if strategy.scoring_mode == "softmax":
+            softmax_scores = self._compute_softmax_scores(candidate_slice_ids, prompts)
+            for slice_id, score in softmax_scores:
+                task_results[slice_id] = max(task_results.get(slice_id, 0), abs(score))
+        else:  # independent
+            independent_scores = self._compute_independent_scores(candidate_slice_ids, prompts)
+            for slice_id, score in independent_scores:
+                task_results[slice_id] = max(task_results.get(slice_id, 0), abs(score))
+
+        return task_results
+
+    def _combine_task_results(self, all_task_results: dict[str, dict[str, float]]) -> dict[str, float]:
+        """Combine results from all tasks."""
+        combined: dict[str, float] = {}
+
+        for task_name, task_results in all_task_results.items():
+            for slice_id, score in task_results.items():
+                # Use max score across all tasks
+                combined[slice_id] = max(combined.get(slice_id, 0), score)
+
+        return combined
 

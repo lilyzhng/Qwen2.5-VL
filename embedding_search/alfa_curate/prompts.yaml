@@ -1,24 +1,45 @@
-# Scenario-based active learning configuration
-# Each item defines a driving scenario query and optional selection parameters.
+# Task strategies define how groups of prompts are executed
+tasks:
+  obstruction:
+    priority: 1                    # Runs first to separate data
+    scoring_mode: "independent"    # Each prompt retrieves independently
+    separate_dataset: true         # Separate this data from subsequent tasks
+  
+  pca:
+    priority: 2                    # Runs second
+    scoring_mode: "softmax"        # Prompts compete for best match per slice
+    separate_dataset: false        # Include in general results pool
 
+# Scenarios with text prompts defined
 scenarios:
-  - prompt: "pedestrians crossing street"
-    threshold: 0.20   # minimum similarity (0.0-1.0) to keep a slice
-    top_k: 200        # how many nearest neighbours to retrieve per prompt
-    scoring_mode: "softmax"  # optional: "independent" or "softmax" (defaults to global config if not set)
+  # Task: obstruction (priority=1, runs first, data partitioned from subsequent tasks)
+  - task: "obstruction"
+    prompt: "camera lens obstructed by dirt or water"
+    threshold: 0.30
+    top_k: 500
 
-  - prompt: "vehicle turning at an intersection"
+  - task: "obstruction"
+    prompt: "camera obstruction at daytime"
+    threshold: 0.30
+    top_k: 500
+
+  # Task: pca (priority=2, runs second, uses softmax for multiple prompts)
+  - task: "pca"
+    prompt: "pedestrians crossing street"
     threshold: 0.20
     top_k: 200
-    scoring_mode: "softmax"
 
-  - prompt: "motorcyclist near ego vehicle at night"
+  - task: "pca"
+    prompt: "pedestrians crossing at intersection"
     threshold: 0.20
     top_k: 200
-    scoring_mode: "softmax"  # this prompt will use softmax mode even if others use independent
 
-  - prompt: "camera obstruction at daytime"
+  - task: "pca"
+    prompt: "vehicle turning at an intersection"
     threshold: 0.20
     top_k: 200
-    scoring_mode: "independent"  # this prompt will use softmax mode even if others use independent
 
+  - task: "pca"
+    prompt: "motorcyclist near ego vehicle at night"
+    threshold: 0.20
+    top_k: 200
