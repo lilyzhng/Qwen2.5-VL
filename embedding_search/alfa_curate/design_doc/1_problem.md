@@ -1,35 +1,42 @@
-# PT-1756 ALFA Curate: Problem Statement
+# PT-1938 ALFA Curate
 
-Authors: Lily Zhang  
-Date: Oct 6, 2025
+Authors: [Lily Zhang](mailto:xzhang@lat.ai)  
+Creation Date: Oct 6, 2025  
+Jira Ticket: [PT-1938](https://latitudeai.atlassian.net/browse/PT-1938)  
+Comment Close Date:   
+Version: 0.1  
+Status: **DRAFT** / ABORTED / READY FOR APPROVAL /APPROVED  
+Have you submitted an invention disclosure? **No**/Yes
 
-# 1. Problem Statement
 
-### **1.1 Challenges**
+Summary
 
-To ensure the product we build addresses real user pain points, I spent time interviewing several sensing ML practitioners and reviewing how they currently manage perception data. Through these discussions, three recurring pain points across these conversations: redundancy overhead, imbalance distribution, curation explainability.
+This design doc focuses on building a scalable data curation pipeline that empowers ML engineers to train faster and better.
 
-**1. Redundancy overhead**  
-It is frequently noted that large portions of the corpus consist of visually or behaviorally similar slices that add little new information. Long, uneventful sequences inflate storage and training time while slowing iteration, and simple subsampling misses which segments are actually distinct and worth keeping.
+Glossary
 
-* For example: BPA slices with slow ego speeds; select keyframes within each slice to avoid indexing near-identical content.  
-* Motivation: Users should be able to cut compute without losing rare events by down-sampling redundancies with a user-controlled de-dup threshold.
+| Temporal deduplication  | Within the same slice, N segments (8 s) can be generated for 1 slice (30-40s). temporal\_dedup removes or down-weights near-identical segments.  |
+| :---- | :---- |
+| Perceptual deduplication  | Across slices, perceptual\_dedup removes or down-weights pixel-level or near-exact visual duplicates. |
+| Semantic deduplication | Across slices, semantic\_dedup removes or down-weights content that is different in pixels but equivalent in meaning. |
+| Hybrid Search  | A query method that combines multiple search techniques, such as semantic and keyword search. |
+| Hard deduplication  | hard\_dedup removes items identified as duplicates based on exact, perceptual, or semantic similarity so only one representative remains.  |
+| Soft deduplication | soft\_dedup down-weights items identified as duplicates based on exact, perceptual, or semantic similarity to reduce redundancy without deleting data. |
 
-**2. Imbalance Distribution**  
-Data is concentrated in common conditions, while rare but safety-critical scenarios remain sparse. This skews learning toward easy contexts and limits robustness in edge cases, especially when metadata is incomplete or noisy.
+# 1. Problem
+ALFA Search is actively used by various teams (UM, SP, PAD, SE) for text-to-video and video-to-video search ([https://to/alfa](https://to/alfa)). LaTS ([https://to/lats](https://to/lats)) has adopted the text-to-video functionality and is used across Latitude. 
 
-* For example: Sunny daytime highway dominates while night, adverse weather, and VRU interactions are scarce, impacting modules like BLIS, RCTA, and exit warning.  
-* Motivation: Enrich and correct metadata, then apply scenario-aware weighting (e.g., "pedestrian emerging from behind the ego vehicle," trailers, large vehicles) to raise coverage where it matters.
 
-**3. Curation explainability**  
-Teams lack a consistent way to assess which slices contribute most to learning and why. Without interpretable signals, prioritization relies on intuition, slowing hard-example discovery and targeted improvements.
+ALFA Curate has been integrated into the Active Learning Framework for language-guided data selection. Users define scenarios (e.g., "People running across the road") with top\_k and similarity\_threshold to curate unlabeled data of interest for prioritized labeling.
 
-* Example: Hard-example mining needs an explanation of why slice A is harder than slice B.  
-* Motivation: Attach quality and difficulty signals to metadata and use semantic cues (object type, scene, spatial relationship, actor behavior) to rank and justify selection.
+### **1.1 Retrieval Noises**
+ALFA Search returns slices with a user-defined threshold, but requires manual tuning. Due to fundamental limitations of embedding-based retrieval [\[7\]](https://scholar.google.com/scholar_lookup?arxiv_id=2508.21038), which map whole clips to a joint space for scene-level semantics, slice A (cow+grass+sky) can be very close to slice B (grass+sky). These coarse models suffer from background domination and information loss, resulting in noisy search results.
 
-### 1.2 Existing Strategies
+What's desired? We need an automatic way to review and refine retrieved results with minimal manual tuning. 
 
-ALFA Search today   
-The ALFA Search app supports both text-to-video and video-to-video search. Today, we have end-to-end search working: embeddings are generated, indexed in LanceDB, and queried from the ALFA Search UI. In addition, the ALFA Curate has been integrated into Active Learning Framework for prompt based data selection.
+### **1.2 Redundancy Overhead**
+[TODO] Insert a HPC/Bluemind usecase figure
+The total amount of compute on HPC is fixed, but there are growing number features and datasets to be trained. Large portions of the corpus consist of visually or behaviorally similar slices that add little new information. Long, uneventful sequences (e.g., BPA slices with slow ego speeds) inflate storage and training time while slowing iteration.
 
-While ALFA Search reliably returns neighbors, results can still be noisy and redundant without automatic reranking or dedup control. SemDeDup showed that you can remove ~50% on LAION‑like web data with little loss. Upcoming sections address these problems.
+**What's desired?** The ability to cut compute without losing rare events by down-sampling redundancies with a user-controlled deduplication threshold. SemDeDup demonstrated \~50% removal of LAION‑like web data with minimal loss. 
+
