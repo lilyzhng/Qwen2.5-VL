@@ -45,8 +45,11 @@ class PromptConfig(BaseModel):
 class StrategyConfig(BaseModel):
     """Configuration for the alfa-based active learning selection strategy."""
 
+    # Repo
+    repo: str = "sensing--features--cosmos-index"
+
     #: LanceDB branch to read from
-    branch: str = "main"
+    lance_db_branch: str = "main"
 
     #: Cosmos model size for text embeddings
     model_size: str = "Cosmos-Embed1-448p"
@@ -54,30 +57,21 @@ class StrategyConfig(BaseModel):
     #: Path to YAML file containing prompts
     prompt_yaml_path: Optional[str] = "prompts.yaml"
 
-    #: Global default scoring mode (used for tasks without explicit strategy)
-    #: - "softmax": Computes similarities for all prompts using learned logit_scale from model, then selects best matching prompt per slice
-    #: - "independent": Each prompt retrieves top_k slices independently, scores are merged using max
-    #: Note: Task-level strategies override this setting
-    scoring_mode: str = "softmax"
-
     #: Maximum number of slices to process in a single batch (memory optimization)
     batch_size: int = 1000
 
     #: Whether to deduplicate results by base slice ID after scoring
     #: When enabled, only the best scoring segment per base video is kept
-    deduplicate_by_base_video: bool = True
+    deduplicate: bool = True
 
     #: Minimum similarity of best result to consider prompt valid
-    min_best_similarity: float = 0.0
+    retrieval_multiplier: int = 3
 
-    #: List of prompts
-    prompts: List[PromptConfig] = Field(default_factory=list)
-
-    #: Task-specific strategies (task_name -> TaskStrategy)
-    #: Loaded from YAML file's "tasks:" section
-    #: If a prompt's task is not defined here, default strategy is created using global scoring_mode
-    task_strategies: Dict[str, TaskStrategy] = Field(default_factory=dict)
-
-    class Config:
-        arbitrary_types_allowed = True
+    #: Prompt expansion and fusion settings
+    #: Enable prompt expansion for better recall with CLIP models
+    use_prompt_expansion: bool = True
+    
+    #: Number of variants to generate per prompt (default: 6)
+    #: More variants = better recall but slower (linear cost)
+    num_variants: int = 6
 
