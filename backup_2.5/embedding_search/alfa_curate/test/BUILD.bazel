@@ -1,0 +1,14 @@
+load("//tools/rules:py_test.bzl", "py_test")
+
+py_test(
+    name = "slice_scorer_test",
+    srcs = ["slice_scorer_test.py"],
+    tags = ["lat"],
+    deps = [
+        "//autonomy/perception/datasets/active_learning/alfa_curate:config",
+        "//autonomy/perception/datasets/active_learning/alfa_curate:slice_scorer",
+        "@python//:numpy",
+        "@python//:pydantic",
+        "@python//:pyyaml",
+    ],
+)
