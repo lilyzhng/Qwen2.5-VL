@@ -7,9 +7,6 @@ data_curate/models/nvidia_cosmos_embed_1/
 data_curate/models/*/
 !data_curate/models/download.py
 
-# ignore dataset
-v1.0-mini/
-
 # ignore cache 
 .cache/
 
