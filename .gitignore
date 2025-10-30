@@ -1,5 +1,5 @@
 # ignore embedding search data
-embedding_search/data/*
+data_curate/data/*
 
 # ignore model
 nvidia_cosmos_embed_1/

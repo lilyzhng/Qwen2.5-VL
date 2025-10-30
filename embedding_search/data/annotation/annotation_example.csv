@@ -1,5 +1,0 @@
-slice_id,video_path,pv_object_type,pv_actor_behavior,pv_spatial_relation,ego_behavior,scene_type
-car2cyclist_1.mp4,/path/to/car2cyclist_1.mp4,bicyclist,traveling in same direction,corridor front,proceeding straight,"non-intersection, daytime"
-car2cyclist_2.mp4,/path/to/car2cyclist_2.mp4,bicyclist,entering ego path,left adjacent,ego lane change,"intersection, daytime"
-car2ped_1.mp4,/path/to/car2ped_1.mp4,pedestrian,straight crossing path,corridor front,proceeding straight,"crosswalk, daytime"
-car2car_1.mp4,/path/to/car2car_1.mp4,small vehicle,traveling in same direction,right adjacent,proceeding straight,"highway, daytime"
