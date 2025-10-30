@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  lakefs:
+    image: treeverse/lakefs:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - LAKEFS_AUTH_ENCRYPT_SECRET_KEY=some-secret-key-for-encryption
+      - LAKEFS_DATABASE_TYPE=local
+      - LAKEFS_DATABASE_LOCAL_PATH=/lakefs/data/metadata
+      - LAKEFS_BLOCKSTORE_TYPE=local
+      - LAKEFS_BLOCKSTORE_LOCAL_PATH=/lakefs/data/blockstore
+      - LAKEFS_STATS_ENABLED=false
+      - LAKEFS_LOGGING_LEVEL=INFO
+    volumes:
+      - lakefs_data:/lakefs/data
+    command: ["run", "--local-settings"]
+
+volumes:
+  lakefs_data:
+    driver: local

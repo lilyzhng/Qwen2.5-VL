@@ -1,6 +1,0 @@
-filegroup(
-    name = "config",
-    srcs = glob(["*.yaml"]),
-    tags = ["lat"],
-    visibility = ["//autonomy:__subpackages__"]
-)
