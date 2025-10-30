@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Data files
+data/video_embeddings.*
+data/query_embeddings.*
+data/*.parquet
+data/*.pkl
+data/*.db
+data/query_cache/
+data/*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Model files
+models/*.bin
+models/*.safetensors
+models/*.onnx
+
+# Temporary files
+*.tmp
+*.bak
+.cache/
+
+# Streamlit
+.streamlit/
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+logs/
+
+# Large media files (optional - uncomment if needed)
+# data/videos/
