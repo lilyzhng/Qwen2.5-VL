@@ -1,8 +1,12 @@
 # ignore embedding search data
 data_curate/data/*
 
-# ignore model
+# ignore model weights
 nvidia_cosmos_embed_1/
+data_curate/models/nvidia_cosmos_embed_1/
+data_curate/models/*/
+!data_curate/models/download.py
+
 # ignore dataset
 v1.0-mini/
 
@@ -14,8 +18,12 @@ v1.0-mini/
 
 # ignore venv
 .venv
+qwen_venv/
 
 # python generated files
+**/__pycache__/
+**/*.pyc
+**/*.pyo
 __pycache__/
 *.py[oc]
 build/
@@ -23,5 +31,16 @@ dist/
 wheels/
 *.egg-info
 
-# venv
-.venv
+# Jupyter notebook checkpoints
+**/.ipynb_checkpoints/
+.ipynb_checkpoints/
+
+# Large data files
+*.zip
+*.tar.gz
+*.parquet
+*.safetensors
+
+# temporary test files
+test_*.ipynb
+*_test.ipynb
