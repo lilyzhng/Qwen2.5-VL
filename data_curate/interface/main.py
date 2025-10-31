@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ALFA 0.1 - Similarity Search Interface.
+alpha 0.1 - Similarity Search Interface.
 """
 
 import os
@@ -50,7 +50,7 @@ def handle_error(e: Exception):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ALFA 0.1 - Search for similar videos using embeddings"
+        description="alpha 0.1 - Search for similar videos using embeddings"
     )
     
     parser.add_argument(

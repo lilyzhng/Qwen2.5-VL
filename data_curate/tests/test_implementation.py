@@ -115,7 +115,7 @@ def test_similarity_calculation(text_embedding, video_embedding):
 def main():
     """Run all tests."""
     logger.info("=" * 60)
-    logger.info("ALFA 0.1 Implementation Test")
+    logger.info("alpha 0.1 Implementation Test")
     logger.info("=" * 60)
     
     # Test model loading

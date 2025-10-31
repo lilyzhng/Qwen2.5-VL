@@ -1,4 +1,4 @@
-# ALFA 0.1 Embedding Search
+# alpha 0.1 Embedding Search
 
 This system enables efficient similarity search across video databases using both video-to-video and text-to-video queries.
 
@@ -22,7 +22,7 @@ embedding_search/
 │   ├── visualizer.py              # Result visualization
 │   ├── evaluate.py                # Recall evaluation framework
 ├── interface/                     # User interfaces
-│   ├── streamlit_app.py           # Web interface (ALFA 0.1)
+│   ├── streamlit_app.py           # Web interface (alpha 0.1)
 │   ├── recall_analysis_app.py     # Recall analysis dashboard
 │   ├── main.py                    # Main CLI interface
 │   ├── launch_streamlit.sh        # Main app launcher
@@ -62,7 +62,7 @@ python interface/main.py build --input-path data/unified_input_path.parquet
 
 ### 2. Launch Streamlit Apps
 
-#### Main Search Interface (ALFA 0.1)
+#### Main Search Interface (alpha 0.1)
 ```bash
 ./interface/launch_streamlit.sh
 ```

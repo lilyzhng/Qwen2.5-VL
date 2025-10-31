@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ALFA 0.1 - Similarity Search Interface
+alpha 0.1 - Similarity Search Interface
 """
 
 import os
@@ -697,7 +697,7 @@ def main():
     
     # Page configuration
     st.set_page_config(
-        page_title="ALFA 0.1 - Similarity Search",
+        page_title="alpha 0.1 - Similarity Search",
         page_icon="🔍",
         layout="wide",
         initial_sidebar_state="expanded"
@@ -1165,7 +1165,7 @@ def main():
 
     st.markdown("""
     <div class="main-header">
-        <h1>ALFA 0.1 - Embedding Search</h1>
+        <h1>alpha 0.1 - Embedding Search</h1>
     </div>
     """, unsafe_allow_html=True)
 

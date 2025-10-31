@@ -1,5 +1,5 @@
 """
-Configuration management for the ALFA 0.1 retrieval system.
+Configuration management for the alpha 0.1 retrieval system.
 """
 
 from dataclasses import dataclass, field
@@ -11,7 +11,7 @@ import os
 
 @dataclass
 class VideoRetrievalConfig:
-    """Configuration for the ALFA 0.1 retrieval."""
+    """Configuration for the alpha 0.1 retrieval."""
     
     model_name: str = "models/nvidia_cosmos_embed_1"
     device: str = "cuda"

@@ -1,4 +1,4 @@
-# ALFA 0.1 Retrieval System Configuration
+# alpha 0.1 Retrieval System Configuration
 
 # Model configuration
 model_name: "/path/to/your/local/cosmos-model"

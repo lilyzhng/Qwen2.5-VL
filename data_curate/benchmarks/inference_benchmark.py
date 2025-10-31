@@ -158,7 +158,7 @@ class InferenceBenchmark:
         Initialize benchmark.
         
         Args:
-            config: Configuration for the ALFA 0.1 retrieval
+            config: Configuration for the alpha 0.1 retrieval
         """
         self.config = config or VideoRetrievalConfig()
         self.embedder = None

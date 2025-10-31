@@ -16,7 +16,7 @@ fi
 # Set environment variables for OpenMP compatibility
 export KMP_DUPLICATE_LIB_OK=TRUE
 
-echo "🚀 Launching ALFA 0.1 - Embedding Builder..."
+echo "🚀 Launching alpha 0.1 - Embedding Builder..."
 echo "📁 Project root: ${PROJECT_ROOT}"
 echo "📊 Building embeddings from unified input parquet file..."
 echo ""

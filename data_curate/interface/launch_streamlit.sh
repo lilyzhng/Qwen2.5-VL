@@ -16,7 +16,7 @@ fi
 # Launch Streamlit with OpenMP fix
 export KMP_DUPLICATE_LIB_OK=TRUE
 
-echo "🚀 Launching ALFA 0.1 - Enhanced Similarity Search Interface..."
+echo "🚀 Launching alpha 0.1 - Enhanced Similarity Search Interface..."
 echo "📁 Project root: ${PROJECT_ROOT}"
 echo "📝 Open http://localhost:8501 in your browser"
 echo ""

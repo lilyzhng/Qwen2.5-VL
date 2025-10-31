@@ -43,7 +43,7 @@ class PromptConfig(BaseModel):
 
 
 class StrategyConfig(BaseModel):
-    """Configuration for the alfa-based active learning selection strategy."""
+    """Configuration for the alpha-based active learning selection strategy."""
 
     # Repo
     repo: str = "sensing--features--cosmos-index"

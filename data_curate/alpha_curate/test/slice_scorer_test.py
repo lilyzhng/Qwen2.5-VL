@@ -1,4 +1,4 @@
-"""Unit tests for ALFA curate data selection strategy."""
+"""Unit tests for alpha curate data selection strategy."""
 
 
 from unittest.mock import Mock, patch

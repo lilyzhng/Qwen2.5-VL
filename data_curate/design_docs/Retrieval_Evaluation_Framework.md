@@ -2,7 +2,7 @@
 
 ## Summary
 
-This one-pager describes the evaluation framework for ALFA 0.1 embedding search, covering both text-to-video and video-to-video search capabilities. 
+This one-pager describes the evaluation framework for alpha 0.1 embedding search, covering both text-to-video and video-to-video search capabilities. 
 
 ### Ground Truth Processing
 - Load annotated video dataset from `unified_annotation.csv`

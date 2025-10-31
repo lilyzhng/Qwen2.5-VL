@@ -1,4 +1,4 @@
-"""Implementation of ALFA based data selection strategy."""
+"""Implementation of alpha based data selection strategy."""
 
 
 import logging
@@ -74,7 +74,7 @@ class SliceScorer(SimpleSliceScorerBase[StrategyConfig]):
 
 
    def process_slice(self, data_model_reader: DataModelReader) -> None:
-       """It works on the slice level, not neeed for alfa curate because slice level info is in the DB."""
+       """It works on the slice level, not neeed for alpha curate because slice level info is in the DB."""
        # TODO(SML-4678): refactor active learning with new base class
 
 

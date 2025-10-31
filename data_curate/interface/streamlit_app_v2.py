@@ -1015,7 +1015,7 @@ def display_retrieval_results(
 def main() -> None:
     """Main application entrypoint."""
     st.set_page_config(
-        page_title="ALFA Embedding Search",
+        page_title="alpha Embedding Search",
         page_icon="🔍",
         layout="wide",
         initial_sidebar_state="expanded",
@@ -1026,7 +1026,7 @@ def main() -> None:
     st.markdown(
         """
    <div class="main-header">
-       <h1>ALFA Embedding Search</h1>
+       <h1>alpha Embedding Search</h1>
    </div>
    """,
         unsafe_allow_html=True,

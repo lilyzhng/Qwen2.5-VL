@@ -1,5 +1,5 @@
 """
-Abstract base classes for the ALFA 0.1 retrieval.
+Abstract base classes for the alpha 0.1 retrieval.
 """
 
 from abc import ABC, abstractmethod

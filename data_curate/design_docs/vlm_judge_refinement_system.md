@@ -1,4 +1,4 @@
-# VLM-as-Judge Refinement System for ALFA Embedding Search
+# VLM-as-Judge Refinement System for alpha Embedding Search
 
 ## Executive Summary
 
@@ -524,7 +524,7 @@ Success Criteria: Obstruction detection accuracy > 0.85, Severity classification
 
 ---
 
-## 6. Integration with Existing ALFA System
+## 6. Integration with Existing alpha System
 
 ### 6.1 Modified Search Pipeline
 
@@ -672,7 +672,7 @@ class ALFASearchWithJudge(VideoSearchEngine):
 
 ## 10. Conclusion
 
-The VLM-as-Judge refinement system addresses critical limitations in embedding-only search by adding semantic validation, multi-attribute reasoning, and explainability. By leveraging Qwen 3.0 VL's advanced spatial perception, temporal modeling, and multimodal reasoning, we can transform the ALFA system from a high-recall retrieval engine into a high-precision data curation platform.
+The VLM-as-Judge refinement system addresses critical limitations in embedding-only search by adding semantic validation, multi-attribute reasoning, and explainability. By leveraging Qwen 3.0 VL's advanced spatial perception, temporal modeling, and multimodal reasoning, we can transform the alpha system from a high-recall retrieval engine into a high-precision data curation platform.
 
 **Key Takeaways**:
 1. **Two-stage architecture** balances speed (embedding search) with accuracy (VLM judgment)
@@ -694,6 +694,6 @@ The VLM-as-Judge refinement system addresses critical limitations in embedding-o
 
 1. Qwen 3.0 VL Technical Documentation: https://github.com/QwenLM/Qwen3-VL
 2. NVIDIA Cosmos Embedding Model: https://github.com/NVIDIA/Cosmos
-3. ALFA Embedding Search System: `backup_2.5/embedding_search/`
+3. alpha Embedding Search System: `backup_2.5/embedding_search/`
 4. VLM-as-Judge Research: "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena" (Zheng et al., 2023)
 5. Multimodal Reasoning for Autonomous Driving: "DRAMA: Joint Risk Localization and Captioning in Driving" (Wu et al., 2023)

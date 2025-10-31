@@ -1,10 +1,10 @@
 """
-Custom exceptions for the ALFA 0.1 retrieval system.
+Custom exceptions for the alpha 0.1 retrieval system.
 """
 
 
 class VideoRetrievalError(Exception):
-    """Base exception for ALFA 0.1 retrieval."""
+    """Base exception for alpha 0.1 retrieval."""
     pass
 
 

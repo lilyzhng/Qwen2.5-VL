@@ -1,4 +1,4 @@
-"""Utility functions for ALFA based data selection strategy."""
+"""Utility functions for alpha based data selection strategy."""
 
 
 
