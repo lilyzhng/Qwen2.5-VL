@@ -1,0 +1,10 @@
+# Qwen3-VL Prompt Configuration
+# Central place to manage all prompts - update here instead of in code
+
+# System Prompts
+system_prompts:
+  role: "You are an expert autonomous driving systems analyst."
+
+# User Prompts  
+user_prompts:
+  judgments: "Is there a pedestrian crossing the street?"
