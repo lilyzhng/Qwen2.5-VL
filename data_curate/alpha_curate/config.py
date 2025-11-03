@@ -1,77 +1,49 @@
-from typing import Dict, List, Optional
-
-from pydantic import BaseModel, Field
+"""Config for ALFA-based data selection strategy using text prompts to select relevant video scenarios."""
 
 
-class TaskStrategy(BaseModel):
-    """Strategy configuration for a specific task."""
+from pathlib import Path
 
-    #: Task identifier
-    task_name: str
+from ruamel.yaml import YAML
 
-    #: Execution order (lower = earlier, useful for filtering tasks)
-    priority: int = 100
-
-    #: Scoring mode for this task's prompts ("independent" or "softmax")
-    scoring_mode: str = "softmax"
-
-    #: Whether to separate this task's results into a distinct dataset (removed from candidate pool for subsequent tasks)
-    separate_dataset: bool = False
-
-    class Config:
-        allow_mutation = False
+from autonomy.perception.datasets.active_learning.alfa_curate.data_types import ScenarioConfig
+from kits.scalex.dataset.config import BaseStageConfigV2
 
 
-class PromptConfig(BaseModel):
-    """Configuration for a single prompt used in selection."""
+class AlfaCurateConfig(BaseStageConfigV2):
+    """Configuration for the alfa-based active learning selection strategy."""
 
-    #: The text prompt to search for
-    prompt: str
+    #: References to input data.
+    log_slices_silver_reference: str = "sensing--log-slices--silver/main"
+    human_labels_gold_reference: str = "sensing--human-labels--gold/main"
+    active_learning_filter_reference: str = "sensing--active-learning--selection/filter"
 
-    #: Task this prompt belongs to (used for grouping and applying task-specific strategies)
-    #: If None, uses "default" task with global scoring_mode
-    task: Optional[str] = None
-
-    #: Minimum similarity score (0.0-1.0) to keep a slice
-    threshold: float = 0.2
-
-    #: Number of nearest neighbors to retrieve per prompt
-    top_k: int = 200
-
-    class Config:
-        allow_mutation = False
-
-
-class StrategyConfig(BaseModel):
-    """Configuration for the alpha-based active learning selection strategy."""
-
-    # Repo
+    #: Repo.
     repo: str = "sensing--features--cosmos-index"
 
-    #: LanceDB branch to read from
+    #: LanceDB branch to read from.
     lance_db_branch: str = "main"
 
-    #: Cosmos model size for text embeddings
+    # : LanceDB table name.
+    table_name: str = "data"
+
+    #: Cosmos model size for text embeddings.
     model_size: str = "Cosmos-Embed1-448p"
 
-    #: Path to YAML file containing prompts
-    prompt_yaml_path: Optional[str] = "prompts.yaml"
+    #: Path to YAML file containing prompts.
+    prompt_yaml_path: str = "autonomy/perception/datasets/active_learning/alfa_curate/resources/prompts.yaml"
 
-    #: Maximum number of slices to process in a single batch (memory optimization)
+    #: Maximum number of slices to process in a single batch.
     batch_size: int = 1000
 
-    #: Whether to deduplicate results by base slice ID after scoring
-    #: When enabled, only the best scoring segment per base video is kept
-    deduplicate: bool = True
+    #: Standard configuration options.
+    branch: str = "alfa_curate"
+    incremental: bool = False
 
-    #: Minimum similarity of best result to consider prompt valid
-    retrieval_multiplier: int = 3
 
-    #: Prompt expansion and fusion settings
-    #: Enable prompt expansion for better recall with CLIP models
-    use_prompt_expansion: bool = True
-    
-    #: Number of variants to generate per prompt (default: 6)
-    #: More variants = better recall but slower (linear cost)
-    num_variants: int = 6
+def load_scenarios_from_yaml(path: str | Path) -> list[ScenarioConfig]:
+    """Load scenarios from a YAML file."""
+    with open(path, "r") as f:
+        yaml = YAML(typ="safe")
+        data = yaml.load(f)
 
+    return [ScenarioConfig.from_dict(item) for item in data.get("scenarios", [])]  # type: ignore[attr-defined]

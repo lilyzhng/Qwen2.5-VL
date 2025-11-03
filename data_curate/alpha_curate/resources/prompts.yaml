@@ -1,11 +1,21 @@
-# Each prompt defines a driving scenario with similarity threshold to filter noises.
-#
-# To enable prompt expansion and score fusion:
-#   Set use_prompt_expansion=True in StrategyConfig
-#   Each prompt will automatically generate variants (synonyms + partial phrases)
-#   Scores will be fused using weighted averaging + diversity bonus
-
 scenarios:
- - prompt: "People running across the road"
-   threshold: 0.30
-   top_k: 100
+# Camera obstruction
+# * FOV fully blocked
+# * FOV partially blocked
+# * water drops
+  - name: "camera_obstruction"
+    prompts:
+      - prompt: "Camera view fully blocked by an object stuck to the windshield"
+        camera_names: &front-cameras ["camera_front_wide", "camera_front_narrow"]
+        similarity_threshold: 0.29
+      - prompt: "Camera lens partially covered by mud dirt tape or debris occluding the scene"
+        camera_names: *front-cameras
+        similarity_threshold: 0.29
+      - prompt: "Water droplets or moisture stuck on the camera lens blurring the view"
+        camera_names: *front-cameras
+        similarity_threshold: 0.29
+  - name: "peds_crossing_road"
+    prompts:
+      - prompt: "People running across the road"
+        camera_names: *front-cameras
+        similarity_threshold: 0.3

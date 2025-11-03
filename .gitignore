@@ -1,5 +1,6 @@
 # ignore embedding search data
 data_curate/data/*
+data_curate/cosmos/*
 
 # ignore model weights
 nvidia_cosmos_embed_1/
