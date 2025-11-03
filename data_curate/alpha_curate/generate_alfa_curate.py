@@ -7,6 +7,7 @@ from autonomy.perception.datasets.active_learning.alfa_curate.config import Alfa
 from autonomy.perception.datasets.active_learning.alfa_curate.data_types import ScenarioConfig
 from autonomy.perception.datasets.active_learning.alfa_curate.stage import STAGE_DEFINITION
 from autonomy.perception.datasets.active_learning.alfa_curate.utils import (
+    SearchResult,
     deduplicate_by_base_slice,
     get_slice_ids_to_exclude,
     load_table,
@@ -31,6 +32,81 @@ from platforms.lakefs.client import LakeFS
 _LOGGER: Final = logging.getLogger(__name__)
 
 
+def select_slices_for_scenario(
+    config: AlfaCurateConfig,
+    scenario: ScenarioConfig,
+) -> list[SearchResult]:
+    """Select slices for a scenario using text query and VLM judge.
+    
+    This function implements a two-stage selection pipeline:
+    1. Text-to-video embedding similarity search with deduplication
+    2. VLM judge to verify and filter candidates
+    
+    Args:
+        config: Configuration for the selection process
+        scenario: Scenario configuration with prompts
+        
+    Returns:
+        List of SearchResult objects that passed both stages
+    """
+    # Stage 1: Run text queries and deduplicate
+    _LOGGER.info("Stage 1: Running text-to-video similarity search...")
+    results = []
+    table = load_table(config.repo, config.lance_db_branch, config.table_name)
+    
+    for prompt_config in scenario.prompts:
+        results += run_text_query(
+            table,
+            prompt_config.prompt,
+            config.model_size,
+            camera_names=prompt_config.camera_names,
+            upper_bound_distance=similarity_to_l2_distance(prompt_config.similarity_threshold),
+        )
+    
+    _LOGGER.info("Number of initial results: %d.", len(results))
+    results = deduplicate_by_base_slice(results)
+    _LOGGER.info("Number of unique slices after deduplication: %d.", len(results))
+    
+    # Stage 2: VLM judge filtering
+    _LOGGER.info("Stage 2: Running VLM judge to verify candidates...")
+    filtered_results = apply_vlm_judge(
+        results=results,
+        scenario=scenario,
+        config=config,
+    )
+    _LOGGER.info("Number of slices after VLM filtering: %d.", len(filtered_results))
+    
+    return filtered_results
+
+
+def apply_vlm_judge(
+    results: list[SearchResult],
+    scenario: ScenarioConfig,
+    config: AlfaCurateConfig,
+) -> list[SearchResult]:
+    """Apply VLM judge to filter and re-score search results.
+    
+    Args:
+        results: Initial search results from embedding similarity
+        scenario: Scenario configuration with prompts
+        config: Configuration for VLM inference
+        
+    Returns:
+        Filtered and re-scored results based on VLM judgement
+    """
+    # TODO: Implement VLM judge logic here
+    # For now, return all results unchanged
+    # 
+    # Implementation will:
+    # 1. Load video frames/images for each candidate
+    # 2. Run VLM inference with scenario prompts
+    # 3. Filter out false positives
+    # 4. Optionally update similarity scores with VLM confidence
+    
+    _LOGGER.warning("VLM judge not yet implemented, returning all candidates")
+    return results
+
+
 def _materialize_scenario(
     config: AlfaCurateConfig,
     lakefs: LakeFS,
@@ -47,19 +123,10 @@ def _materialize_scenario(
         incremental=config.incremental,
         stage_config=config,
     ) as materialization:
-        results = []
-        for prompt_config in scenario.prompts:
-            results += run_text_query(
-                load_table(config.repo, config.lance_db_branch, config.table_name),
-                prompt_config.prompt,
-                config.model_size,
-                camera_names=prompt_config.camera_names,
-                upper_bound_distance=similarity_to_l2_distance(prompt_config.similarity_threshold),
-            )
-        _LOGGER.info("Number of initial results: %d.", len(results))
-        results = deduplicate_by_base_slice(results)
-        _LOGGER.info("Number of unique slices: %d.", len(results))
+        # Run the two-stage selection pipeline
+        results = select_slices_for_scenario(config, scenario)
 
+        # Convert to ActiveLearningSelection format
         selected_data = [
             ActiveLearningSelection(
                 key=slice_id_to_key[result.slice_id],
@@ -74,6 +141,7 @@ def _materialize_scenario(
         ]
         _LOGGER.info("Length after filtering out labeled slices: %d", len(selected_data))
 
+        # Write results to LakeFS
         output_filename = materialization.uris.data_file(PARQUET_FILE_NAME, PARQUET)
         if selected_data:
             write_to_single_file(
