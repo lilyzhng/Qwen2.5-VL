@@ -6,6 +6,7 @@ from pathlib import Path
 from ruamel.yaml import YAML
 
 from autonomy.perception.datasets.active_learning.alfa_curate.data_types import ScenarioConfig
+from autonomy.perception.datasets.active_learning.alfa_curate.vlm_judge.config import VLMJudgeConfig
 from kits.scalex.dataset.config import BaseStageConfigV2
 
 
@@ -35,9 +36,18 @@ class AlfaCurateConfig(BaseStageConfigV2):
     #: Maximum number of slices to process in a single batch.
     batch_size: int = 1000
 
+    #: VLM judge configuration.
+    vlm_judge: VLMJudgeConfig = None
+
     #: Standard configuration options.
     branch: str = "alfa_curate"
     incremental: bool = False
+
+    def __post_init__(self):
+        """Initialize VLM judge config if not provided."""
+        super().__post_init__()
+        if self.vlm_judge is None:
+            self.vlm_judge = VLMJudgeConfig()
 
 
 def load_scenarios_from_yaml(path: str | Path) -> list[ScenarioConfig]:

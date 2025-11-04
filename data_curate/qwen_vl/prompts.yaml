@@ -8,3 +8,4 @@ system_prompts:
 # User Prompts  
 user_prompts:
   judgments: "Is there a pedestrian crossing the street?"
+  output_instruction: ""
