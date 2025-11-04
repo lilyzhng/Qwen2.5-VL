@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from typing import Final
 
-# Model configuration
 DEFAULT_VLM_MODEL_PATH: Final = "Qwen/Qwen3-VL-2B-Instruct"
 
 
@@ -30,7 +29,7 @@ class VLMJudgeConfig:
     #: Whether to use Flash Attention 2 for faster inference.
     use_flash_attn: bool = False
 
-    #: Maximum number of tokens to generate for each judgment (increased for detailed reasoning).
+    #: Maximum number of tokens to generate for each judgment.
     max_new_tokens: int = 256
 
     #: Desired frame rate for sampling video segments (frames per second).
@@ -40,13 +39,16 @@ class VLMJudgeConfig:
     max_frames_per_segment: int = 8
 
     #: Confidence threshold for VLM judge (0.0-1.0). Videos with confidence below this are filtered out.
-    vlm_confidence_threshold: float = 0.7
+    vlm_confidence_threshold: float = 0.6
 
     #: Number of GPUs to allocate per VLM judge worker.
-    num_gpus_per_worker: float = 0.5
+    num_gpus_per_worker: float = 1
 
     #: GPU type to request (e.g., "A100", "H100"). None means any GPU type.
     gpu_type: str = "A100"
+
+    #: Estimated GPU memory needed per worker in GB 
+    gpu_mem: int = 80
 
     #: Batch size for VLM inference.
     batch_size: int = 4

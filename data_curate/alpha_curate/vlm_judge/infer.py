@@ -35,12 +35,10 @@ def _load_model(
     model_path: str, use_flash_attn: bool = False
 ) -> tuple[AutoModelForImageTextToText, AutoProcessor]:
     """Load QwenVL model and processor.
-    
-    Note: QwenVL requires GPU. Model will be loaded to CUDA device automatically.
 
     Args:
         model_path: Path to the model directory or HuggingFace model identifier.
-        use_flash_attn: Whether to use Flash Attention 2.
+        use_flash_attn: Whether to use Flash Attention.
 
     Returns:
         Tuple of (model, processor).
@@ -74,36 +72,30 @@ def _get_cache_paths(model_path: str) -> tuple[Path, Path, Path]:
 
 def _download_from_lakefs(model_path: str, cache_dir: Path, temp_dir: Path) -> None:
     """Download model from LakeFS to cache directory."""
-    safe_name = model_path.replace("/", "_").replace(":", "_")
-    lakefs_path = f"models/{safe_name}"
+    lakefs_path = f"models/{model_path.replace('/', '_').replace(':', '_')}"
     
+    # Get file list from LakeFS
     lakefs = LakeFS()
     files = list(lakefs.list_objects("sensing-models", "main", lakefs_path))
     if not files:
-        raise FileNotFoundError(
-            f"Model not found in lakefs://sensing-models/main/{lakefs_path}"
-        )
+        raise FileNotFoundError(f"Model not found in lakefs://sensing-models/main/{lakefs_path}")
     
-    if temp_dir.exists():
-        shutil.rmtree(temp_dir)
-    if cache_dir.exists():
-        shutil.rmtree(cache_dir)
+    # Clean up and create temp directory
+    for dir_path in [temp_dir, cache_dir]:
+        if dir_path.exists():
+            shutil.rmtree(dir_path)
+    temp_dir.mkdir(parents=True)
     
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    
+    # Download all files
     try:
         tiered_fs = tiered_filesystem()
         for file_info in files:
-            filename = file_info.path.rpartition("/")[-1]
-            target_path = temp_dir / filename
-            tiered_fs.get_file(file_info.physical_address, str(target_path))
+            filename = file_info.path.split("/")[-1]
+            tiered_fs.get_file(file_info.physical_address, str(temp_dir / filename))
             _LOGGER.info("Downloaded %s", filename)
-        
-        # Atomic move to final location
-        temp_dir.rename(cache_dir)
+        temp_dir.rename(cache_dir)  # Atomic move
     except Exception:
-        if temp_dir.exists():
-            shutil.rmtree(temp_dir)
+        shutil.rmtree(temp_dir, ignore_errors=True)
         raise
 
 
@@ -150,9 +142,12 @@ def load_qwenvl_model(
 
 def _load_prompts_from_yaml() -> Dict:
     """Load prompts from prompts.yaml file.
-    
+
     Returns:
         Dictionary containing prompts configuration.
+
+    Raises:
+        RuntimeError: If prompts.yaml cannot be loaded.
     """
     prompts_file = Path(__file__).parent / "prompts.yaml"
     try:
@@ -160,18 +155,8 @@ def _load_prompts_from_yaml() -> Dict:
             prompts = yaml.safe_load(f) or {}
             return prompts
     except Exception as e:
-        _LOGGER.warning("Failed to load prompts.yaml: %s. Using default prompts.", e)
-        return {
-            "system_prompts": {
-                "role": "You are an expert autonomous driving systems analyst.",
-            },
-            "user_prompts": (
-                "{query}\n\n"
-                "Respond with JSON: "
-                '{"query": "<query>", "match": true, "confidence": 0.95, '
-                '"observation": "...", "reason": "..."}'
-            ),
-        }
+        _LOGGER.error("Failed to load prompts.yaml: %s", e)
+        raise RuntimeError(f"Failed to load prompts.yaml: {e}")
 
 
 @dataclass
@@ -201,7 +186,7 @@ class VLMJudgeResult:
 class VLMJudge:
     """VLM Judge for verifying ALFA Curate candidates.
     
-    This class loads a vision-language model (Qwen-VL) and provides methods
+    This class loads a vision-language model (Qwen-VL 3.0) and provides methods
     to judge whether video frames match specific queries. It's used to filter
     out false positives from embedding-based similarity search.
     """
@@ -235,7 +220,6 @@ class VLMJudge:
         )
         _LOGGER.info("VLM model loaded successfully")
         
-        # Load prompts from YAML
         self.prompts_config = _load_prompts_from_yaml()
         _LOGGER.debug("Loaded prompts configuration from YAML")
 
@@ -243,14 +227,12 @@ class VLMJudge:
         self, 
         frames: List[npt.NDArray[np.uint8]], 
         query: str,
-        return_confidence: bool = True,
     ) -> VLMJudgeResult:
         """Judge if video frames match the query with detailed reasoning.
 
         Args:
-            frames: List of video frames as HWC uint8 numpy arrays.
-            query: The judgment query (e.g., "Is there a pedestrian crossing the street?").
-            return_confidence: Deprecated, confidence is always returned. Kept for backward compatibility.
+            frames: List of video frames.
+            query: The judgment query.
 
         Returns:
             VLMJudgeResult containing match, confidence, observation, reason, and raw response.
@@ -261,15 +243,15 @@ class VLMJudge:
         for frame in frames:
             content.append({"type": "image", "image": frame})
 
-        # Build prompt from template (output format is included in user_prompts)
-        prompt_template = self.prompts_config.get(
-            "user_prompts",
+        # Build prompt from template (output format is included in user_prompts.judgment)
+        prompt_template = self.prompts_config.get("user_prompts", {}).get(
+            "judgment",
             "{query}\n\nRespond with JSON containing query, match, confidence, observation, and reason."
         )
         
-        structured_prompt = prompt_template.format(query=query)
+        judgment_prompt = prompt_template.format(query=query)
 
-        content.append({"type": "text", "text": structured_prompt})
+        content.append({"type": "text", "text": judgment_prompt})
 
         # Build messages with optional system prompt
         messages = []
@@ -282,7 +264,6 @@ class VLMJudge:
         
         messages.append({"role": "user", "content": content})
 
-        # Run inference
         with torch.no_grad():
             inputs = self.processor.apply_chat_template(
                 messages,

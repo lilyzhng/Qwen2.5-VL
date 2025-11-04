@@ -37,7 +37,22 @@ config = AlfaCurateConfig(
         max_frames_per_segment=8,               # Max frames per video segment
         load_model_from_lakefs=False,           # Load from HF or LakeFS
         use_flash_attn=False,                   # Use Flash Attention 2
+        gpu_memory_gb=6,                        # GPU memory needed (6GB for 2B model)
+        num_gpus_per_worker=0.5,                # 0.5 = share GPU with 2 workers
         gpu_type="A100",                        # GPU type to request
+    )
+)
+```
+
+### Example: For 32B Model
+
+```python
+config = AlfaCurateConfig(
+    vlm_judge=VLMJudgeConfig(
+        vlm_model_path="Qwen/Qwen3-VL-32B-Instruct",
+        gpu_memory_gb=64,                       # 64GB needed for 32B model
+        num_gpus_per_worker=1.0,                # Full GPU per worker
+        gpu_type="A100-80GB",                   # Must use 80GB variant
     )
 )
 ```
@@ -51,7 +66,9 @@ config = AlfaCurateConfig(
 | `vlm_confidence_threshold` | Min confidence to pass | `0.7` | 0.7-0.8 for balanced precision/recall |
 | `segment_desired_fps` | Frame sampling rate | `1.0` | 1.0 FPS for good coverage |
 | `max_frames_per_segment` | Max frames to send to VLM | `8` | 8-16 frames typical |
-| `gpu_type` | GPU type to request | `"A100"` | "A100", "V100", or None for any |
+| `gpu_memory_gb` | GPU memory needed (GB) | `6` | 2B: 6GB, 7B: 14GB, 32B: 64GB |
+| `num_gpus_per_worker` | GPUs per worker | `0.5` | 0.5 for small models, 1.0 for 32B+ |
+| `gpu_type` | GPU type to request | `"A100"` | "A100", "A100-80GB", "V100" |
 
 ## Usage
 
@@ -128,8 +145,8 @@ print(f"Reason: {result.reason}")
 
 ### 4. `prompts.yaml` - Prompt Configuration
 Central configuration file for all VLM prompts:
-- `system_prompts`: System role and instructions for the VLM
-- `user_prompts`: Complete user prompt template with output format instructions
+- `system_prompts.role`: System role for the VLM
+- `user_prompts.judgment`: Complete judgment prompt template with output format
 
 ## Customizing Prompts
 
@@ -141,26 +158,27 @@ system_prompts:
   role: "You are an expert autonomous driving systems analyst."
   instruction: "Analyze video frames carefully and provide accurate judgments."
 
-# User Prompts Template (includes output format)
-user_prompts: |
-  {query}
+# User Prompts
+user_prompts:
+  judgment: |
+    {query}
 
-  Analyze the video frames and respond ONLY with valid JSON in this exact format:
-  
-  {{
-    "query": "<the question>",
-    "match": true,
-    "confidence": 0.95,
-    "observation": "...",
-    "reason": "..."
-  }}
+    Analyze the video frames and respond ONLY with valid JSON in this exact format:
+    
+    {{
+      "query": "<the question>",
+      "match": true,
+      "confidence": 0.95,
+      "observation": "...",
+      "reason": "..."
+    }}
 
-  Where:
-  - query: the question being evaluated
-  - match: true if the scenario matches, false otherwise
-  - confidence: your confidence level from 0.0 to 1.0
-  - observation: what you see in the video frames (be specific)
-  - reason: why you gave this judgment
+    Where:
+    - query: the question being evaluated
+    - match: true if the scenario matches, false otherwise
+    - confidence: your confidence level from 0.0 to 1.0
+    - observation: what you see in the video frames (be specific)
+    - reason: why you gave this judgment
 ```
 
 ### Customizing the System Prompt
@@ -174,31 +192,42 @@ system_prompts:
 
 ### Customizing the User Prompts
 
-Edit `user_prompts` to change the complete prompt including output format:
+Edit `user_prompts.judgment` to change the complete prompt including output format:
 
 ```yaml
-user_prompts: |
-  {query}
+user_prompts:
+  judgment: |
+    {query}
 
-  Your custom instructions here...
-  Format: {{"match": true, "confidence": 0.9, "observation": "...", "reason": "..."}}
+    Your custom instructions here...
+    Format: {{"match": true, "confidence": 0.9, "observation": "...", "reason": "..."}}
 ```
 
 **Note**: Use double curly braces `{{` and `}}` for literal braces in the YAML (to avoid conflicts with the `{query}` template variable).
 
 ### Template Variables
 
-The `user_prompts` supports this variable:
+The `user_prompts.judgment` template supports this variable:
 - `{query}`: The judgment query (e.g., "Is there a pedestrian crossing?")
 
 ## Performance Considerations
 
 ### GPU Requirements
-- VLM models require GPU for inference
-- **Default GPU**: A100 (specified in `gpu_type` config)
-- **Minimum VRAM**: 8GB+ per worker
-- **Recommended**: A100 40GB or A100 80GB for best performance
-- To use any available GPU, set `gpu_type=None` in config
+
+VLM models require GPU for inference. Memory requirements vary by model size:
+
+| Model | GPU Memory (`gpu_memory_gb`) | `num_gpus_per_worker` | Recommended GPU |
+|-------|----------------------------|---------------------|-----------------|
+| Qwen3-VL-2B | 6 GB | 0.5 (share) | A100 40GB |
+| Qwen3-VL-7B | 14 GB | 0.5 or 1.0 | A100 40GB |
+| Qwen3-VL-32B | 64 GB | 1.0 (full) | A100 80GB |
+| Qwen3-VL-72B | 144 GB | 2.0 (multi-GPU) | 2x A100 80GB |
+
+**Key Points:**
+- `gpu_memory_gb`: Estimated VRAM needed per worker (for documentation)
+- `num_gpus_per_worker`: How many GPUs to allocate (0.5 = share with 2 workers)
+- `gpu_type`: GPU hardware to request (e.g., "A100", "A100-80GB")
+- Set `gpu_type=None` to use any available GPU
 
 ### Speed vs Quality Trade-offs
 

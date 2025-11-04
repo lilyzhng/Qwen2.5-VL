@@ -1,29 +1,24 @@
-# VLM Judge Prompt Configuration
-# Central place to manage all prompts for VLM judge
-
-# System Prompts
 system_prompts:
   role: "You are an expert autonomous driving systems analyst."
-  instruction: "Analyze video frames carefully and provide accurate judgments based on what you observe."
 
-# User Prompts
-user_prompts: |
-  {query}
+user_prompts:
+  judgment: |
+    {query}
 
-  Analyze the video frames and respond ONLY with valid JSON in this exact format:
+    Analyze the video frames and respond ONLY with valid JSON in this exact format:
 
-  {{
-    "query": "<the question being evaluated>",
-    "match": true,
-    "confidence": 0.95,
-    "observation": "Describe what you observe in the video frames",
-    "reason": "Explain why you made this judgment based on your observations"
-  }}
+    {{
+      "query": "<the question being evaluated>",
+      "match": true,
+      "confidence": 0.95,
+      "observation": "Describe what you observe in the video frames",
+      "reason": "Explain why you made this judgment based on your observations"
+    }}
 
-  Where:
-  - query: the question being evaluated
-  - match: true if the scenario matches, false otherwise
-  - confidence: your confidence level from 0.0 (not confident) to 1.0 (very confident)
-  - observation: what you see in the video frames (be specific)
-  - reason: why you gave this judgment based on what you observed
+    Where:
+    - query: the question being evaluated
+    - match: true if the scenario matches, false otherwise
+    - confidence: your confidence level from 0.0 (not confident) to 1.0 (very confident)
+    - observation: what you see in the video frames (be specific)
+    - reason: why you gave this judgment based on what you observed
 

@@ -125,7 +125,6 @@ def apply_vlm_judge(
     log_slices_silver = get_manifest_from_stage_str(config.log_slices_silver_reference, lakefs=LakeFS(), use_index=True)
     
     # Build judgment query from scenario prompts
-    # Use the first prompt as the judgment query
     if not scenario.prompts:
         _LOGGER.warning("No prompts in scenario, skipping VLM judge")
         return results
@@ -137,7 +136,6 @@ def apply_vlm_judge(
     filtered_results = []
     for i, result in enumerate(results):
         try:
-            # Load video frames for this result
             frames = load_frames_for_search_result(
                 result,
                 log_slices_silver,
@@ -150,7 +148,7 @@ def apply_vlm_judge(
                 continue
             
             # Run VLM judgment
-            judgment = judge.judge_frames(frames, judgment_query, return_confidence=True)
+            judgment = judge.judge_frames(frames, judgment_query)
             
             # Filter based on judgment and confidence threshold
             if judgment.match and judgment.confidence >= config.vlm_judge.vlm_confidence_threshold:
@@ -173,7 +171,6 @@ def apply_vlm_judge(
         
         except Exception as e:
             _LOGGER.error("Error judging slice_id=%s: %s", result.slice_id, e, exc_info=True)
-            # Skip this result on error
             continue
     
     _LOGGER.info(
@@ -204,7 +201,6 @@ def _materialize_scenario(
         # Run the two-stage selection pipeline
         results = select_slices_for_scenario(config, scenario)
 
-        # Convert to ActiveLearningSelection format
         selected_data = [
             ActiveLearningSelection(
                 key=slice_id_to_key[result.slice_id],
@@ -219,7 +215,6 @@ def _materialize_scenario(
         ]
         _LOGGER.info("Length after filtering out labeled slices: %d", len(selected_data))
 
-        # Write results to LakeFS
         output_filename = materialization.uris.data_file(PARQUET_FILE_NAME, PARQUET)
         if selected_data:
             write_to_single_file(
