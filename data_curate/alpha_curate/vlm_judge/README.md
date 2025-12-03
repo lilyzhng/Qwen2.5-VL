@@ -4,6 +4,27 @@
 
 The VLM Judge module provides vision-language model (VLM) based verification for ALFA Curate search results. It acts as a **second-stage filter** after embedding-based similarity search to reduce false positives.
 
+## Requirements
+
+This module requires specific versions of transformers and PyTorch:
+
+**Minimum Versions:**
+- **transformers >= 4.47.0** (for Qwen3-VL support)
+- **PyTorch >= 2.3.0** (required for transformers 4.47+)
+
+```bash
+# Install both together
+pip install --upgrade 'transformers>=4.47.0' 'torch>=2.3.0'
+```
+
+**Important Notes:**
+- The `AutoModelForImageTextToText` class used for Qwen2-VL was added in transformers 4.45.0
+- **Versions 4.45.0 and 4.45.1 have known bugs** (shape mismatch errors with Idefics2 and potentially other models)
+- **PyTorch 2.3+ is required** for transformers 4.47+ (provides `register_pytree_node` API)
+- Using older PyTorch (< 2.3) will cause: `AttributeError: module 'torch.utils._pytree' has no attribute 'register_pytree_node'`
+
+See `requirements.txt` for full dependencies.
+
 ## Architecture
 
 ```

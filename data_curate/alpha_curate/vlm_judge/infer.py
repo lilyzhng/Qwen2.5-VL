@@ -12,7 +12,38 @@ import numpy as np
 import numpy.typing as npt
 import torch
 import yaml
-from transformers import AutoModelForImageTextToText, AutoProcessor
+
+try:
+    from transformers import AutoModelForImageTextToText, AutoProcessor
+except (ImportError, AttributeError) as e:
+    import transformers
+    error_msg = (
+        f"Failed to import required transformers classes. "
+        f"Requirements: transformers >= 4.47.0 and PyTorch >= 2.3.0 for Qwen2-VL/Qwen3-VL support.\n"
+        f"Current transformers version: {transformers.__version__}\n"
+        f"Current PyTorch version: {torch.__version__}\n\n"
+    )
+    
+    # Check if this is a PyTorch compatibility issue
+    error_str = str(e)
+    if "register_pytree_node" in error_str or "_pytree" in error_str:
+        error_msg += (
+            f"ERROR: PyTorch version incompatibility detected!\n"
+            f"Your PyTorch ({torch.__version__}) is too old for transformers >= 4.47.0.\n"
+            f"PyTorch >= 2.3.0 is required (provides register_pytree_node API).\n\n"
+            f"Solution: pip install --upgrade 'torch>=2.3.0' 'transformers>=4.47.0'"
+        )
+    elif "AutoModelForImageTextToText" in error_str:
+        error_msg += (
+            f"ERROR: AutoModelForImageTextToText not found in transformers {transformers.__version__}.\n"
+            f"This class was introduced in transformers 4.45.0.\n"
+            f"Note: Versions 4.45.0-4.45.1 have known bugs.\n\n"
+            f"Solution: pip install --upgrade 'transformers>=4.47.0' 'torch>=2.3.0'"
+        )
+    else:
+        error_msg += f"Original error: {e}\n\nSolution: pip install --upgrade 'transformers>=4.47.0' 'torch>=2.3.0'"
+    
+    raise ImportError(error_msg) from e
 
 from kits.scalex.artifacts.lock import ProcessSafeFileLock
 from kits.scalex.hpc.tiered_file_system import tiered_filesystem

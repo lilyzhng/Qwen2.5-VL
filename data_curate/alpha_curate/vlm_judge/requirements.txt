@@ -1,0 +1,16 @@
+# Requirements for VLM Judge module
+# Qwen2-VL/Qwen3-VL support requirements:
+# - transformers >= 4.47.0 (for Qwen3-VL)
+# - torch >= 2.3.0 (required for transformers 4.47+, provides register_pytree_node API)
+# Note: Versions 4.45.0-4.45.1 have known bugs (Idefics2 shape mismatch)
+# AutoModelForImageTextToText was introduced in 4.45.0
+
+# Core dependencies
+transformers>=4.47.0
+torch>=2.3.0  # Minimum version for register_pytree_node API used by transformers 4.47+
+
+# Additional dependencies
+numpy>=1.24.0
+opencv-python>=4.8.0
+PyYAML>=6.0
+
