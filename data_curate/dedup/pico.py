@@ -357,6 +357,32 @@ def _filter_frame_groups(grouped: pa.Array, include: list[int], exclude: list[in
     return grouped.take(include_indices)
 
 
+def filter_embeddings_by_slice_ids(
+    embeddings_table: pa.Table, 
+    slice_ids: set[str]
+) -> pa.Table:
+    """Filter embeddings table to only include specified slice_ids.
+    
+    This function filters the embeddings table to only include rows where the
+    slice_id in the IDENTIFIERS column matches one of the provided slice_ids.
+    This is useful to avoid loading all embeddings when only processing a subset of slices.
+    
+    Args:
+        embeddings_table: Table with IDENTIFIERS column containing slice_id information
+        slice_ids: Set of slice_ids to keep
+        
+    Returns:
+        Filtered table containing only embeddings for specified slices
+    """
+    if len(slice_ids) == 0 or embeddings_table.num_rows == 0:
+        # Return empty table with same schema
+        return embeddings_table.slice(0, 0)
+    
+    identifiers = embeddings_table.column(IDENTIFIERS).to_pylist()
+    mask = [row[SLICE_ID] in slice_ids for row in identifiers]
+    return embeddings_table.filter(pa.array(mask, type=pa.bool_()))
+
+
 def transform_table(
     table: pa.Table,
     stride: int,
@@ -435,9 +461,14 @@ def transform_table(
 
         # Subsample based on embedding change rates
         if config.apply_temporal_subsampling and embeddings_table is not None:
+            # Filter embeddings to only include the slice(s) in full_table
+            # This avoids downloading all embeddings repeatedly
+            slice_ids = set(full_table.column(SLICE_ID).to_pylist())
+            filtered_embeddings = filter_embeddings_by_slice_ids(embeddings_table, slice_ids)
+            
             full_table = temporal_subsample_by_change_rate(
                 full_table,
-                embeddings_table,
+                filtered_embeddings,
                 use_acceleration=config.use_acceleration,
                 temporal_window_size=config.temporal_window_size,
                 diversity_thresholds=config.diversity_thresholds,

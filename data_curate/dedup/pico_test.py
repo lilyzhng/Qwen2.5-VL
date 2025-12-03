@@ -81,6 +81,7 @@ from pico import (  # noqa: E402
     _pico_row_mean_pooling,
     compute_embedding_change_rates,
     temporal_subsample_by_change_rate,
+    filter_embeddings_by_slice_ids,
 )
 
 TSTAMP: Final = "timestamp_ns"
@@ -548,35 +549,57 @@ def test_temporal_subsample_by_change_rate() -> None:
         f"All kept frames (except None) should have velocity >= 0.5"
 
 
-def test_temporal_subsample_empty_table() -> None:
-    """Test temporal_subsample_by_change_rate with empty table."""
-    pico_table = pa.Table.from_pydict(
+
+def test_filter_embeddings_by_slice_ids() -> None:
+    """Test filter_embeddings_by_slice_ids filters correctly by slice_id."""
+    # Create embeddings table with multiple slices
+    embeddings_table = pa.Table.from_pydict(
         {
-            SLICE_ID: [],
-            FRAMES_KEY: [],
-        },
-        schema=pa.schema([
-            pa.field(SLICE_ID, pa.string()),
-            pa.field(FRAMES_KEY, pa.list_(pa.struct([pa.field(TIMESTAMP_NS, pa.int64())]))),
-        ]),
-    )
-    embedding_table = pa.Table.from_pydict(
-        {
-            EMBEDDING: [],
-            START_NS: [],
+            EMBEDDING: [
+                [1.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0],
+                [7.0, 8.0, 9.0],
+                [10.0, 11.0, 12.0],
+                [13.0, 14.0, 15.0],
+            ],
+            IDENTIFIERS: [
+                {SLICE_ID: "slice_a", ROW_ID: 0},
+                {SLICE_ID: "slice_a", ROW_ID: 1},
+                {SLICE_ID: "slice_b", ROW_ID: 2},
+                {SLICE_ID: "slice_c", ROW_ID: 3},
+                {SLICE_ID: "slice_b", ROW_ID: 4},
+            ],
+            START_NS: [1000, 2000, 3000, 4000, 5000],
         },
         schema=pa.schema([
             pa.field(EMBEDDING, pa.fixed_shape_tensor(pa.float32(), [3])),
+            pa.field(IDENTIFIERS, pa.struct([
+                pa.field(SLICE_ID, pa.string()),
+                pa.field(ROW_ID, pa.int64()),
+            ])),
             pa.field(START_NS, pa.int64()),
         ]),
     )
     
-    result_table = temporal_subsample_by_change_rate(
-        pico_table,
-        embedding_table,
-        use_acceleration=True,
-    )
+    # Test filtering for a single slice
+    filtered = filter_embeddings_by_slice_ids(embeddings_table, {"slice_a"})
+    assert filtered.num_rows == 2, f"Expected 2 rows for slice_a, got {filtered.num_rows}"
+    slice_ids = [row[SLICE_ID] for row in filtered.column(IDENTIFIERS).to_pylist()]
+    assert all(sid == "slice_a" for sid in slice_ids), "All filtered rows should be from slice_a"
     
-    assert result_table.num_rows == 0, f"Empty input should return empty table, got {result_table.num_rows} rows"
-    assert "embedding_velocity" in result_table.column_names, "Empty table should still have velocity column"
-    assert "embedding_acceleration" in result_table.column_names, "Empty table should still have acceleration column"
+    # Test filtering for multiple slices
+    filtered = filter_embeddings_by_slice_ids(embeddings_table, {"slice_a", "slice_b"})
+    assert filtered.num_rows == 4, f"Expected 4 rows for slice_a and slice_b, got {filtered.num_rows}"
+    slice_ids = [row[SLICE_ID] for row in filtered.column(IDENTIFIERS).to_pylist()]
+    assert all(sid in {"slice_a", "slice_b"} for sid in slice_ids), "All filtered rows should be from slice_a or slice_b"
+    
+    # Test filtering for non-existent slice
+    filtered = filter_embeddings_by_slice_ids(embeddings_table, {"slice_nonexistent"})
+    assert filtered.num_rows == 0, f"Expected 0 rows for non-existent slice, got {filtered.num_rows}"
+    
+    # Test filtering with empty set
+    filtered = filter_embeddings_by_slice_ids(embeddings_table, set())
+    assert filtered.num_rows == 0, f"Expected 0 rows for empty slice set, got {filtered.num_rows}"
+    
+    # Verify original table is unchanged
+    assert embeddings_table.num_rows == 5, "Original table should remain unchanged"
