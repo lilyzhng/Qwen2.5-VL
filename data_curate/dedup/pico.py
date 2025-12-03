@@ -248,8 +248,8 @@ def compute_embedding_change_rates(
             all_velocities[pico_idx] = temporal_velocities[i]
             all_accelerations[pico_idx] = temporal_accelerations[i]
 
-    table = table.append_column("embedding_velocity", pa.array(all_velocities))
-    table = table.append_column("embedding_acceleration", pa.array(all_accelerations))
+    table = table.append_column("embedding_velocity", pa.array(all_velocities, type=pa.float64()))
+    table = table.append_column("embedding_acceleration", pa.array(all_accelerations, type=pa.float64()))
 
     return table
 
@@ -391,6 +391,7 @@ def transform_table(
     exclude_timestamps: pa.Array,
     config: HumanLabelsPicoConfig,
     lakefs: LakeFS,
+    embeddings_table: Optional[pa.Table] = None,
 ) -> pa.Table:
     """Transform the input table by splitting frames into groups, applying stride, and filtering.
 
@@ -415,6 +416,9 @@ def transform_table(
             same length as table and contain lists of timestamps that roughly correspond to the frames in each row.
         config: The configuration object containing parameters, including the DINOv2 index reference.
         lakefs: The LakeFS client used to access data.
+        embeddings_table: Optional pre-loaded embeddings table. If provided, this will be used for temporal subsampling
+            instead of loading it from the config reference. This is useful for distributed processing (e.g., Ray)
+            where the embeddings table can be loaded once and passed to workers via object store.
         use_acceleration: If True, filter based on embedding_acceleration. If False, filter based on embedding_velocity.
         apply_temporal_subsampling: If True, subsample pico rows based on diversity scores.
         temporal_window_size: Comparison window for velocity/acceleration in seconds (default 15s).
@@ -433,9 +437,9 @@ def transform_table(
             f"{len(frames)}, {len(include_timestamps)}, {len(exclude_timestamps)}"
         )
 
-    # Load embeddings table if reference is provided
-    embeddings_table = None
-    if config.features_dinov2_index_reference:
+    # Load embeddings table if not provided and reference is available
+    # This maintains backward compatibility for non-distributed use cases
+    if embeddings_table is None and config.features_dinov2_index_reference:
         embeddings_table = get_embeddings_table(config.features_dinov2_index_reference, lakefs)
 
     without_frames = table.drop_columns([FRAMES_KEY])
