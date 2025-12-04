@@ -10,6 +10,7 @@ import ray
 
 from autonomy.perception.datasets.human_labels.pico.ingredients import (
     dedupe_and_get_include_and_exclude_maps,
+    filter_embeddings_by_slice_ids,
     get_embeddings_table,
     transform_table,
 )
@@ -71,7 +72,7 @@ def load_references(
     return transform_table(
         table, stride, frames_per_row, 
         include_timestamps, exclude_timestamps, 
-        config, lakefs, embeddings_table
+        config, embeddings_table
     )
 
 
@@ -116,8 +117,14 @@ def generate_human_labels_pico(config: HumanLabelsPicoConfig) -> None:
     if config.apply_temporal_subsampling and config.features_dinov2_index_reference:
         _LOGGER.info("Loading embeddings table for temporal subsampling...")
         embeddings_table = get_embeddings_table(config.features_dinov2_index_reference, lakefs)
+        
+        # Filter to only the slices we'll actually process - optimization to reduce memory usage
+        all_slice_ids = {ref.id for ref in gold_manifest}
+        _LOGGER.info("Filtering embeddings to %d slices from manifest.", len(all_slice_ids))
+        embeddings_table = filter_embeddings_by_slice_ids(embeddings_table, all_slice_ids)
+        
         embeddings_table_ref = ray.put(embeddings_table)
-        _LOGGER.info("Embeddings table loaded and stored in Ray object store.")
+        _LOGGER.info("Filtered embeddings table stored in Ray object store with %d rows.", embeddings_table.num_rows)
 
     with (
         Materialization(

@@ -129,7 +129,6 @@ def get_example_table() -> pa.Table:
 def test_transform_table() -> None:
     table = get_example_table()
     config = HumanLabelsPicoConfig(apply_temporal_subsampling=False)
-    lakefs = MagicMock()
     result = pa.concat_tables(
         list(
             transform_table(
@@ -139,7 +138,6 @@ def test_transform_table() -> None:
                 include_timestamps=pa.array([[], [], []]),
                 exclude_timestamps=pa.array([[], [], []]),
                 config=config,
-                lakefs=lakefs,
             )
         )
     )
@@ -160,7 +158,6 @@ def test_transform_table() -> None:
                 include_timestamps=pa.array([[], [], []]),
                 exclude_timestamps=pa.array([[], [], []]),
                 config=config,
-                lakefs=lakefs,
             )
         )
     )
@@ -173,7 +170,6 @@ def test_transform_table() -> None:
 def test_transform_table_invalid() -> None:
     table = get_example_table()
     config = HumanLabelsPicoConfig(apply_temporal_subsampling=False)
-    lakefs = MagicMock()
     with pytest.raises(ValueError):
         list(
             transform_table(
@@ -183,7 +179,6 @@ def test_transform_table_invalid() -> None:
                 include_timestamps=pa.array([[], []]),
                 exclude_timestamps=pa.array([[], [], []]),
                 config=config,
-                lakefs=lakefs,
             )
         )
     with pytest.raises(ValueError):
@@ -195,13 +190,11 @@ def test_transform_table_invalid() -> None:
                 include_timestamps=pa.array([[], [], []]),
                 exclude_timestamps=pa.array([[], []]),
                 config=config,
-                lakefs=lakefs,
             )
         )
 def test_transform_table_include_exclude() -> None:
     table = get_example_table()
     config = HumanLabelsPicoConfig(apply_temporal_subsampling=False)
-    lakefs = MagicMock()
     result = pa.concat_tables(
         list(
             transform_table(
@@ -211,7 +204,6 @@ def test_transform_table_include_exclude() -> None:
                 include_timestamps=pa.array([[5, 11, 51], [], []]),
                 exclude_timestamps=pa.array([[12], [0], []]),
                 config=config,
-                lakefs=lakefs,
             )
         )
     )
@@ -227,7 +219,6 @@ def test_transform_table_include_exclude() -> None:
             include_timestamps=pa.array([[], [], []]),
             exclude_timestamps=pa.array([[12], [0], []]),
             config=config,
-            lakefs=lakefs,
         )
     )
 def test_get_include_exclude_maps() -> None:

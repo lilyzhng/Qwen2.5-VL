@@ -390,7 +390,6 @@ def transform_table(
     include_timestamps: pa.Array,
     exclude_timestamps: pa.Array,
     config: HumanLabelsPicoConfig,
-    lakefs: LakeFS,
     embeddings_table: Optional[pa.Table] = None,
 ) -> pa.Table:
     """Transform the input table by splitting frames into groups, applying stride, and filtering.
@@ -414,17 +413,10 @@ def transform_table(
             same length as table and contain lists of timestamps that roughly correspond to the frames in each row.
         exclude_timestamps: A PyArrow Array of lists of timestamps to exclude for each row. This array should be the
             same length as table and contain lists of timestamps that roughly correspond to the frames in each row.
-        config: The configuration object containing parameters, including the DINOv2 index reference.
-        lakefs: The LakeFS client used to access data.
-        embeddings_table: Optional pre-loaded embeddings table. If provided, this will be used for temporal subsampling
-            instead of loading it from the config reference. This is useful for distributed processing (e.g., Ray)
-            where the embeddings table can be loaded once and passed to workers via object store.
+        config: The configuration object containing parameters for temporal subsampling.
+        embeddings_table: Optional pre-loaded embeddings table. Required if config.apply_temporal_subsampling is True.
+            For distributed processing (e.g., Ray), load once, filter to relevant slices, and pass via object store.
         use_acceleration: If True, filter based on embedding_acceleration. If False, filter based on embedding_velocity.
-        apply_temporal_subsampling: If True, subsample pico rows based on diversity scores.
-        temporal_window_size: Comparison window for velocity/acceleration in seconds (default 15s).
-        diversity_thresholds: Thresholds for diversity tiers (descending order). Default: [0.2, 0.1, 0.05]
-        stride_multipliers: Stride multipliers for each tier. Default: [1, 2, 5, 10]
-
 
     Returns:
         A PyArrow Table containing the transformed rows with filtered frame groups.
@@ -437,10 +429,11 @@ def transform_table(
             f"{len(frames)}, {len(include_timestamps)}, {len(exclude_timestamps)}"
         )
 
-    # Load embeddings table if not provided and reference is available
-    # This maintains backward compatibility for non-distributed use cases
-    if embeddings_table is None and config.features_dinov2_index_reference:
-        embeddings_table = get_embeddings_table(config.features_dinov2_index_reference, lakefs)
+    # Validate that embeddings_table is provided when temporal subsampling is enabled
+    if config.apply_temporal_subsampling and embeddings_table is None:
+        raise ValueError(
+            "embeddings_table is required when apply_temporal_subsampling is True. "
+        )
 
     without_frames = table.drop_columns([FRAMES_KEY])
 
