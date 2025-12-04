@@ -459,8 +459,9 @@ def transform_table(
         # Subsample based on embedding change rates
         if config.apply_temporal_subsampling and embeddings_table is not None:
             # Filter embeddings to only include the slice(s) in full_table
-            # This avoids downloading all embeddings repeatedly
-            slice_ids = set(full_table.column(SLICE_ID).to_pylist())
+            # Extract slice_ids from the IDENTIFIERS column
+            identifiers = full_table.column(IDENTIFIERS).to_pylist()
+            slice_ids = {row[SLICE_ID] for row in identifiers}
             filtered_embeddings = filter_embeddings_by_slice_ids(embeddings_table, slice_ids)
             
             full_table = temporal_subsample_by_change_rate(
