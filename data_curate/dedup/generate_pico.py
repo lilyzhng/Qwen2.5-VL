@@ -120,11 +120,22 @@ def generate_human_labels_pico(config: HumanLabelsPicoConfig) -> None:
         
         # Filter to only the slices we'll actually process - optimization to reduce memory usage
         all_slice_ids = {ref.id for ref in gold_manifest}
-        _LOGGER.info("Filtering embeddings to %d slices from manifest.", len(all_slice_ids))
+        _LOGGER.info("Manifest has %d unique slice IDs.", len(all_slice_ids))
+        _LOGGER.info("Embeddings table before filtering: %d rows", embeddings_table.num_rows)
+        
+        # Debug: Check what slice_ids are actually in the embeddings table
+        embeddings_slice_ids = {row[SLICE_ID] for row in embeddings_table.column(IDENTIFIERS).to_pylist()}
+        _LOGGER.info("Embeddings table has %d unique slice IDs.", len(embeddings_slice_ids))
+        
+        # Check overlap
+        matching_slices = all_slice_ids & embeddings_slice_ids
+        _LOGGER.info("Slices in both manifest and embeddings: %d", len(matching_slices))
+        
         embeddings_table = filter_embeddings_by_slice_ids(embeddings_table, all_slice_ids)
+        _LOGGER.info("Embeddings table after filtering: %d rows", embeddings_table.num_rows)
         
         embeddings_table_ref = ray.put(embeddings_table)
-        _LOGGER.info("Filtered embeddings table stored in Ray object store with %d rows.", embeddings_table.num_rows)
+        _LOGGER.info("Filtered embeddings table stored in Ray object store.")
 
     with (
         Materialization(
