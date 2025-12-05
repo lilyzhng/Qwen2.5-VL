@@ -25,39 +25,29 @@ def _find_reference_pico_row(
     temporal_window_size: float,
     valid_data: list,
 ) -> Optional[int]:
-    """Find reference pico row approximately temporal_window_size seconds in the past.
-    
-    Searches backwards from current_idx to find the closest pico row with valid data
-    near the target time (current_time - temporal_window_size).
-    
-    Args:
-        current_idx: Index of current pico row
-        timestamps: List of timestamps for all pico rows (in nanoseconds)
-        temporal_window_size: How far back to look in seconds
-        valid_data: List indicating which pico rows have valid data (embeddings/velocities)
-    
-    Returns:
-        Index of reference pico row, or None if not found
-    """
+    """Find reference pico row - simple and efficient."""
     if timestamps[current_idx] is None:
         return None
     
-    target_time = timestamps[current_idx] - (temporal_window_size * 1e9)  # Convert to nanoseconds
-    ref_idx = None
-    min_time_diff = float('inf')
+    target_time = timestamps[current_idx] - (temporal_window_size * 1e9)
     
-    # Search backwards for closest pico row with valid data near target time
-    for j in range(current_idx - 1, -1, -1):
+    valid_indices = []
+    valid_timestamps = []
+    for j in range(current_idx):
         if valid_data[j] is not None and timestamps[j] is not None:
-            time_diff = abs(timestamps[j] - target_time)
-            if time_diff < min_time_diff:
-                min_time_diff = time_diff
-                ref_idx = j
-            # Stop if we've gone too far back in time
-            if timestamps[j] < target_time - (temporal_window_size * 0.5 * 1e9):
-                break
+            valid_indices.append(j)
+            valid_timestamps.append(timestamps[j])
     
-    return ref_idx
+    if len(valid_timestamps) == 0:
+        return None
+    
+    # Compute all distances at once (vectorized!)
+    distances = np.abs(np.array(valid_timestamps) - target_time)
+    
+    # Find index of minimum distance with O(n) time.
+    nearest_idx = np.argmin(distances)
+    
+    return valid_indices[nearest_idx]
 
 
 def _compute_temporal_velocities(
@@ -231,10 +221,13 @@ def compute_embedding_change_rates(
     
     Note: temporal_window_size is used to find the reference pico row, but velocity/acceleration
     are calculated using the ACTUAL time difference between embedding timestamps.
+    
+    Note: Assumes embedding_table is already filtered to relevant slices (done in transform_table).
 
     Args:
         table: Pico table with 'slice_id' column and frame timestamps
-        embedding_table: Table containing embeddings (any frequency: sparse or dense)
+        embedding_table: Table containing embeddings (any frequency: sparse or dense), 
+                        pre-filtered to relevant slices
         temporal_window_size: Comparison window in seconds for velocity/acceleration (default 15s)
 
     Returns:
@@ -258,16 +251,6 @@ def compute_embedding_change_rates(
     all_accelerations = [None] * len(table)
 
     for slice_id, pico_indices in groups.items():
-        # Filter embeddings to this slice only
-        identifiers = embedding_table.column(IDENTIFIERS).to_pylist()
-        slice_mask = [row[SLICE_ID] == slice_id for row in identifiers]
-        slice_embeddings_array = embeddings_array[slice_mask]
-        slice_embeddings_timestamps = embeddings_timestamps[slice_mask]
-        
-        if len(slice_embeddings_array) == 0:
-            # No embeddings for this slice, skip
-            continue
-        
         pico_embeddings = []
         pico_timestamps = []
 
@@ -278,7 +261,7 @@ def compute_embedding_change_rates(
 
             # Get representative embedding for this pico row (hybrid approach)
             representative_embedding, embedding_timestamp = _pico_row_representative_embedding(
-                frame_timestamps, slice_embeddings_timestamps, slice_embeddings_array
+                frame_timestamps, embeddings_timestamps, embeddings_array
             )
             
             pico_embeddings.append(representative_embedding)
