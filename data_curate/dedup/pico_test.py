@@ -78,7 +78,7 @@ from pico import (  # noqa: E402
     _find_reference_pico_row,
     _compute_temporal_velocities,
     _compute_temporal_accelerations,
-    _pico_row_mean_pooling,
+    _pico_row_representative_embedding,
     compute_embedding_change_rates,
     temporal_subsample_by_change_rate,
     filter_embeddings_by_slice_ids,
@@ -373,9 +373,9 @@ def test_compute_temporal_accelerations() -> None:
     assert accelerations[2] is None, "None velocity should result in None acceleration"
 
 
-def test_pico_row_mean_pooling() -> None:
-    """Test _pico_row_mean_pooling function."""
-    timestamp_to_index = {1000: 0, 2000: 1, 3000: 2, 4000: 3, 5000: 4}
+def test_pico_row_representative_embedding() -> None:
+    """Test _pico_row_representative_embedding function with sparse and dense embeddings."""
+    embeddings_timestamps = np.array([1000, 2000, 3000, 4000, 5000], dtype=np.int64)
     embeddings_array = np.array([
         [1.0, 2.0, 3.0],
         [2.0, 3.0, 4.0],
@@ -384,21 +384,77 @@ def test_pico_row_mean_pooling() -> None:
         [5.0, 6.0, 7.0],
     ], dtype=np.float32)
     
+    # Test 1: Dense embeddings - multiple embeddings within pico row (should use mean pooling)
+    # Pico row from 1000 to 4000 contains embeddings at 1000, 2000, 3000, 4000
     frame_timestamps = [1000, 2000, 3000, 4000]
-    mean_embedding, mean_timestamp = _pico_row_mean_pooling(frame_timestamps, timestamp_to_index, embeddings_array)
-    assert mean_embedding is not None, "Multiple frames should produce mean embedding"
-    assert mean_timestamp is not None, "Multiple frames should produce mean timestamp"
-    expected_mean = np.array([2.5, 3.5, 4.5], dtype=np.float32)
-    np.testing.assert_array_almost_equal(mean_embedding, expected_mean, 
-                                        err_msg=f"Expected mean embedding {expected_mean}, got {mean_embedding}")
-    assert mean_timestamp == 2500.0, f"Expected mean timestamp 2500.0 (avg of 1000,2000,3000,4000), got {mean_timestamp}"
+    repr_embedding, embedding_timestamp = _pico_row_representative_embedding(
+        frame_timestamps, embeddings_timestamps, embeddings_array
+    )
+    assert repr_embedding is not None, "Should find representative embedding"
+    assert embedding_timestamp is not None, "Should return embedding timestamp"
+    # Should be mean of embeddings at indices 0,1,2,3
+    expected_mean = np.mean(embeddings_array[:4], axis=0)
+    np.testing.assert_array_almost_equal(repr_embedding, expected_mean,
+                                        err_msg=f"Should use mean pooling for dense embeddings")
+    expected_time = np.mean([1000, 2000, 3000, 4000])
+    assert embedding_timestamp == expected_time, f"Expected mean timestamp {expected_time}, got {embedding_timestamp}"
     
-    # Single frame - should return that frame's embedding
-    mean_embedding, mean_timestamp = _pico_row_mean_pooling([1000], timestamp_to_index, embeddings_array)
-    assert mean_embedding is not None, "Single frame should produce embedding"
-    np.testing.assert_array_almost_equal(mean_embedding, embeddings_array[0],
-                                        err_msg="Single frame should return its own embedding")
-    assert mean_timestamp == 1000.0, f"Single frame should return its own timestamp, got {mean_timestamp}"
+    # Test 2: Sparse embeddings - no embeddings within pico row (should use nearest neighbor)
+    # Pico row from 2100 to 2900 has no exact embeddings, nearest is 3000
+    frame_timestamps = [2100, 2200, 2300, 2400, 2500, 2600, 2700, 2800, 2900]
+    repr_embedding, embedding_timestamp = _pico_row_representative_embedding(
+        frame_timestamps, embeddings_timestamps, embeddings_array
+    )
+    # Center is 2500, nearest embedding is at 2000 (diff=500) or 3000 (diff=500)
+    assert embedding_timestamp in [2000.0, 3000.0], f"Expected nearest embedding at 2000 or 3000, got {embedding_timestamp}"
+    
+    # Test 3: Single embedding within pico row (should return that embedding)
+    frame_timestamps = [1000]
+    repr_embedding, embedding_timestamp = _pico_row_representative_embedding(
+        [1000], embeddings_timestamps, embeddings_array
+    )
+    assert embedding_timestamp == 1000.0, f"Should return embedding at 1000, got {embedding_timestamp}"
+    np.testing.assert_array_almost_equal(repr_embedding, embeddings_array[0],
+                                        err_msg="Should return embedding at index 0")
+
+
+def test_embedding_frequencies() -> None:
+    """Test that the implementation works with sparse, same, and dense embedding frequencies."""
+    
+    # Test 1: SPARSE embeddings (fewer embeddings than pico rows)
+    # e.g., 1 embedding per 50 frames, pico rows every 10 frames
+    sparse_emb_timestamps = np.array([0, int(2.5e9), int(5e9)], dtype=np.int64)
+    sparse_emb_array = np.array([[1.0, 0, 0], [2.0, 0, 0], [3.0, 0, 0]], dtype=np.float32)
+    
+    # Pico row at 1s has no embeddings within it, should use nearest (0s)
+    frame_ts = [int(1e9)]
+    emb, ts = _pico_row_representative_embedding(frame_ts, sparse_emb_timestamps, sparse_emb_array)
+    assert ts == 0, "Sparse: Should use nearest embedding"
+    np.testing.assert_array_almost_equal(emb, sparse_emb_array[0])
+    
+    # Test 2: SAME frequency (1:1 mapping)
+    # e.g., 1 embedding per 10 frames, pico rows every 10 frames
+    same_emb_timestamps = np.array([0, int(0.5e9), int(1.0e9)], dtype=np.int64)
+    same_emb_array = np.array([[1.0, 0, 0], [2.0, 0, 0], [3.0, 0, 0]], dtype=np.float32)
+    
+    # Pico row from 0 to 0.4s contains one embedding at 0s
+    frame_ts = [0, int(0.1e9), int(0.2e9), int(0.3e9), int(0.4e9)]
+    emb, ts = _pico_row_representative_embedding(frame_ts, same_emb_timestamps, same_emb_array)
+    assert ts == 0, "Same frequency: Should use the one embedding in the window"
+    np.testing.assert_array_almost_equal(emb, same_emb_array[0])
+    
+    # Test 3: DENSE embeddings (multiple embeddings per pico row)
+    # e.g., 1 embedding per 5 frames, pico rows every 10 frames (2 embeddings per row)
+    dense_emb_timestamps = np.array([0, int(0.25e9), int(0.5e9), int(0.75e9)], dtype=np.int64)
+    dense_emb_array = np.array([[1.0, 0, 0], [2.0, 0, 0], [3.0, 0, 0], [4.0, 0, 0]], dtype=np.float32)
+    
+    # Pico row from 0 to 0.5s contains 3 embeddings (0s, 0.25s, 0.5s), should use mean pooling
+    frame_ts = [0, int(0.1e9), int(0.2e9), int(0.3e9), int(0.4e9), int(0.5e9)]
+    emb, ts = _pico_row_representative_embedding(frame_ts, dense_emb_timestamps, dense_emb_array)
+    expected_mean = np.mean(dense_emb_array[:3], axis=0)  # Mean of first 3 embeddings
+    np.testing.assert_array_almost_equal(emb, expected_mean, 
+                                        err_msg="Dense: Should use mean pooling of embeddings in window")
+    assert abs(ts - int(0.25e9)) < 1e8, "Dense: Timestamp should be mean of embedding timestamps"
 
 
 def test_compute_embedding_change_rates() -> None:
@@ -419,10 +475,16 @@ def test_compute_embedding_change_rates() -> None:
         {
             EMBEDDING: embeddings_list,
             START_NS: [0, 1000, 10000000000, 10000001000, 20000000000, 20000001000],
+            IDENTIFIERS: [
+                {SLICE_ID: "slice_1"}, {SLICE_ID: "slice_1"},
+                {SLICE_ID: "slice_1"}, {SLICE_ID: "slice_1"},
+                {SLICE_ID: "slice_1"}, {SLICE_ID: "slice_1"},
+            ],
         },
         schema=pa.schema([
             pa.field(EMBEDDING, pa.fixed_shape_tensor(pa.float32(), [3])),
             pa.field(START_NS, pa.int64()),
+            pa.field(IDENTIFIERS, pa.struct([pa.field(SLICE_ID, pa.string())])),
         ]),
     )
     
@@ -456,10 +518,15 @@ def test_compute_embedding_change_rates_multiple_slices() -> None:
         {
             EMBEDDING: embeddings_list,
             START_NS: [0, 10000000000, 0, 10000000000],
+            IDENTIFIERS: [
+                {SLICE_ID: "slice_1"}, {SLICE_ID: "slice_1"},
+                {SLICE_ID: "slice_2"}, {SLICE_ID: "slice_2"},
+            ],
         },
         schema=pa.schema([
             pa.field(EMBEDDING, pa.fixed_shape_tensor(pa.float32(), [3])),
             pa.field(START_NS, pa.int64()),
+            pa.field(IDENTIFIERS, pa.struct([pa.field(SLICE_ID, pa.string())])),
         ]),
     )
     
@@ -492,10 +559,12 @@ def test_temporal_subsample_by_change_rate() -> None:
         {
             EMBEDDING: embeddings_list,
             START_NS: [i * 1000000000 for i in range(20)],
+            IDENTIFIERS: [{SLICE_ID: "slice_1"} for i in range(20)],
         },
         schema=pa.schema([
             pa.field(EMBEDDING, pa.fixed_shape_tensor(pa.float32(), [3])),
             pa.field(START_NS, pa.int64()),
+            pa.field(IDENTIFIERS, pa.struct([pa.field(SLICE_ID, pa.string())])),
         ]),
     )
     

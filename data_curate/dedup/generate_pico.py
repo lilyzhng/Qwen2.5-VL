@@ -65,6 +65,15 @@ def load_references(
     # Retrieve embeddings from Ray object store if provided
     embeddings_table = ray.get(embeddings_table_reference) if embeddings_table_reference else None
     
+    # Filter embeddings to only the slices in this batch
+    if embeddings_table is not None:
+        from kits.scalex.dataset.constants import IDENTIFIERS, SLICE_ID
+        # Extract slice IDs from the batch
+        batch_slice_ids = set(row.column("id").to_pylist())
+        _LOGGER.info(f"Filtering embeddings to {len(batch_slice_ids)} slices in batch.")
+        embeddings_table = filter_embeddings_by_slice_ids(embeddings_table, batch_slice_ids)
+        _LOGGER.info(f"Filtered embeddings table: {embeddings_table.num_rows} rows.")
+    
     table = dataset.get_rows(ids=row.column("id").to_pylist())
     include_timestamps = row.column(_INCLUDE_TIMESTAMPS)
     exclude_timestamps = row.column(_EXCLUDE_TIMESTAMPS)
@@ -117,25 +126,11 @@ def generate_human_labels_pico(config: HumanLabelsPicoConfig) -> None:
     if config.apply_temporal_subsampling and config.features_dinov2_index_reference:
         _LOGGER.info("Loading embeddings table for temporal subsampling...")
         embeddings_table = get_embeddings_table(config.features_dinov2_index_reference, lakefs)
+        _LOGGER.info("Loaded embeddings table with %d rows.", embeddings_table.num_rows)
         
-        # Filter to only the slices we'll actually process - optimization to reduce memory usage
-        all_slice_ids = {ref.id for ref in gold_manifest}
-        _LOGGER.info("Manifest has %d unique slice IDs.", len(all_slice_ids))
-        _LOGGER.info("Embeddings table before filtering: %d rows", embeddings_table.num_rows)
-        
-        # Debug: Check what slice_ids are actually in the embeddings table
-        embeddings_slice_ids = {row[SLICE_ID] for row in embeddings_table.column(IDENTIFIERS).to_pylist()}
-        _LOGGER.info("Embeddings table has %d unique slice IDs.", len(embeddings_slice_ids))
-        
-        # Check overlap
-        matching_slices = all_slice_ids & embeddings_slice_ids
-        _LOGGER.info("Slices in both manifest and embeddings: %d", len(matching_slices))
-        
-        embeddings_table = filter_embeddings_by_slice_ids(embeddings_table, all_slice_ids)
-        _LOGGER.info("Embeddings table after filtering: %d rows", embeddings_table.num_rows)
-        
+        # Store full embeddings table in Ray - workers will filter to their specific slices
         embeddings_table_ref = ray.put(embeddings_table)
-        _LOGGER.info("Filtered embeddings table stored in Ray object store.")
+        _LOGGER.info("Embeddings table stored in Ray object store.")
 
     with (
         Materialization(

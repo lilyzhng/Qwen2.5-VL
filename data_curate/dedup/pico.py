@@ -67,10 +67,14 @@ def _compute_temporal_velocities(
 ) -> list[Optional[float]]:
     """Compute temporal embedding velocities for pico rows.
     
+    Velocity is calculated as: embedding_distance / actual_time_difference
+    where actual_time_difference is the time between the current pico row's embedding
+    timestamp and the reference pico row's embedding timestamp.
+    
     Args:
         pico_embeddings: Representative embeddings for each pico row in the slice
-        pico_timestamps: Timestamps for each pico row in the slice (nanoseconds)
-        temporal_window_size: Comparison window in seconds
+        pico_timestamps: Embedding timestamps for each pico row (nanoseconds)
+        temporal_window_size: Comparison window in seconds (used to find reference row)
     
     Returns:
         List of temporal velocities for each pico row
@@ -86,10 +90,15 @@ def _compute_temporal_velocities(
         ref_idx = _find_reference_pico_row(i, pico_timestamps, temporal_window_size, pico_embeddings)
         
         if ref_idx is not None:
-            # Velocity = Δembedding_distance / temporal_window_size
+            # Velocity = Δembedding_distance / actual_time_diff
             emb_distance = np.linalg.norm(pico_embeddings[i] - pico_embeddings[ref_idx])
-            velocity = float(emb_distance / temporal_window_size)
-            temporal_velocities.append(velocity)
+            actual_time_diff_sec = (pico_timestamps[i] - pico_timestamps[ref_idx]) / 1e9  # Convert ns to seconds
+            if actual_time_diff_sec > 0:
+                velocity = float(emb_distance / actual_time_diff_sec)
+                temporal_velocities.append(velocity)
+            else:
+                # Same timestamp, undefined velocity
+                temporal_velocities.append(None)
         else:
             temporal_velocities.append(None)
     
@@ -103,10 +112,14 @@ def _compute_temporal_accelerations(
 ) -> list[Optional[float]]:
     """Compute temporal embedding accelerations for pico rows.
     
+    Acceleration is calculated as: velocity_difference / actual_time_difference
+    where actual_time_difference is the time between the current pico row's embedding
+    timestamp and the reference pico row's embedding timestamp.
+    
     Args:
         temporal_velocities: Temporal velocities for each pico row
-        pico_timestamps: Timestamps for each pico row in the slice (nanoseconds)
-        temporal_window_size: Comparison window in seconds
+        pico_timestamps: Embedding timestamps for each pico row (nanoseconds)
+        temporal_window_size: Comparison window in seconds (used to find reference row)
     
     Returns:
         List of temporal accelerations for each pico row
@@ -122,53 +135,75 @@ def _compute_temporal_accelerations(
         ref_idx = _find_reference_pico_row(i, pico_timestamps, temporal_window_size, temporal_velocities)
         
         if ref_idx is not None:
-            # Acceleration = Δvelocity / temporal_window_size
+            # Acceleration = Δvelocity / actual_time_diff
             velocity_diff = temporal_velocities[i] - temporal_velocities[ref_idx]
-            acceleration = float(velocity_diff / temporal_window_size)
-            temporal_accelerations.append(acceleration)
+            actual_time_diff_sec = (pico_timestamps[i] - pico_timestamps[ref_idx]) / 1e9  # Convert ns to seconds
+            if actual_time_diff_sec > 0:
+                acceleration = float(velocity_diff / actual_time_diff_sec)
+                temporal_accelerations.append(acceleration)
+            else:
+                # Same timestamp, undefined acceleration
+                temporal_accelerations.append(None)
         else:
             temporal_accelerations.append(None)
     
     return temporal_accelerations
 
 
-def _pico_row_mean_pooling(
+def _pico_row_representative_embedding(
     frame_timestamps: list[int],
-    timestamp_to_index: dict[int, int],
+    embeddings_timestamps: npt.NDArray[np.int64],
     embeddings_array: npt.NDArray[np.float32],
 ) -> tuple[Optional[npt.NDArray[np.float32]], Optional[float]]:
-    """Compute representative embedding for a pico row using temporal mean pooling.
+    """Get representative embedding for a pico row using a hybrid approach.
     
-    This function:
-    1. Collects embeddings for all frames in the pico row
-    2. Aggregates them via temporal mean pooling (~0.5s window, ~10 frames)
+    This function adapts to different embedding frequencies:
+    - Dense embeddings (multiple per pico row): Uses mean pooling
+    - Sparse embeddings (fewer than pico rows): Uses nearest neighbor
     
-    Temporal mean pooling is standard for short windows where content changes are gradual.
+    Strategy:
+    1. Find all embeddings that fall within the pico row's time window
+    2. If found → Use mean pooling of those embeddings (optimal for dense embeddings)
+    3. If not found → Use nearest embedding in time (handles sparse embeddings)
+    
+    This hybrid approach is future-proof and works optimally regardless of whether
+    embeddings are generated every 50 frames, 10 frames, 5 frames, etc.
     
     Args:
         frame_timestamps: List of frame timestamps (nanoseconds) in the pico row
-        timestamp_to_index: Mapping from timestamp to embedding index
-        embeddings_array: Array of all frame embeddings
+        embeddings_timestamps: Array of all embedding timestamps (nanoseconds)
+        embeddings_array: Array of all embeddings, aligned with embeddings_timestamps
     
     Returns:
-        Tuple of (mean_embedding, mean_timestamp) or (None, None) if no frames have embeddings
+        Tuple of (representative_embedding, mean_timestamp) or (None, None) if no embeddings available
     """
-    # Collect embeddings for all frames in this pico row
-    row_embeddings = []
-    valid_timestamps = []
-    for ts in frame_timestamps:
-        if ts in timestamp_to_index:
-            row_embeddings.append(embeddings_array[timestamp_to_index[ts]])
-            valid_timestamps.append(ts)
-    
-    if len(row_embeddings) == 0:
+    if len(frame_timestamps) == 0 or len(embeddings_array) == 0:
         return None, None
     
-    # Temporal mean pooling: average across all frame embeddings
-    mean_embedding = np.mean(row_embeddings, axis=0)
-    mean_timestamp = np.mean(valid_timestamps)
+    # Get pico row time window bounds
+    min_pico_time = min(frame_timestamps)
+    max_pico_time = max(frame_timestamps)
     
-    return mean_embedding, mean_timestamp
+    # Find embeddings that fall within the pico row's time window
+    within_window_mask = (embeddings_timestamps >= min_pico_time) & (embeddings_timestamps <= max_pico_time)
+    within_window_indices = np.where(within_window_mask)[0]
+    
+    if len(within_window_indices) > 0:
+        # Dense embeddings case: Use mean pooling of embeddings within the pico row
+        window_embeddings = embeddings_array[within_window_indices]
+        window_timestamps = embeddings_timestamps[within_window_indices]
+        
+        mean_embedding = np.mean(window_embeddings, axis=0)
+        mean_timestamp = float(np.mean(window_timestamps))
+        
+        return mean_embedding, mean_timestamp
+    else:
+        # Sparse embeddings case: Use nearest neighbor
+        pico_center_timestamp = np.mean(frame_timestamps)
+        time_diffs = np.abs(embeddings_timestamps - pico_center_timestamp)
+        nearest_idx = np.argmin(time_diffs)
+        
+        return embeddings_array[nearest_idx], float(embeddings_timestamps[nearest_idx])
 
 
 def compute_embedding_change_rates(
@@ -178,19 +213,28 @@ def compute_embedding_change_rates(
 ) -> pa.Table:
     """Compute embedding change rates (velocity and acceleration) for each pico row.
 
+    Uses a hybrid approach that adapts to any embedding frequency:
+    - If embeddings exist within pico row → mean pooling (optimal for dense embeddings)
+    - If no embeddings in pico row → nearest neighbor (handles sparse embeddings)
+    
+    This works optimally whether embeddings are every 50 frames, 10 frames, 5 frames, etc.
+    
     Two temporal windows are involved:
-    1. Pico row window (~0.5s): Used for temporal mean pooling of ~10 frames
+    1. Pico row window (~0.5s): Used to find/pool embeddings for each row
     2. Comparison window (temporal_window_size): Used for computing embedding velocity/acceleration
     
     Steps:
-    1. Create representative embedding for each pico row via temporal mean pooling
+    1. Assign each pico row a representative embedding (hybrid approach)
     2. Find reference pico row approximately temporal_window_size seconds in the past
-    3. Embedding Velocity = Δembedding_distance / temporal_window_size
-    4. Embedding Acceleration = Δvelocity / temporal_window_size
+    3. Embedding Velocity = Δembedding_distance / actual_time_difference
+    4. Embedding Acceleration = Δvelocity / actual_time_difference
+    
+    Note: temporal_window_size is used to find the reference pico row, but velocity/acceleration
+    are calculated using the ACTUAL time difference between embedding timestamps.
 
     Args:
         table: Pico table with 'slice_id' column and frame timestamps
-        embeddings_table: Table containing embeddings
+        embedding_table: Table containing embeddings (any frequency: sparse or dense)
         temporal_window_size: Comparison window in seconds for velocity/acceleration (default 15s)
 
     Returns:
@@ -198,10 +242,7 @@ def compute_embedding_change_rates(
     """
 
     embeddings_array = get_embedding_array_from_table(embedding_table)
-
-    timestamps_array = embedding_table.column(START_NS).to_numpy()
-    # Get timestamp to index
-    timestamp_to_index = {int(ts): idx for idx, ts in enumerate(timestamps_array)}
+    embeddings_timestamps = embedding_table.column(START_NS).to_numpy().astype(np.int64)
 
     slice_ids = table.column(SLICE_ID).to_pylist()
     frames = table.column(FRAMES_KEY)
@@ -217,6 +258,16 @@ def compute_embedding_change_rates(
     all_accelerations = [None] * len(table)
 
     for slice_id, pico_indices in groups.items():
+        # Filter embeddings to this slice only
+        identifiers = embedding_table.column(IDENTIFIERS).to_pylist()
+        slice_mask = [row[SLICE_ID] == slice_id for row in identifiers]
+        slice_embeddings_array = embeddings_array[slice_mask]
+        slice_embeddings_timestamps = embeddings_timestamps[slice_mask]
+        
+        if len(slice_embeddings_array) == 0:
+            # No embeddings for this slice, skip
+            continue
+        
         pico_embeddings = []
         pico_timestamps = []
 
@@ -225,13 +276,13 @@ def compute_embedding_change_rates(
             row_frames = frames[pico_idx].as_py()
             frame_timestamps = [frame[TIMESTAMP_NS] for frame in row_frames]
 
-            # Compute representative embedding via temporal mean pooling
-            mean_embedding, mean_timestamp = _pico_row_mean_pooling(
-                frame_timestamps, timestamp_to_index, embeddings_array
+            # Get representative embedding for this pico row (hybrid approach)
+            representative_embedding, embedding_timestamp = _pico_row_representative_embedding(
+                frame_timestamps, slice_embeddings_timestamps, slice_embeddings_array
             )
             
-            pico_embeddings.append(mean_embedding)
-            pico_timestamps.append(mean_timestamp)
+            pico_embeddings.append(representative_embedding)
+            pico_timestamps.append(embedding_timestamp)
 
         # Compute temporal velocities for pico rows
         temporal_velocities = _compute_temporal_velocities(
@@ -263,8 +314,11 @@ def temporal_subsample_by_change_rate(
 ) -> pa.Table:
     """Subsample pico rows based on embedding change rates.
 
+    Since embeddings are sparse (e.g., every 50 frames), each pico row is assigned
+    the nearest embedding in time rather than pooling multiple embeddings.
+    
     Two temporal windows:
-    1. Pico row window (~0.5s): Each pico row aggregates ~10 frames via temporal mean pooling
+    1. Pico row window (~0.5s): Each row uses its center timestamp to find nearest embedding
     2. Comparison window (temporal_window_size): Window for computing velocity/acceleration
     
     Strategy:
@@ -275,7 +329,7 @@ def temporal_subsample_by_change_rate(
 
     Args:
         table: Table with 'slice_id' column
-        embedding_table: Table containing embeddings
+        embedding_table: Table containing sparse embeddings (e.g., every 50 frames)
         use_acceleration: If True, filter based on embedding_acceleration. If False, filter based on embedding_velocity.
         temporal_window_size: Comparison window for velocity/acceleration in seconds (default 15s)
         diversity_threshold: Minimum change rate to keep a row. Rows below this threshold are dropped.
