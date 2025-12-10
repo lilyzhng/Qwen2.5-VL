@@ -82,6 +82,7 @@ from pico import (  # noqa: E402
     compute_embedding_change_rates,
     temporal_subsample_by_change_rate,
     filter_embeddings_by_slice_ids,
+    check_embedding_has_vru,
 )
 
 TSTAMP: Final = "timestamp_ns"
@@ -90,7 +91,8 @@ TSTAMP: Final = "timestamp_ns"
 class HumanLabelsPicoConfig:
     def __init__(self, apply_temporal_subsampling=False, features_dinov2_index_reference=None, 
                  testing_limit_clustering_points=None, num_kmeans_clusters=10, 
-                 kmeans_iterations=30, embedding_dedupe_threshold=0.5, disable_ray=True):
+                 kmeans_iterations=30, embedding_dedupe_threshold=0.5, disable_ray=True,
+                 use_acceleration=True, diversity_threshold=0.05, temporal_window_size=15.0):
         self.apply_temporal_subsampling = apply_temporal_subsampling
         self.features_dinov2_index_reference = features_dinov2_index_reference
         self.testing_limit_clustering_points = testing_limit_clustering_points
@@ -98,6 +100,9 @@ class HumanLabelsPicoConfig:
         self.kmeans_iterations = kmeans_iterations
         self.embedding_dedupe_threshold = embedding_dedupe_threshold
         self.disable_ray = disable_ray
+        self.use_acceleration = use_acceleration
+        self.diversity_threshold = diversity_threshold
+        self.temporal_window_size = temporal_window_size
 
 
 def get_example_temporal_data():
@@ -663,3 +668,67 @@ def test_filter_embeddings_by_slice_ids() -> None:
     
     # Verify original table is unchanged
     assert embeddings_table.num_rows == 5, "Original table should remain unchanged"
+
+
+def test_vru_preservation() -> None:
+    """Test VRU preservation during deduplication."""
+    # Create embeddings table with slice_id and timestamps
+    embeddings_table = pa.Table.from_pydict(
+        {
+            EMBEDDING: [
+                [1.0, 0.0, 0.0],
+                [1.1, 0.0, 0.0],  # Similar to first, but has VRU
+                [5.0, 0.0, 0.0],
+                [5.1, 0.0, 0.0],  # Similar to third, no VRU
+            ],
+            IDENTIFIERS: [
+                {SLICE_ID: "slice_1"},
+                {SLICE_ID: "slice_1"},
+                {SLICE_ID: "slice_2"},
+                {SLICE_ID: "slice_2"},
+            ],
+            START_NS: [1000, 2000, 3000, 4000],
+        },
+        schema=pa.schema([
+            pa.field(EMBEDDING, pa.fixed_shape_tensor(pa.float32(), [3])),
+            pa.field(IDENTIFIERS, pa.struct([pa.field(SLICE_ID, pa.string())])),
+            pa.field(START_NS, pa.int64()),
+        ]),
+    )
+    
+    # Create VRU frame index - mark index 1 as having VRU
+    vru_frame_index = {("slice_1", 2000)}
+    
+    # Test VRU checking function
+    assert check_embedding_has_vru(1, embeddings_table, vru_frame_index), \
+        "Index 1 should be identified as VRU frame"
+    assert not check_embedding_has_vru(0, embeddings_table, vru_frame_index), \
+        "Index 0 should not be identified as VRU frame"
+    
+    # Test deduplication with VRU preservation
+    indices = np.array([0, 1, 2, 3], dtype=np.int64)
+    embeddings = np.array([
+        [1.0, 0.0, 0.0],
+        [1.1, 0.0, 0.0],  # Similar to first, but has VRU
+        [5.0, 0.0, 0.0],
+        [5.1, 0.0, 0.0],  # Similar to third, no VRU
+    ], dtype=np.float32)
+    
+    # Without VRU preservation - index 1 and 3 should be excluded (similar to 0 and 2)
+    included_no_vru, excluded_no_vru = deduplicate_cluster(
+        indices, embeddings, threshold=0.5, nearest_k_points=2,
+        vru_frame_index=None, embeddings_table=None
+    )
+    assert 1 in excluded_no_vru or 0 in excluded_no_vru, \
+        "One of the similar embeddings (0 or 1) should be excluded without VRU preservation"
+    
+    # With VRU preservation - index 1 should be preserved despite being similar to 0
+    included_with_vru, excluded_with_vru = deduplicate_cluster(
+        indices, embeddings, threshold=0.5, nearest_k_points=2,
+        vru_frame_index=vru_frame_index, embeddings_table=embeddings_table
+    )
+    assert 1 in included_with_vru, \
+        "Index 1 (VRU frame) should be preserved even if similar to other embeddings"
+    
+    print(f"Without VRU: included={included_no_vru}, excluded={excluded_no_vru}")
+    print(f"With VRU: included={included_with_vru}, excluded={excluded_with_vru}")
