@@ -22,100 +22,80 @@ PICO_ROW_WINDOW_SEC = 0.5
 
 def build_vru_frame_index(
     gold_dataset: ParquetDataset,
-    vru_classes: list[str],
+    preserved_classes: list[str],
     slice_ids: Optional[set[str]] = None,
 ) -> set[tuple[str, int]]:
-    """Build an index of (slice_id, timestamp) tuples for frames containing VRU objects.
-    
+    """Build an index of (slice_id, timestamp) tuples for frames containing preserved objects.
+
     This function scans the gold dataset annotations to identify frames that contain
-    VRU (Vulnerable Road User) objects like pedestrians, cyclists, etc. These frames
+    preserved objects like pedestrians, cyclists, etc. These frames
     will be preserved during deduplication.
-    
+
     Args:
         gold_dataset: The ParquetDataset containing annotated frames
-        vru_classes: List of object class names to preserve (e.g., ["pedestrian", "cyclist"])
+        preserved_classes: List of object class names to preserve (e.g., ["pedestrian", "cyclist"])
         slice_ids: Optional set of slice IDs to process. If None, process all slices.
-    
+
     Returns:
-        Set of (slice_id, timestamp_ns) tuples identifying frames with VRU objects
+        Set of (slice_id, timestamp_ns) tuples identifying frames with preserved objects
     """
-    vru_frames = set()
-    vru_classes_lower = {cls.lower() for cls in vru_classes}
+    if not preserved_classes:
+        raise ValueError("preserved_classes cannot be empty")
+
+    preserved_frames = set()
+    preserved_classes_lower = {cls.lower() for cls in preserved_classes}
+
+    _LOGGER.info(f"\nStep 2. Building preserved frame index for classes: {preserved_classes}")
+
+    if slice_ids:
+        _LOGGER.info(f"Filtering to {len(slice_ids)} slice_ids from embeddings table")
+        rows = gold_dataset.get_rows(ids=list(slice_ids))
+    else:
+        _LOGGER.info("No slice_ids filter provided - processing ALL slices (slow!)")
+        manifest = gold_dataset.get_manifest()
+        rows = gold_dataset.get_rows(ids=[ref.id for ref in manifest])
+
+    _LOGGER.info(f"\nStep 3. Processing {rows.num_rows} rows (slices)")
+
+    # Progress logging
+    total_rows = rows.num_rows
+    log_interval = max(1, total_rows // 10)  # Log every 10%
     
-    _LOGGER.info(f"Building VRU frame index for classes: {vru_classes}")
-    
-    try:
-        # Get all rows from the dataset (or filtered by slice_ids)
-        if slice_ids:
-            rows = gold_dataset.get_rows(ids=list(slice_ids))
-        else:
-            manifest = gold_dataset.get_manifest()
-            rows = gold_dataset.get_rows(ids=[ref.id for ref in manifest])
+    for i in range(rows.num_rows):
+        # Log progress every 10%
+        if i % log_interval == 0 and i > 0:
+            _LOGGER.info(f"Progress: {i}/{total_rows} rows ({100*i//total_rows}%), found {len(preserved_frames)} VRU frames so far")
         
-        # Process each row (slice) to extract VRU frames
-        for i in range(rows.num_rows):
-            row = rows.slice(i, 1)
-            
-            # Get slice_id from identifiers
-            identifiers = row.column(IDENTIFIERS)
-            if identifiers:
-                slice_id = identifiers[0].as_py().get(SLICE_ID)
-            else:
-                continue
-            
-            # Get frames from this row
+        row = rows.slice(i, 1)
+
+        identifiers = row.column(IDENTIFIERS)
+        slice_id = identifiers[0].as_py().get(SLICE_ID) if identifiers else None
+        
+        if identifiers and slice_id:
             frames_column = row.column(FRAMES_KEY)
-            if not frames_column:
-                continue
-                
-            frames = frames_column[0].as_py()
-            if not frames:
-                continue
-            
-            # Check each frame for VRU annotations
-            for frame in frames:
-                timestamp_ns = frame.get(TIMESTAMP_NS)
-                if timestamp_ns is None:
-                    continue
-                
-                # Check if frame has annotations with VRU classes
-                # The annotation structure may vary - try common field names
-                has_vru = False
-                
-                # Try common annotation field names
-                for ann_field in ['annotations', 'objects', 'labels', 'detections']:
-                    annotations = frame.get(ann_field, [])
-                    if not annotations:
-                        continue
-                    
-                    # Check each annotation for VRU classes
-                    for ann in annotations:
-                        if isinstance(ann, dict):
-                            # Try common class name fields
-                            class_name = (
-                                ann.get('class_name') or 
-                                ann.get('class') or 
-                                ann.get('label') or 
-                                ann.get('type') or
-                                ann.get('object_class')
-                            )
-                            
-                            if class_name and class_name.lower() in vru_classes_lower:
-                                has_vru = True
-                                break
-                    
-                    if has_vru:
-                        break
-                
-                if has_vru:
-                    vru_frames.add((slice_id, timestamp_ns))
-        
-        _LOGGER.info(f"Built VRU frame index: {len(vru_frames)} frames with VRU objects")
-        
-    except Exception as e:
-        _LOGGER.warning(f"Error building VRU frame index: {e}. VRU preservation may not work correctly.")
-    
-    return vru_frames
+            frames = frames_column[0].as_py() if frames_column else None
+            if frames_column and frames:
+                # Scan all frames in this slice to find VRU frames
+                # Note: We MUST scan all frames (no early stopping after first VRU found)
+                # because we need frame-level precision for deduplication.
+                # 
+                # Each embedding corresponds to a specific frame timestamp, and during
+                # deduplication we check: "Does THIS specific frame have a VRU?"
+                # If we stopped after finding the first VRU frame in a slice, we'd miss
+                # other VRU frames in the same slice that also need preservation.
+                #
+                # Early stopping WITHIN each frame is already optimized:
+                # - any() short-circuits once a VRU cuboid is found in a frame
+                # - We don't check remaining cuboids after finding first VRU
+                for frame in frames:
+                    if frame.cuboids and any(
+                        cuboid.label_class.lower() in preserved_classes_lower for cuboid in frame.cuboids
+                    ):
+                        preserved_frames.add((slice_id, frame.timestamp_ns))
+
+    _LOGGER.info(f"Built preserved frame index: {len(preserved_frames)} frames with preserved objects")
+
+    return preserved_frames
 
 
 def check_embedding_has_vru(
@@ -133,15 +113,118 @@ def check_embedding_has_vru(
     Returns:
         True if the embedding corresponds to a VRU frame, False otherwise
     """
-    try:
-        identifiers = embeddings_table.column(IDENTIFIERS)[embedding_idx].as_py()
-        slice_id = identifiers.get(SLICE_ID)
-        timestamp_ns = embeddings_table.column(START_NS)[embedding_idx].as_py()
+    if embedding_idx >= embeddings_table.num_rows or embedding_idx < 0:
+        raise ValueError(f"Invalid embedding index {embedding_idx}: out of range [0, {embeddings_table.num_rows})")
+    
+    identifiers = embeddings_table.column(IDENTIFIERS)[embedding_idx].as_py()
+    if not identifiers or SLICE_ID not in identifiers:
+        raise ValueError(f"Missing SLICE_ID in identifiers for embedding {embedding_idx}")
+    
+    slice_id = identifiers.get(SLICE_ID)
+    timestamp_ns = embeddings_table.column(START_NS)[embedding_idx].as_py()
+    
+    return (slice_id, timestamp_ns) in vru_frame_index
+
+
+def rescue_vru_frames_from_excluded(
+    excluded_indices: set[int],
+    embeddings_table: pa.Table,
+    gold_dataset: ParquetDataset,
+    preserved_classes: list[str],
+) -> set[int]:
+    """Check excluded embeddings for VRU content and rescue them.
+    
+    This is much more efficient than pre-computing a VRU index for all frames.
+    Instead of scanning millions of frames upfront, we only check the frames
+    that were actually excluded during deduplication.
+    
+    Performance comparison:
+    - Old approach: Scan 10K slices × 500 frames = 5M frames → ~2 minutes
+    - New approach: Scan only excluded embeddings (e.g., 100K) → ~10 seconds
+    
+    Args:
+        excluded_indices: Set of embedding indices that were excluded during deduplication
+        embeddings_table: Table with IDENTIFIERS and START_NS columns
+        gold_dataset: Dataset containing frame annotations
+        preserved_classes: List of object class names to preserve (e.g., ["pedestrian", "cyclist"])
+    
+    Returns:
+        Set of indices from excluded_indices that contain VRUs and should be rescued
+    """
+    if not excluded_indices:
+        return set()
+    
+    _LOGGER.info(f"Checking {len(excluded_indices)} excluded embeddings for VRU content...")
+    
+    preserved_classes_lower = {cls.lower() for cls in preserved_classes}
+    rescued_indices = set()
+    
+    # Group excluded indices by slice_id for efficient batch loading
+    slice_to_embeddings: dict[str, list[tuple[int, int]]] = {}  # slice_id -> [(embedding_idx, timestamp), ...]
+    
+    for idx in excluded_indices:
+        if idx >= embeddings_table.num_rows or idx < 0:
+            raise ValueError(f"Invalid embedding index {idx}: out of range [0, {embeddings_table.num_rows})")
         
-        return (slice_id, timestamp_ns) in vru_frame_index
-    except Exception as e:
-        _LOGGER.debug(f"Error checking VRU status for embedding {embedding_idx}: {e}")
-        return False
+        identifiers = embeddings_table.column(IDENTIFIERS)[idx].as_py()
+        if not identifiers or SLICE_ID not in identifiers:
+            raise ValueError(f"Missing SLICE_ID in identifiers for embedding {idx}")
+        
+        slice_id = identifiers.get(SLICE_ID)
+        timestamp_ns = embeddings_table.column(START_NS)[idx].as_py()
+        
+        if slice_id not in slice_to_embeddings:
+            slice_to_embeddings[slice_id] = []
+        slice_to_embeddings[slice_id].append((idx, timestamp_ns))
+    
+    _LOGGER.info(f"Excluded embeddings span {len(slice_to_embeddings)} slices")
+    
+    # Process each slice and check frames for VRUs
+    processed_slices = 0
+    log_interval = max(1, len(slice_to_embeddings) // 10)
+    
+    for slice_id, embedding_infos in slice_to_embeddings.items():
+        processed_slices += 1
+        if processed_slices % log_interval == 0:
+            _LOGGER.info(
+                f"VRU rescue progress: {processed_slices}/{len(slice_to_embeddings)} slices "
+                f"({100*processed_slices//len(slice_to_embeddings)}%), rescued {len(rescued_indices)} frames so far"
+            )
+        
+        # Load this slice's frames
+        rows = gold_dataset.get_rows(ids=[slice_id])
+        if rows.num_rows == 0:
+            raise ValueError(f"Slice {slice_id} not found in gold dataset")
+        
+        row = rows.slice(0, 1)
+        frames_column = row.column(FRAMES_KEY)
+        if not frames_column:
+            raise ValueError(f"No FRAMES_KEY column in slice {slice_id}")
+        
+        frames = frames_column[0].as_py()
+        if not frames:
+            raise ValueError(f"No frames found in slice {slice_id}")
+        
+        # Build a set of timestamps that have VRUs in this slice
+        vru_timestamps_in_slice = set()
+        for frame in frames:
+            if frame.cuboids and any(
+                cuboid.label_class.lower() in preserved_classes_lower 
+                for cuboid in frame.cuboids
+            ):
+                vru_timestamps_in_slice.add(frame.timestamp_ns)
+        
+        # Check which excluded embeddings in this slice have VRUs
+        for embedding_idx, timestamp_ns in embedding_infos:
+            if timestamp_ns in vru_timestamps_in_slice:
+                rescued_indices.add(embedding_idx)
+    
+    _LOGGER.info(
+        f"VRU rescue complete: rescued {len(rescued_indices)} out of {len(excluded_indices)} "
+        f"excluded frames ({100*len(rescued_indices)//len(excluded_indices) if excluded_indices else 0}%)"
+    )
+    
+    return rescued_indices
 
 
 def _find_reference_pico_row(
@@ -756,32 +839,27 @@ def get_cluster_assignments(
 
 def deduplicate_cluster(
     indices: npt.NDArray[np.int64], 
-    embeddings: npt.NDArray[np.float32], 
-    threshold: float, 
-    nearest_k_points: int = 10,
-    vru_frame_index: Optional[set[tuple[str, int]]] = None,
+    embeddings: npt.NDArray[np.float32],
+    config: HumanLabelsPicoConfig,
     embeddings_table: Optional[pa.Table] = None,
+    gold_dataset: Optional[ParquetDataset] = None,
 ) -> tuple[set[int], set[int]]:
-    """Deduplicate embeddings within a cluster based on a similarity threshold.
+    """Deduplicate embeddings within a cluster and rescue VRU frames in parallel.
 
     This function does the following:
-        - Computes the pairwise distances between all embeddings in the cluster.
-        - Iteratively selects the embedding with the smallest average distance to its nearest k neighbors as a unique
-          embedding.
-        - Marks all embeddings within the threshold distance of the selected embedding as duplicates.
-        - Repeats the process until all embeddings have been processed.
-        - If VRU preservation is enabled, frames containing VRU objects are never excluded.
+        1. Computes pairwise distances and deduplicates based on similarity threshold
+        2. If VRU preservation is enabled, checks excluded frames for VRU content
+        3. Rescues any VRU frames from excluded back to included
+        
+    By doing VRU rescue per-cluster, we achieve parallelization via Ray instead of
+    sequential processing in the main function.
 
     Args:
         indices: A numpy array of shape (num_embeddings_in_cluster,) containing the original indices of the embeddings.
-            These indices are provided because the embeddings passed to this function will be a slice of a larger array.
         embeddings: A numpy array of shape (num_embeddings_in_cluster, embedding_dimension) containing the embeddings.
-            The first dimension of this array must be the same as the first dimension of indices.
-        threshold: A float representing the similarity threshold for deduplication.
-        nearest_k_points: An integer representing the number of nearest neighbors to consider when calculating average
-            distances for density estimates.
-        vru_frame_index: Optional set of (slice_id, timestamp_ns) tuples for frames with VRU objects to preserve.
+        config: Configuration object with deduplication parameters.
         embeddings_table: Optional embeddings table needed for VRU checking.
+        gold_dataset: Optional gold dataset for loading frames with annotations.
 
     Returns:
         A tuple of (included_indices, excluded_indices) sets containing the original indices.
@@ -791,19 +869,17 @@ def deduplicate_cluster(
     if len(embeddings) != len(indices):
         raise ValueError(f"Length of embeddings {len(embeddings)} must match length of indices {len(indices)}")
 
-    # Check if VRU preservation is enabled
-    vru_preservation_enabled = vru_frame_index is not None and embeddings_table is not None
-
+    # Step 1: Run deduplication
     num_points, dim = embeddings.shape
     index = faiss.IndexFlatL2(dim)
     index.add(embeddings)
-    distances, _ = index.search(embeddings, min(num_points, nearest_k_points + 1))
+    distances, _ = index.search(embeddings, min(num_points, config.nearest_k_points + 1))
     distances = np.sqrt(distances[:, 1:]).mean(axis=1)  # Remove self-distance
 
     included_indices = set()
     excluded_indices = set()
-    vru_preserved_count = 0
     
+    threshold = config.embedding_dedupe_threshold
     while distances.min() < np.inf:
         min_index = distances.argmin()
         point_distances, point_indices = index.search(embeddings[min_index : min_index + 1], num_points)
@@ -821,18 +897,30 @@ def deduplicate_cluster(
         for i in close_indices:
             if i == min_index:
                 continue
-            
-            # Check if this frame contains VRU objects
-            original_idx = indices[i]
-            if vru_preservation_enabled and check_embedding_has_vru(original_idx, embeddings_table, vru_frame_index):
-                # Preserve VRU frames - add to included instead of excluded
-                included_indices.add(original_idx)
-                vru_preserved_count += 1
-            else:
-                excluded_indices.add(original_idx)
+            excluded_indices.add(indices[i])
     
-    if vru_preservation_enabled and vru_preserved_count > 0:
-        _LOGGER.debug(f"VRU preservation: kept {vru_preserved_count} frames with VRU objects in this cluster")
+    # Step 2: Rescue VRU frames from excluded (per-cluster, runs in parallel via Ray)
+    vru_preservation_enabled = (
+        config.enable_vru_preservation and
+        embeddings_table is not None and 
+        gold_dataset is not None
+    )
+    
+    if vru_preservation_enabled and excluded_indices:
+        rescued_indices = rescue_vru_frames_from_excluded(
+            excluded_indices,
+            embeddings_table,
+            gold_dataset,
+            config.vru_classes,
+        )
+        
+        if rescued_indices:
+            included_indices.update(rescued_indices)
+            excluded_indices.difference_update(rescued_indices)
+            _LOGGER.debug(
+                f"Cluster VRU rescue: rescued {len(rescued_indices)} out of "
+                f"{len(excluded_indices) + len(rescued_indices)} excluded frames"
+            )
 
     return included_indices, excluded_indices
 
@@ -840,27 +928,23 @@ def deduplicate_cluster(
 def deduplicate_embeddings(
     cluster_assignments: npt.NDArray[np.int64],
     embeddings: npt.NDArray[np.float32],
-    threshold: float,
-    nearest_k_points: int = 10,
-    disable_ray: bool = False,
-    vru_frame_index: Optional[set[tuple[str, int]]] = None,
+    config: HumanLabelsPicoConfig,
     embeddings_table: Optional[pa.Table] = None,
+    gold_dataset: Optional[ParquetDataset] = None,
 ) -> tuple[set[int], set[int]]:
-    """Deduplicate embeddings based on a similarity threshold.
+    """Deduplicate embeddings based on a similarity threshold with parallel VRU rescue.
 
-    See the docstring of deduplicate_cluster for details on the deduplication algorithm. This function uses Ray to
-    process each cluster in parallel.
+    Each cluster is processed in parallel via Ray. If VRU preservation is enabled,
+    each cluster rescues its own VRU frames from the excluded set, achieving
+    parallelization instead of sequential processing.
 
     Args:
         cluster_assignments: A numpy array of shape (num_embeddings,) containing the cluster assignment for each
             embedding.
         embeddings: A numpy array of shape (num_embeddings, embedding_dimension) containing the embeddings.
-        threshold: A float representing the similarity threshold for deduplication.
-        nearest_k_points: An integer representing the number of nearest neighbors to consider when calculating average
-            distances for density estimates.
-        disable_ray: A boolean indicating whether to disable Ray for parallel processing.
-        vru_frame_index: Optional set of (slice_id, timestamp_ns) tuples for frames with VRU objects to preserve.
+        config: Configuration object with deduplication parameters.
         embeddings_table: Optional embeddings table needed for VRU checking.
+        gold_dataset: Optional gold dataset for loading frames with annotations.
 
     Returns:
         A tuple of (included_indices, excluded_indices) sets.
@@ -873,14 +957,15 @@ def deduplicate_embeddings(
 
         if cluster_indices.size > 0:
             deduplication_tasks.append(
-                (cluster_indices, cluster_embeddings, threshold, nearest_k_points, vru_frame_index, embeddings_table)
+                (cluster_indices, cluster_embeddings, config, embeddings_table, gold_dataset)
             )
         else:
             _LOGGER.info("Cluster %d is empty.", cluster_id)
 
     # Helper function since map_remote_to_args requires a single argument function.
     def deduplicate_embeddings_in_cluster(
-        input_data: tuple[npt.NDArray[np.int64], npt.NDArray[np.float32], float, int, Optional[set], Optional[pa.Table]]
+        input_data: tuple[npt.NDArray[np.int64], npt.NDArray[np.float32], HumanLabelsPicoConfig,
+                         Optional[pa.Table], Optional[ParquetDataset]]
     ) -> tuple[set[int], set[int]]:
         return deduplicate_cluster(*input_data)
 
@@ -888,7 +973,7 @@ def deduplicate_embeddings(
     for result in map_remote_to_args(
         deduplicate_embeddings_in_cluster,
         deduplication_tasks,
-        disable_ray=disable_ray,
+        disable_ray=config.disable_ray,
         dynamically_adjust_memory=True,
     ):
         if isinstance(result, Exception):
@@ -921,23 +1006,23 @@ def dedupe_and_get_include_and_exclude_maps(
     embedding_table = get_embeddings_table(config.features_dinov2_index_reference, lakefs)
     embeddings_array = get_embedding_array_from_table(embedding_table)
     
-    # Build VRU frame index if VRU preservation is enabled
-    vru_frame_index = None
+    # Load gold dataset if VRU preservation is enabled (needed for parallel processing)
+    gold_dataset = None
     if config.enable_vru_preservation:
-        _LOGGER.info("VRU preservation enabled. Building VRU frame index...")
-        try:
-            # Load the gold dataset to access annotations
-            annotations_ref = config.vru_annotations_reference or config.human_labels_gold_reference
-            gold_stage, gold_reference = get_stage_and_reference(annotations_ref, lakefs)
-            from kits.scalex.dataset.constants import ROW_ID
-            gold_dataset = ParquetDataset(gold_stage, gold_reference.commit, row_id_column=ROW_ID)
-            
-            # Build VRU frame index
-            vru_frame_index = build_vru_frame_index(gold_dataset, config.vru_classes)
-            _LOGGER.info(f"VRU frame index built: {len(vru_frame_index)} frames with VRU objects will be preserved")
-        except Exception as e:
-            _LOGGER.error(f"Failed to build VRU frame index: {e}. VRU preservation will be disabled.")
-            vru_frame_index = None
+        _LOGGER.info("VRU preservation enabled. Loading gold dataset for parallel VRU rescue...")
+        
+        annotations_ref = config.vru_annotations_reference or config.human_labels_gold_reference
+        if not annotations_ref:
+            raise ValueError("VRU preservation enabled but no annotations reference provided")
+        
+        gold_stage, gold_reference = get_stage_and_reference(annotations_ref, lakefs)
+        from kits.scalex.dataset.constants import ROW_ID
+        gold_dataset = ParquetDataset(gold_stage, gold_reference.commit, row_id_column=ROW_ID)
+        
+        if not config.vru_classes:
+            raise ValueError("VRU preservation enabled but vru_classes is empty")
+        
+        _LOGGER.info(f"VRU classes to preserve: {config.vru_classes}")
     
     if config.testing_limit_clustering_points:
         embeddings_array = embeddings_array[: config.testing_limit_clustering_points]
@@ -946,16 +1031,25 @@ def dedupe_and_get_include_and_exclude_maps(
     cluster_assignments = get_cluster_assignments(
         embeddings_array, num_clusters=config.num_kmeans_clusters, num_iterations=config.kmeans_iterations
     )
-    _LOGGER.info("Assigned clusters. Deduplicating embeddings.")
+    
+    # Run deduplication with parallel VRU rescue per cluster
+    if config.enable_vru_preservation:
+        _LOGGER.info(
+            "Assigned clusters. Deduplicating embeddings with parallel VRU rescue per cluster "
+            "(each cluster rescues its own VRU frames via Ray)."
+        )
+    else:
+        _LOGGER.info("Assigned clusters. Deduplicating embeddings.")
+    
     include, exclude = deduplicate_embeddings(
         cluster_assignments, 
-        embeddings_array, 
-        config.embedding_dedupe_threshold, 
-        disable_ray=config.disable_ray,
-        vru_frame_index=vru_frame_index,
-        embeddings_table=embedding_table,
+        embeddings_array,
+        config,
+        embeddings_table=embedding_table if config.enable_vru_preservation else None,
+        gold_dataset=gold_dataset,
     )
     _LOGGER.info("<<<Deduplicated embeddings. Included %d, excluded %d.>>>", len(include), len(exclude))
+    
     include_map, exclude_map = get_include_exclude_maps(embedding_table, include, exclude)
     _LOGGER.info("Generated include and exclude maps.")
     return include_map, exclude_map

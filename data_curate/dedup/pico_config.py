@@ -84,10 +84,12 @@ class HumanLabelsPicoConfig(BaseStageConfigV2):
     # List of object class names to preserve (e.g., pedestrians, cyclists, motorcyclists)
     # Frames containing these classes will not be pruned during deduplication
     vru_classes: list[str] = None
-
-    # Reference to the gold dataset containing annotations (used for VRU preservation)
-    # If not set, uses human_labels_gold_reference
+    
+    # Optional reference to annotations dataset (if different from human_labels_gold_reference)
     vru_annotations_reference: str = ""
+    
+    # Number of nearest neighbors to consider for density estimation during deduplication
+    nearest_k_points: int = 10
 
     def __post_init__(self):
         """Post-initialization to set default VRU classes."""
