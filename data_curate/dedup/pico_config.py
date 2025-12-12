@@ -1,7 +1,6 @@
-"""Configs for the stage."""
-
-
 from kits.scalex.dataset.config import BaseStageConfigV2
+
+_LOGGER: Final = logging.getLogger(__name__)
 
 
 class HumanLabelsPicoConfig(BaseStageConfigV2):
@@ -61,6 +60,9 @@ class HumanLabelsPicoConfig(BaseStageConfigV2):
     #: The number of iterations to run for KMeans clustering. The default for FAISS is 25.
     kmeans_iterations: int = 25
 
+    #: An integer representing the number of nearest neighbors to consider when calculating average distances for density estimates.
+    nearest_k_points: int = 10
+
     #: The maximum number of points to use for clustering and deduplication. This parameter is useful only in the
     #: context of testing to limit the number of points used. A value of 50,000 is reasonable.
     testing_limit_clustering_points: int = 0
@@ -77,29 +79,26 @@ class HumanLabelsPicoConfig(BaseStageConfigV2):
     # Comparison window for velocity/acceleration in seconds.
     temporal_window_size_s: float = 15.0
 
-    # VRU preservation settings
     # If True, enable VRU (Vulnerable Road User) preservation during deduplication
-    enable_vru_preservation: bool = False
+    enable_object_preservation: bool = False
 
+    preserved_classes: Optional[List[str]] = None
     # List of object class names to preserve (e.g., pedestrians, cyclists, motorcyclists)
     # Frames containing these classes will not be pruned during deduplication
-    vru_classes: list[str] = None
-    
-    # Optional reference to annotations dataset (if different from human_labels_gold_reference)
-    vru_annotations_reference: str = ""
-    
-    # Number of nearest neighbors to consider for density estimation during deduplication
-    nearest_k_points: int = 10
-
-    def __post_init__(self):
-        """Post-initialization to set default VRU classes."""
-        if self.vru_classes is None:
-            # Default VRU classes for autonomous driving
-            self.vru_classes = [
-                "pedestrian",
-                "cyclist", 
-                "motorcyclist",
-                "bicycle",
-                "motorcycle",
-                "person",
-            ]
+    @validator("preserved_classes", pre=True, always=True)
+    def set_default_preserved_classes(cls, value: Optional[List[str]]) -> List[str]:
+        """Set default preserved classes when None is provided."""
+        if value is not None:
+            return value
+        
+        return [
+            "ADULT",
+            "CHILD",
+            "CONSTRUCTIONWORKER",
+            "FIRSTRESPONDER",
+            "OFFICIAL_SIGNALER",
+            "PEDESTRIAN",
+            "UNOFFICIAL_SIGNALER",
+            "VULNERABLE_ROAD_USER",
+            "ACCELERATEDHUMAN",
+        ]
