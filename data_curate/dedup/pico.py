@@ -20,10 +20,10 @@ _LOGGER: Final = logging.getLogger(__name__)
 PICO_ROW_WINDOW_SEC = 0.5
 
 
-# NOTE: Old VRU preservation functions removed (build_vru_frame_index, check_embedding_has_vru)
-# These were part of the pre-computation approach where we built a VRU index upfront.
-# New approach: VRU rescue happens per-cluster in parallel using rescue_vru_frames_from_excluded()
-# See rescue_vru_frames_from_excluded() below for the current implementation.
+# NOTE: Old preservation functions removed (build_vru_frame_index, check_embedding_has_vru)
+# These were part of the pre-computation approach where we built an index upfront.
+# New approach: Preserved class rescue happens per-cluster in parallel using rescue_preserved_classes_from_excluded()
+# See rescue_preserved_classes_from_excluded() below for the current implementation.
 
 def rescue_preserved_classes_from_excluded(
     excluded_indices: set[int],
@@ -31,41 +31,42 @@ def rescue_preserved_classes_from_excluded(
     gold_dataset: ParquetDataset,
     config: HumanLabelsPicoConfig,
 ) -> set[int]:
-    """Check excluded embeddings for preserved objects and rescue them."""
+    """Check excluded embeddings for preserved objects and rescue them.
+    
+    Uses the same distance-based matching as _filter_frame_groups, but inverted:
+    instead of "which frames match these embeddings", we ask "which embeddings 
+    match these preserved frames".
+    """
     if not excluded_indices:
         return set()
 
     _LOGGER.info(f"Checking {len(excluded_indices)} excluded embeddings for preserved objects...")
 
     preserved_classes_lower = {cls.lower() for cls in config.preserved_classes}
-    rescued_indices = set()
-
-    identifiers = embeddings_table.column(IDENTIFIERS).to_pylist()
-    start_ns_list = embeddings_table.column(START_NS).to_pylist()
-    end_ns_list = embeddings_table.column(END_NS).to_pylist()  # ← ADD THIS
-    slice_to_embeddings: dict[str, list[tuple[int, int, int]]] = {}  # ← Now includes end_ns
-
+    
+    # Get embedding timestamps - work with indices and timestamps together
+    identifiers_and_timestamps = embeddings_table.select([IDENTIFIERS, START_NS]).to_pylist()
+    
+    # Group excluded embeddings by slice (keeping index info)
+    slice_to_excluded: dict[str, list[tuple[int, int]]] = {}  # slice_id -> [(idx, timestamp), ...]
     for idx in excluded_indices:
-        if idx >= embeddings_table.num_rows or idx < 0:
-            raise ValueError(f"Invalid embedding index {idx}: out of range [0, {embeddings_table.num_rows})")
+        row = identifiers_and_timestamps[idx]
+        slice_id = row[IDENTIFIERS][SLICE_ID]
+        timestamp = row[START_NS]
+        if slice_id not in slice_to_excluded:
+            slice_to_excluded[slice_id] = []
+        slice_to_excluded[slice_id].append((idx, timestamp))
 
-        identifier = identifiers[idx]
-        if not identifier or SLICE_ID not in identifier:
-            raise ValueError(f"Missing SLICE_ID in identifiers for embedding {idx}")
+    _LOGGER.info(f"Excluded embeddings span {len(slice_to_excluded)} slices")
 
-        slice_id = identifier.get(SLICE_ID)
-        start_ns = start_ns_list[idx]
-        end_ns = end_ns_list[idx]  # ← ADD THIS
-
-        if slice_id not in slice_to_embeddings:
-            slice_to_embeddings[slice_id] = []
-        slice_to_embeddings[slice_id].append((idx, start_ns, end_ns))  # ← Include end_ns
-
-    _LOGGER.info(f"Excluded embeddings span {len(slice_to_embeddings)} slices")
-
-    def process_slice(slice_data: tuple[str, list[tuple[int, int, int]]]) -> set[int]:
-        slice_id, embedding_infos = slice_data
+    def process_slice(slice_data: tuple[str, list[tuple[int, int]]]) -> set[int]:
+        slice_id, excluded_emb_list = slice_data
         local_rescued = set()
+        
+        if not excluded_emb_list:
+            return local_rescued
+        
+        # Load gold dataset frames for this slice
         rows = gold_dataset.get_rows(ids=[slice_id])
         if rows.num_rows == 0:
             return local_rescued
@@ -74,39 +75,46 @@ def rescue_preserved_classes_from_excluded(
         frames_column = row.column(FRAMES_KEY)
         if not frames_column:
             return local_rescued
-
+        
         frames = frames_column[0].as_py()
         if not frames:
             return local_rescued
 
-        # Collect all timestamps with preserved objects
-        preserved_obj_timestamps_in_slice = set()
+        # Collect timestamps of frames with preserved objects
+        preserved_frame_timestamps = []
         for frame in frames:
             cuboids = frame.get("cuboids", [])
             if cuboids and any(cuboid.get("label_class", "").lower() in preserved_classes_lower for cuboid in cuboids):
-                preserved_obj_timestamps_in_slice.add(frame.get(TIMESTAMP_NS))
+                preserved_frame_timestamps.append(frame.get(TIMESTAMP_NS))
 
-        if not preserved_obj_timestamps_in_slice:
+        if not preserved_frame_timestamps:
             return local_rescued
 
         _LOGGER.info(
-            f"Found {len(preserved_obj_timestamps_in_slice)} frames with preserved objects in slice {slice_id}"
+            f"Found {len(preserved_frame_timestamps)} frames with preserved objects in slice {slice_id}"
         )
 
-        # Check if any excluded embedding's time window contains a preserved object
-        for embedding_idx, start_ns, end_ns in embedding_infos:
-            for preserved_ts in preserved_obj_timestamps_in_slice:
-                if start_ns <= preserved_ts <= end_ns:  # ← TIME WINDOW CHECK
-                    local_rescued.add(embedding_idx)
-                    break  # This embedding is rescued, no need to check more timestamps
+        # For each preserved frame, find and rescue the closest excluded embedding
+        # Note: We don't use _find_closest_timestamp_distance here because we need
+        # the embedding INDEX, not just the distance. This single-pass approach is
+        # more efficient than finding the distance then searching for which item has it.
+        for preserved_ts in preserved_frame_timestamps:
+            closest_emb_idx = None
+            min_distance = np.inf
+            
+            for emb_idx, emb_timestamp in excluded_emb_list:
+                distance = abs(preserved_ts - emb_timestamp)
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_emb_idx = emb_idx
+            
+            if closest_emb_idx is not None:
+                local_rescued.add(closest_emb_idx)
 
         _LOGGER.info(f"Rescued {len(local_rescued)} embeddings from slice {slice_id}")
         return local_rescued
 
-    rescue_tasks = [
-        (slice_id, embedding_infos)
-        for slice_id, embedding_infos in slice_to_embeddings.items()
-    ]
+    rescue_tasks = list(slice_to_excluded.items())
 
     results = map_remote_to_args(
         process_slice,
@@ -115,6 +123,7 @@ def rescue_preserved_classes_from_excluded(
         dynamically_adjust_memory=True,
     )
 
+    rescued_indices = set()
     for result in results:
         if isinstance(result, Exception):
             raise result
@@ -468,6 +477,21 @@ def temporal_subsample_by_change_rate(
     return table.take(keep_indices)
 
 
+def _find_closest_timestamp_distance(target_timestamp: int, timestamp_list: list[int]) -> float:
+    """Find the minimum distance from target_timestamp to any timestamp in timestamp_list.
+    
+    Args:
+        target_timestamp: The timestamp to find the closest match for.
+        timestamp_list: List of timestamps to search.
+    
+    Returns:
+        Minimum distance, or np.inf if timestamp_list is empty.
+    """
+    if not timestamp_list:
+        return np.inf
+    return min(abs(target_timestamp - ts) for ts in timestamp_list)
+
+
 def _filter_frame_groups(grouped: pa.Array, include: list[int], exclude: list[int]) -> pa.Array:
     """Filter frame groups based on include and exclude timestamps.
 
@@ -492,10 +516,8 @@ def _filter_frame_groups(grouped: pa.Array, include: list[int], exclude: list[in
     include_indices = []
     for j in range(len(grouped)):
         first_timestamp = grouped[j][0][TIMESTAMP_NS].as_py()
-        include_dists = [abs(first_timestamp - include_timestamp) for include_timestamp in include]
-        best_include = min(include_dists) if include_dists else np.inf
-        exclude_dists = [abs(first_timestamp - exclude_timestamp) for exclude_timestamp in exclude]
-        best_exclude = min(exclude_dists) if exclude_dists else np.inf
+        best_include = _find_closest_timestamp_distance(first_timestamp, include)
+        best_exclude = _find_closest_timestamp_distance(first_timestamp, exclude)
         if best_include <= best_exclude:
             include_indices.append(j)
     if not include_indices:
@@ -655,6 +677,9 @@ def _build_slice_timestamp_map(
     identifiers_and_timestamps: list[dict[str, Any]], indices: set[int]
 ) -> dict[str, list[int]]:
     """Build a map from slice_id to list of timestamps for the given indices.
+    
+    Used for both frame filtering and embedding rescue. Timestamps are unique
+    and can be used as lookup keys (as proven by the deduplication logic).
 
     Args:
         identifiers_and_timestamps: A list of dictionaries containing identifiers and timestamps.
@@ -800,19 +825,19 @@ def deduplicate_cluster(
                 continue
             excluded_indices.add(indices[i])
     
-    # Step 2: Rescue VRU frames from excluded (per-cluster, runs in parallel via Ray)
-    vru_preservation_enabled = (
-        config.enable_vru_preservation and
+    # Step 2: Rescue preserved class frames from excluded (per-cluster, runs in parallel via Ray)
+    preservation_enabled = (
+        config.enable_object_preservation and
         embeddings_table is not None and 
         gold_dataset is not None
     )
     
-    if vru_preservation_enabled and excluded_indices:
+    if preservation_enabled and excluded_indices:
         rescued_indices = rescue_preserved_classes_from_excluded(
             excluded_indices,
             embeddings_table,
             gold_dataset,
-            config.vru_classes,
+            config,
         )
         
         if rescued_indices:
@@ -907,23 +932,23 @@ def dedupe_and_get_include_and_exclude_maps(
     embedding_table = get_embeddings_table(config.features_dinov2_index_reference, lakefs)
     embeddings_array = get_embedding_array_from_table(embedding_table)
     
-    # Load gold dataset if VRU preservation is enabled (needed for parallel processing)
+    # Load gold dataset if object preservation is enabled (needed for parallel processing)
     gold_dataset = None
-    if config.enable_vru_preservation:
-        _LOGGER.info("VRU preservation enabled. Loading gold dataset for parallel VRU rescue...")
+    if config.enable_object_preservation:
+        _LOGGER.info("Object preservation enabled. Loading gold dataset for parallel rescue...")
         
-        annotations_ref = config.vru_annotations_reference or config.human_labels_gold_reference
+        annotations_ref = config.human_labels_gold_reference
         if not annotations_ref:
-            raise ValueError("VRU preservation enabled but no annotations reference provided")
+            raise ValueError("Object preservation enabled but no annotations reference provided")
         
         gold_stage, gold_reference = get_stage_and_reference(annotations_ref, lakefs)
         from kits.scalex.dataset.constants import ROW_ID
         gold_dataset = ParquetDataset(gold_stage, gold_reference.commit, row_id_column=ROW_ID)
         
-        if not config.vru_classes:
-            raise ValueError("VRU preservation enabled but vru_classes is empty")
+        if not config.preserved_classes:
+            raise ValueError("Object preservation enabled but preserved_classes is empty")
         
-        _LOGGER.info(f"VRU classes to preserve: {config.vru_classes}")
+        _LOGGER.info(f"Classes to preserve: {config.preserved_classes}")
     
     if config.testing_limit_clustering_points:
         embeddings_array = embeddings_array[: config.testing_limit_clustering_points]
@@ -933,11 +958,11 @@ def dedupe_and_get_include_and_exclude_maps(
         embeddings_array, num_clusters=config.num_kmeans_clusters, num_iterations=config.kmeans_iterations
     )
     
-    # Run deduplication with parallel VRU rescue per cluster
-    if config.enable_vru_preservation:
+    # Run deduplication with parallel object rescue per cluster
+    if config.enable_object_preservation:
         _LOGGER.info(
-            "Assigned clusters. Deduplicating embeddings with parallel VRU rescue per cluster "
-            "(each cluster rescues its own VRU frames via Ray)."
+            "Assigned clusters. Deduplicating embeddings with parallel preserved class rescue per cluster "
+            "(each cluster rescues its own preserved class frames via Ray)."
         )
     else:
         _LOGGER.info("Assigned clusters. Deduplicating embeddings.")
@@ -946,7 +971,7 @@ def dedupe_and_get_include_and_exclude_maps(
         cluster_assignments, 
         embeddings_array,
         config,
-        embeddings_table=embedding_table if config.enable_vru_preservation else None,
+        embeddings_table=embedding_table if config.enable_object_preservation else None,
         gold_dataset=gold_dataset,
     )
     _LOGGER.info("<<<Deduplicated embeddings. Included %d, excluded %d.>>>", len(include), len(exclude))
