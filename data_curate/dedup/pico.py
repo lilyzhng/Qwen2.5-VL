@@ -25,104 +25,106 @@ PICO_ROW_WINDOW_SEC = 0.5
 # New approach: VRU rescue happens per-cluster in parallel using rescue_vru_frames_from_excluded()
 # See rescue_vru_frames_from_excluded() below for the current implementation.
 
-def rescue_vru_frames_from_excluded(
+def rescue_preserved_classes_from_excluded(
     excluded_indices: set[int],
     embeddings_table: pa.Table,
     gold_dataset: ParquetDataset,
-    preserved_classes: list[str],
+    config: HumanLabelsPicoConfig,
 ) -> set[int]:
-    """Check excluded embeddings for VRU content and rescue them.
-    
-    This is much more efficient than pre-computing a VRU index for all frames.
-    Instead of scanning millions of frames upfront, we only check the frames
-    that were actually excluded during deduplication.
-    
-    Performance comparison:
-    - Old approach: Scan 10K slices × 500 frames = 5M frames → ~2 minutes
-    - New approach: Scan only excluded embeddings (e.g., 100K) → ~10 seconds
-    
-    Args:
-        excluded_indices: Set of embedding indices that were excluded during deduplication
-        embeddings_table: Table with IDENTIFIERS and START_NS columns
-        gold_dataset: Dataset containing frame annotations
-        preserved_classes: List of object class names to preserve (e.g., ["pedestrian", "cyclist"])
-    
-    Returns:
-        Set of indices from excluded_indices that contain VRUs and should be rescued
-    """
+    """Check excluded embeddings for preserved objects and rescue them."""
     if not excluded_indices:
         return set()
-    
-    _LOGGER.info(f"Checking {len(excluded_indices)} excluded embeddings for VRU content...")
-    
-    preserved_classes_lower = {cls.lower() for cls in preserved_classes}
+
+    _LOGGER.info(f"Checking {len(excluded_indices)} excluded embeddings for preserved objects...")
+
+    preserved_classes_lower = {cls.lower() for cls in config.preserved_classes}
     rescued_indices = set()
-    
-    # Group excluded indices by slice_id for efficient batch loading
-    slice_to_embeddings: dict[str, list[tuple[int, int]]] = {}  # slice_id -> [(embedding_idx, timestamp), ...]
-    
+
+    identifiers = embeddings_table.column(IDENTIFIERS).to_pylist()
+    start_ns_list = embeddings_table.column(START_NS).to_pylist()
+    end_ns_list = embeddings_table.column(END_NS).to_pylist()  # ← ADD THIS
+    slice_to_embeddings: dict[str, list[tuple[int, int, int]]] = {}  # ← Now includes end_ns
+
     for idx in excluded_indices:
         if idx >= embeddings_table.num_rows or idx < 0:
             raise ValueError(f"Invalid embedding index {idx}: out of range [0, {embeddings_table.num_rows})")
-        
-        identifiers = embeddings_table.column(IDENTIFIERS)[idx].as_py()
-        if not identifiers or SLICE_ID not in identifiers:
+
+        identifier = identifiers[idx]
+        if not identifier or SLICE_ID not in identifier:
             raise ValueError(f"Missing SLICE_ID in identifiers for embedding {idx}")
-        
-        slice_id = identifiers.get(SLICE_ID)
-        timestamp_ns = embeddings_table.column(START_NS)[idx].as_py()
-        
+
+        slice_id = identifier.get(SLICE_ID)
+        start_ns = start_ns_list[idx]
+        end_ns = end_ns_list[idx]  # ← ADD THIS
+
         if slice_id not in slice_to_embeddings:
             slice_to_embeddings[slice_id] = []
-        slice_to_embeddings[slice_id].append((idx, timestamp_ns))
-    
+        slice_to_embeddings[slice_id].append((idx, start_ns, end_ns))  # ← Include end_ns
+
     _LOGGER.info(f"Excluded embeddings span {len(slice_to_embeddings)} slices")
-    
-    # Process each slice and check frames for VRUs
-    processed_slices = 0
-    log_interval = max(1, len(slice_to_embeddings) // 10)
-    
-    for slice_id, embedding_infos in slice_to_embeddings.items():
-        processed_slices += 1
-        if processed_slices % log_interval == 0:
-            _LOGGER.info(
-                f"VRU rescue progress: {processed_slices}/{len(slice_to_embeddings)} slices "
-                f"({100*processed_slices//len(slice_to_embeddings)}%), rescued {len(rescued_indices)} frames so far"
-            )
-        
-        # Load this slice's frames
+
+    def process_slice(slice_data: tuple[str, list[tuple[int, int, int]]]) -> set[int]:
+        slice_id, embedding_infos = slice_data
+        local_rescued = set()
         rows = gold_dataset.get_rows(ids=[slice_id])
         if rows.num_rows == 0:
-            raise ValueError(f"Slice {slice_id} not found in gold dataset")
-        
+            return local_rescued
+
         row = rows.slice(0, 1)
         frames_column = row.column(FRAMES_KEY)
         if not frames_column:
-            raise ValueError(f"No FRAMES_KEY column in slice {slice_id}")
-        
+            return local_rescued
+
         frames = frames_column[0].as_py()
         if not frames:
-            raise ValueError(f"No frames found in slice {slice_id}")
-        
-        # Build a set of timestamps that have VRUs in this slice
-        vru_timestamps_in_slice = set()
+            return local_rescued
+
+        # Collect all timestamps with preserved objects
+        preserved_obj_timestamps_in_slice = set()
         for frame in frames:
-            if frame.cuboids and any(
-                cuboid.label_class.lower() in preserved_classes_lower 
-                for cuboid in frame.cuboids
-            ):
-                vru_timestamps_in_slice.add(frame.timestamp_ns)
-        
-        # Check which excluded embeddings in this slice have VRUs
-        for embedding_idx, timestamp_ns in embedding_infos:
-            if timestamp_ns in vru_timestamps_in_slice:
-                rescued_indices.add(embedding_idx)
-    
-    _LOGGER.info(
-        f"VRU rescue complete: rescued {len(rescued_indices)} out of {len(excluded_indices)} "
-        f"excluded frames ({100*len(rescued_indices)//len(excluded_indices) if excluded_indices else 0}%)"
+            cuboids = frame.get("cuboids", [])
+            if cuboids and any(cuboid.get("label_class", "").lower() in preserved_classes_lower for cuboid in cuboids):
+                preserved_obj_timestamps_in_slice.add(frame.get(TIMESTAMP_NS))
+
+        if not preserved_obj_timestamps_in_slice:
+            return local_rescued
+
+        _LOGGER.info(
+            f"Found {len(preserved_obj_timestamps_in_slice)} frames with preserved objects in slice {slice_id}"
+        )
+
+        # Check if any excluded embedding's time window contains a preserved object
+        for embedding_idx, start_ns, end_ns in embedding_infos:
+            for preserved_ts in preserved_obj_timestamps_in_slice:
+                if start_ns <= preserved_ts <= end_ns:  # ← TIME WINDOW CHECK
+                    local_rescued.add(embedding_idx)
+                    break  # This embedding is rescued, no need to check more timestamps
+
+        _LOGGER.info(f"Rescued {len(local_rescued)} embeddings from slice {slice_id}")
+        return local_rescued
+
+    rescue_tasks = [
+        (slice_id, embedding_infos)
+        for slice_id, embedding_infos in slice_to_embeddings.items()
+    ]
+
+    results = map_remote_to_args(
+        process_slice,
+        rescue_tasks,
+        disable_ray=config.disable_ray,
+        dynamically_adjust_memory=True,
     )
-    
+
+    for result in results:
+        if isinstance(result, Exception):
+            raise result
+        rescued_indices.update(result)
+
+    _LOGGER.info(
+        f"Rescue complete: rescued {len(rescued_indices)} out of {len(excluded_indices)} "
+        f"excluded embeddings ({100*len(rescued_indices)/len(excluded_indices) if excluded_indices else 0:.1f}%)"
+    )
+
     return rescued_indices
 
 
@@ -806,7 +808,7 @@ def deduplicate_cluster(
     )
     
     if vru_preservation_enabled and excluded_indices:
-        rescued_indices = rescue_vru_frames_from_excluded(
+        rescued_indices = rescue_preserved_classes_from_excluded(
             excluded_indices,
             embeddings_table,
             gold_dataset,
