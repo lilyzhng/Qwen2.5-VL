@@ -11,6 +11,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 logging.basicConfig(level=logging.INFO)
@@ -936,6 +937,231 @@ def create_vlm_analysis_grid(
     _LOGGER.info("Saved VLM analysis grid to %s", output_path)
 
 
+def draw_dashed_rectangle(draw, bbox, color, dash_length=15, width=4):
+    """Draw a dashed rectangle on an ImageDraw object.
+    
+    Args:
+        draw: PIL ImageDraw object
+        bbox: Tuple of (x1, y1, x2, y2)
+        color: RGB tuple for line color
+        dash_length: Length of each dash
+        width: Line width
+    """
+    x1, y1, x2, y2 = bbox
+    
+    # Top edge
+    x = x1
+    while x < x2:
+        end_x = min(x + dash_length, x2)
+        draw.line([(x, y1), (end_x, y1)], fill=color, width=width)
+        x += dash_length * 2
+    
+    # Bottom edge
+    x = x1
+    while x < x2:
+        end_x = min(x + dash_length, x2)
+        draw.line([(x, y2), (end_x, y2)], fill=color, width=width)
+        x += dash_length * 2
+    
+    # Left edge
+    y = y1
+    while y < y2:
+        end_y = min(y + dash_length, y2)
+        draw.line([(x1, y), (x1, end_y)], fill=color, width=width)
+        y += dash_length * 2
+    
+    # Right edge
+    y = y1
+    while y < y2:
+        end_y = min(y + dash_length, y2)
+        draw.line([(x2, y), (x2, end_y)], fill=color, width=width)
+        y += dash_length * 2
+
+
+def visualize_ghost_boxes(
+    ghost_crops_dir: Path,
+    output_path: Path,
+) -> None:
+    """Create two-row visualization: top=original crops, bottom=ghost box crops.
+    
+    Shows the actual cropped regions side-by-side:
+    - Top row: Crops of original bounding boxes (showing real objects)
+    - Bottom row: Crops of ghost boxes (showing misaligned regions)
+    
+    Args:
+        ghost_crops_dir: Directory containing ghost box crops and metadata
+        output_path: Where to save the visualization
+    """
+    # Load ghost box metadata
+    metadata_files = list(ghost_crops_dir.glob('ghost_metadata_*.json'))
+    if not metadata_files:
+        _LOGGER.error("No ghost metadata found in %s", ghost_crops_dir)
+        return
+    
+    metadata_path = max(metadata_files, key=lambda p: p.stat().st_mtime)
+    with open(metadata_path) as f:
+        ghost_metadata = json.load(f)
+    
+    if not ghost_metadata:
+        _LOGGER.error("Ghost metadata is empty")
+        return
+    
+    # Load fonts
+    try:
+        font_title = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 24)
+        font_label = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 18)
+        font_small = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 14)
+    except (OSError, IOError):
+        font_title = ImageFont.load_default()
+        font_label = font_title
+        font_small = font_title
+    
+    # Standard cell size
+    cell_width = 300
+    cell_height = 300
+    text_height = 80
+    border_width = 6
+    
+    # Colors
+    original_color = (40, 167, 69)  # Green for original
+    ghost_color = (220, 53, 69)     # Red for ghost boxes
+    
+    # Process each ghost sample
+    top_cells = []
+    bottom_cells = []
+    
+    for i, item in enumerate(ghost_metadata):
+        # Load the ghost crop image from disk (already saved)
+        filename = item['filename']
+        ghost_crop_path = ghost_crops_dir / filename
+        ghost_img = Image.open(ghost_crop_path)
+        ghost_crop = np.array(ghost_img)
+        
+        # Get original bbox and crop from the full image
+        bbox_2d_original = tuple(item['bbox_2d_original'])
+        
+        # Need to load the full image to get original crop
+        from .data_prep import NuScenesDataLoader
+        data_root = ghost_crops_dir.parent.parent / "v1.0-mini"
+        if i == 0:  # Only load once
+            loader = NuScenesDataLoader(data_root=str(data_root))
+        
+        sample_token = item['sample_token']
+        camera_name = item['camera_name']
+        img_path = loader.get_camera_image_path(sample_token, camera_name)
+        full_img = Image.open(img_path)
+        img_array = np.array(full_img)
+        
+        # Crop original bbox region
+        x1, y1, x2, y2 = bbox_2d_original
+        original_crop = img_array[y1:y2, x1:x2]
+        
+        # Get ghost bbox for size info
+        ghost_bbox = tuple(item['bbox_2d'])
+        shift_type = item['shift_type']
+        original_gt_class = item['original_gt_class']
+        
+        # Create TOP cell (original)
+        top_cell = Image.new('RGB', (cell_width, cell_height + text_height), 'white')
+        draw_top = ImageDraw.Draw(top_cell)
+        
+        # Resize and paste original crop
+        orig_img = Image.fromarray(original_crop)
+        orig_img.thumbnail((cell_width - 2*border_width, cell_height - 2*border_width), Image.Resampling.LANCZOS)
+        
+        # Background and border
+        draw_top.rectangle([0, 0, cell_width-1, cell_height-1], fill=(240, 255, 240))
+        draw_top.rectangle([0, 0, cell_width-1, cell_height-1], outline=original_color, width=border_width)
+        
+        # Center image
+        img_x = (cell_width - orig_img.width) // 2
+        img_y = (cell_height - orig_img.height) // 2
+        top_cell.paste(orig_img, (img_x, img_y))
+        
+        # Text below
+        y = cell_height + 10
+        draw_top.text((10, y), f"#{i+1} ORIGINAL", fill=original_color, font=font_label)
+        y += 22
+        draw_top.text((10, y), f"Class: {original_gt_class}", fill=(60, 60, 60), font=font_small)
+        y += 18
+        draw_top.text((10, y), f"Size: {x2-x1}×{y2-y1}px", fill=(100, 100, 100), font=font_small)
+        
+        top_cells.append(top_cell)
+        
+        # Create BOTTOM cell (ghost)
+        bottom_cell = Image.new('RGB', (cell_width, cell_height + text_height), 'white')
+        draw_bottom = ImageDraw.Draw(bottom_cell)
+        
+        # Resize and paste ghost crop
+        ghost_img_pil = Image.fromarray(ghost_crop)
+        ghost_img_pil.thumbnail((cell_width - 2*border_width, cell_height - 2*border_width), Image.Resampling.LANCZOS)
+        
+        # Background and border
+        draw_bottom.rectangle([0, 0, cell_width-1, cell_height-1], fill=(255, 240, 240))
+        draw_bottom.rectangle([0, 0, cell_width-1, cell_height-1], outline=ghost_color, width=border_width)
+        
+        # Center image
+        img_x = (cell_width - ghost_img_pil.width) // 2
+        img_y = (cell_height - ghost_img_pil.height) // 2
+        bottom_cell.paste(ghost_img_pil, (img_x, img_y))
+        
+        # Text below
+        y = cell_height + 10
+        draw_bottom.text((10, y), f"#{i+1} GHOST", fill=ghost_color, font=font_label)
+        y += 22
+        draw_bottom.text((10, y), f"Shift: {shift_type}", fill=(60, 60, 60), font=font_small)
+        y += 18
+        x1_g, y1_g, x2_g, y2_g = ghost_bbox
+        draw_bottom.text((10, y), f"Size: {x2_g-x1_g}×{y2_g-y1_g}px", fill=(100, 100, 100), font=font_small)
+        
+        bottom_cells.append(bottom_cell)
+    
+    if not top_cells:
+        _LOGGER.error("No valid ghost samples to visualize")
+        return
+    
+    # Create two-row grid
+    padding = 20
+    title_height = 50
+    
+    num_cols = len(top_cells)
+    cell_total_height = cell_height + text_height
+    grid_width = num_cols * cell_width + (num_cols + 1) * padding
+    grid_height = title_height + cell_total_height + padding + title_height + cell_total_height + padding * 2
+    
+    grid = Image.new('RGB', (grid_width, grid_height), color=(250, 250, 250))
+    draw_grid = ImageDraw.Draw(grid)
+    
+    # Title for top row
+    title_top = 'TOP ROW: Original Crops (Correct Labels) - Green'
+    text_bbox = draw_grid.textbbox((0, 0), title_top, font=font_title)
+    text_x = (grid_width - (text_bbox[2] - text_bbox[0])) // 2
+    draw_grid.text((text_x, padding), title_top, fill='black', font=font_title)
+    
+    # Paste top row
+    y_top = padding + title_height
+    for i, cell in enumerate(top_cells):
+        x = padding + i * (cell_width + padding)
+        grid.paste(cell, (x, y_top))
+    
+    # Title for bottom row
+    title_bottom = 'BOTTOM ROW: Ghost Box Crops (Misaligned) - Red'
+    y_title_bottom = y_top + cell_total_height + padding
+    text_bbox = draw_grid.textbbox((0, 0), title_bottom, font=font_title)
+    text_x = (grid_width - (text_bbox[2] - text_bbox[0])) // 2
+    draw_grid.text((text_x, y_title_bottom), title_bottom, fill='black', font=font_title)
+    
+    # Paste bottom row
+    y_bottom = y_title_bottom + title_height
+    for i, cell in enumerate(bottom_cells):
+        x = padding + i * (cell_width + padding)
+        grid.paste(cell, (x, y_bottom))
+    
+    # Save
+    grid.save(output_path, quality=95)
+    _LOGGER.info("Saved ghost box crop visualization to %s", output_path)
+
+
 def main():
     """Main entry point."""
     import argparse
@@ -955,9 +1181,9 @@ def main():
     )
     parser.add_argument(
         "--mode",
-        choices=["input", "vlm-analysis", "side-by-side", "two-row", "both"],
+        choices=["input", "vlm-analysis", "side-by-side", "two-row", "both", "visualize-ghost"],
         default="both",
-        help="Visualization mode: 'input', 'vlm-analysis', 'side-by-side', 'two-row' (top=inputs, bottom=outputs), 'both'",
+        help="Visualization mode: 'input', 'vlm-analysis', 'side-by-side', 'two-row' (top=inputs, bottom=outputs), 'both', 'visualize-ghost' (ghost box comparison)",
     )
     parser.add_argument(
         "--results-json",
@@ -976,6 +1202,24 @@ def main():
         type=int,
         default=350,
         help="Image panel size in side-by-side mode (default: 350)",
+    )
+    parser.add_argument(
+        "--ghost-crops-dir",
+        type=Path,
+        default=None,
+        help="Directory containing ghost box crops (for visualize-ghost mode)",
+    )
+    parser.add_argument(
+        "--full-image",
+        type=Path,
+        default=None,
+        help="Path to full original image (for visualize-ghost mode)",
+    )
+    parser.add_argument(
+        "--original-bbox",
+        type=str,
+        default=None,
+        help="Original bounding box as 'x1,y1,x2,y2' (for visualize-ghost mode)",
     )
     args = parser.parse_args()
     
@@ -1051,6 +1295,24 @@ def main():
         print(f"\nTwo-row comparison saved:")
         for path in output_paths:
             print(f"  {path}")
+    
+    if args.mode == "visualize-ghost":
+        # Create ghost box comparison visualization
+        if args.ghost_crops_dir is None:
+            args.ghost_crops_dir = args.crops_dir.parent / "ghost_crops"
+        
+        if not args.ghost_crops_dir.exists():
+            print(f"Error: Ghost crops directory not found at {args.ghost_crops_dir}")
+            return
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = args.output_dir / f"ghost_comparison_{timestamp}.png"
+        
+        visualize_ghost_boxes(
+            args.ghost_crops_dir,
+            output_path,
+        )
+        print(f"\nGhost box visualization saved to: {output_path}")
     
     print(f"\nVisualization complete!")
     print(f"  Output directory: {args.output_dir}")

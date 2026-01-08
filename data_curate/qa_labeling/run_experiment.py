@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""Run semantic class disambiguation experiment.
+"""Run VLM-powered labeling QA experiments.
 
-This script runs Experiment 1 from the QA design doc:
-- Load nuScenes mini VRU annotations
-- Inject synthetic labeling errors
-- Run VLM-based classification with self-consistency voting
-- Evaluate and report results
+This script supports multiple experiments:
+- Experiment 1: Semantic class disambiguation
+- Experiment 2: Ghost box detection (false positives)
 
 Usage:
     python -m qa_labeling.run_experiment --help
-    python -m qa_labeling.run_experiment --max-samples 50 --output-dir results/
+    python -m qa_labeling.run_experiment --experiment semantic --max-samples 50
+    python -m qa_labeling.run_experiment --experiment ghost --max-samples 10
 """
 
 import argparse
@@ -27,11 +26,222 @@ logging.basicConfig(
 _LOGGER = logging.getLogger(__name__)
 
 
+def create_ghost_box_visualization(
+    ghost_samples,
+    results,
+    output_dir: Path,
+) -> Path:
+    """Create two-row visualization: top=ghost crops, bottom=VLM analysis.
+    
+    Args:
+        ghost_samples: List of GhostBoxSample objects
+        results: List of dicts with 'ghost_sample' and 'vlm_result'
+        output_dir: Directory to save visualization
+        
+    Returns:
+        Path to saved visualization
+    """
+    from PIL import Image as PILImage, ImageDraw, ImageFont
+    from datetime import datetime
+    
+    # Load fonts
+    try:
+        font_title = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 24)
+        font_label = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 20)
+        font_small = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 16)
+    except (OSError, IOError):
+        font_title = ImageFont.load_default()
+        font_label = font_title
+        font_small = font_title
+    
+    # Cell dimensions
+    cell_width = 350
+    cell_height = 350
+    text_height = 150  # More space for VLM analysis text
+    padding = 20
+    title_height = 60
+    
+    # Colors
+    color_yes = (220, 53, 69)      # Red for YES (incorrect - ghost should be empty)
+    color_no = (40, 167, 69)        # Green for NO (correct - detected as empty)
+    color_uncertain = (255, 193, 7) # Yellow for UNCERTAIN (needs review)
+    
+    num_samples = len(results)
+    
+    # Create top row cells (ghost box crops)
+    top_cells = []
+    for i, item in enumerate(results):
+        ghost = item["ghost_sample"]
+        vlm_result = item["vlm_result"]
+        
+        # Create cell
+        cell = PILImage.new('RGB', (cell_width, cell_height + text_height), 'white')
+        draw = ImageDraw.Draw(cell)
+        
+        # Resize and paste crop
+        crop_img = PILImage.fromarray(ghost.roi_image)
+        crop_img.thumbnail((cell_width - 20, cell_height - 20), PILImage.Resampling.LANCZOS)
+        
+        # Background
+        draw.rectangle([0, 0, cell_width-1, cell_height-1], fill=(245, 245, 245))
+        draw.rectangle([0, 0, cell_width-1, cell_height-1], outline=(150, 150, 150), width=3)
+        
+        # Center crop
+        img_x = (cell_width - crop_img.width) // 2
+        img_y = (cell_height - crop_img.height) // 2
+        cell.paste(crop_img, (img_x, img_y))
+        
+        # Text below
+        y = cell_height + 10
+        draw.text((10, y), f"Ghost Box #{i+1}", fill=(60, 60, 60), font=font_label)
+        y += 28
+        draw.text((10, y), f"Shift: {ghost.shift_type}", fill=(100, 100, 100), font=font_small)
+        y += 22
+        draw.text((10, y), f"Original: {ghost.original_gt_class}", fill=(100, 100, 100), font=font_small)
+        y += 22
+        draw.text((10, y), "(Expected: NO or UNCERTAIN)", fill=(120, 120, 120), font=font_small)
+        
+        top_cells.append(cell)
+    
+    # Create bottom row cells (VLM analysis)
+    bottom_cells = []
+    for i, item in enumerate(results):
+        ghost = item["ghost_sample"]
+        vlm_result = item["vlm_result"]
+        
+        # Determine color based on VLM result
+        if vlm_result.exists == "NO":
+            border_color = color_no
+            result_text = "✓ CORRECT"
+            triage_label = "EMPTY"
+        elif vlm_result.exists == "UNCERTAIN":
+            border_color = color_uncertain
+            result_text = "⚠ REVIEW"
+            triage_label = "UNCERTAIN"
+        else:  # YES
+            border_color = color_yes
+            result_text = "✗ INCORRECT"
+            triage_label = f"CONTAINS {vlm_result.object_type or 'OBJECT'}"
+        
+        # Create cell
+        cell = PILImage.new('RGB', (cell_width, cell_height + text_height), 'white')
+        draw = ImageDraw.Draw(cell)
+        
+        # Background with result color
+        if vlm_result.exists == "NO":
+            bg_color = (240, 255, 240)  # Light green
+        elif vlm_result.exists == "UNCERTAIN":
+            bg_color = (255, 250, 230)  # Light yellow
+        else:
+            bg_color = (255, 240, 240)  # Light red
+        
+        draw.rectangle([0, 0, cell_width-1, cell_height-1], fill=bg_color)
+        draw.rectangle([0, 0, cell_width-1, cell_height-1], outline=border_color, width=6)
+        
+        # VLM analysis text
+        y = 30
+        draw.text((cell_width//2, y), result_text, fill=border_color, font=font_title, anchor="mm")
+        
+        y = 90
+        draw.text((cell_width//2, y), "VLM Triage:", fill=(60, 60, 60), font=font_label, anchor="mm")
+        y += 35
+        draw.text((cell_width//2, y), triage_label, fill=border_color, font=font_title, anchor="mm")
+        
+        y += 50
+        draw.text((cell_width//2, y), f"Agreement: {vlm_result.agreement}/3", fill=(100, 100, 100), font=font_small, anchor="mm")
+        
+        y += 25
+        draw.text((cell_width//2, y), f"Decision: {vlm_result.decision}", fill=(100, 100, 100), font=font_small, anchor="mm")
+        
+        # Add evidence if available
+        if vlm_result.evidence:
+            y += 30
+            draw.text((10, y), "Evidence:", fill=(80, 80, 80), font=font_small)
+            y += 18
+            for evidence_item in vlm_result.evidence[:3]:  # Show up to 3 evidence items
+                # Wrap long text - show more characters
+                if len(evidence_item) > 50:
+                    # Split into two lines if needed
+                    words = evidence_item.split()
+                    line1 = []
+                    line2 = []
+                    current_line = line1
+                    char_count = 0
+                    for word in words:
+                        if char_count + len(word) < 45 and current_line == line1:
+                            line1.append(word)
+                            char_count += len(word) + 1
+                        else:
+                            line2.append(word)
+                    
+                    if line1:
+                        draw.text((10, y), f"• {' '.join(line1)}", fill=(100, 100, 100), font=font_small)
+                        y += 16
+                    if line2:
+                        text2 = ' '.join(line2)
+                        if len(text2) > 48:
+                            text2 = text2[:45] + "..."
+                        draw.text((14, y), text2, fill=(100, 100, 100), font=font_small)
+                        y += 16
+                else:
+                    draw.text((10, y), f"• {evidence_item}", fill=(100, 100, 100), font=font_small)
+                    y += 18
+        
+        bottom_cells.append(cell)
+    
+    # Create final grid image
+    grid_width = num_samples * cell_width + (num_samples + 1) * padding
+    grid_height = title_height + (cell_height + text_height) + padding + title_height + (cell_height + text_height) + padding * 2
+    
+    grid = PILImage.new('RGB', (grid_width, grid_height), color=(250, 250, 250))
+    draw_grid = ImageDraw.Draw(grid)
+    
+    # Title for top row
+    title_top = 'Ghost Box Crops (Shifted/Misaligned Bounding Boxes)'
+    text_bbox = draw_grid.textbbox((0, 0), title_top, font=font_title)
+    text_x = (grid_width - (text_bbox[2] - text_bbox[0])) // 2
+    draw_grid.text((text_x, padding + 10), title_top, fill='black', font=font_title)
+    
+    # Paste top row
+    y_top = padding + title_height
+    for i, cell in enumerate(top_cells):
+        x = padding + i * (cell_width + padding)
+        grid.paste(cell, (x, y_top))
+    
+    # Title for bottom row
+    title_bottom = 'VLM Analysis Results (Ghost Box Detection)'
+    y_title_bottom = y_top + cell_height + text_height + padding
+    text_bbox = draw_grid.textbbox((0, 0), title_bottom, font=font_title)
+    text_x = (grid_width - (text_bbox[2] - text_bbox[0])) // 2
+    draw_grid.text((text_x, y_title_bottom + 10), title_bottom, fill='black', font=font_title)
+    
+    # Paste bottom row
+    y_bottom = y_title_bottom + title_height
+    for i, cell in enumerate(bottom_cells):
+        x = padding + i * (cell_width + padding)
+        grid.paste(cell, (x, y_bottom))
+    
+    # Save
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_path = output_dir / f"ghost_analysis_{timestamp}.png"
+    grid.save(output_path, quality=95)
+    
+    return output_path
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Run VLM semantic class disambiguation experiment",
+        description="Run VLM-powered labeling QA experiments",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    
+    parser.add_argument(
+        "--experiment",
+        type=str,
+        default="semantic",
+        choices=["semantic", "ghost"],
+        help="Which experiment to run (semantic=Exp1, ghost=Exp2)",
     )
     
     parser.add_argument(
@@ -493,6 +703,268 @@ def run_experiment(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_ghost_box_experiment(args: argparse.Namespace) -> int:
+    """Run the ghost box detection experiment.
+    
+    Creates synthetic ghost boxes by shifting real annotations,
+    then evaluates whether VLM correctly identifies empty regions.
+    
+    Args:
+        args: Parsed command line arguments
+        
+    Returns:
+        Exit code (0 for success)
+    """
+    from .data_prep import (
+        NuScenesDataLoader,
+        prepare_ghost_box_samples,
+        GhostBoxSample,
+    )
+    from .vlm_judge import SemanticQAJudge
+    
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+    
+    # Validate data path
+    if not args.data_root.exists():
+        _LOGGER.error("Data root does not exist: %s", args.data_root)
+        return 1
+    
+    # Create output directory
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    crops_dir = args.output_dir / "ghost_crops"
+    crops_dir.mkdir(exist_ok=True)
+    
+    _LOGGER.info("=" * 60)
+    _LOGGER.info("GHOST BOX DETECTION EXPERIMENT")
+    _LOGGER.info("=" * 60)
+    _LOGGER.info("Data root: %s", args.data_root)
+    _LOGGER.info("Output dir: %s", args.output_dir)
+    _LOGGER.info("Max samples: %d", args.max_samples)
+    _LOGGER.info("Model: %s", args.model_path)
+    
+    import json
+    from PIL import Image as PILImage
+    from datetime import datetime
+    import numpy as np
+    
+    # Check if we should use existing crops
+    if args.use_existing_crops:
+        _LOGGER.info("")
+        _LOGGER.info("Step 1: Loading existing ghost box crops...")
+        
+        # Find the most recent metadata file
+        metadata_files = list(crops_dir.glob('ghost_metadata_*.json'))
+        if not metadata_files:
+            _LOGGER.error("No ghost metadata found in %s", crops_dir)
+            _LOGGER.error("Run without --use-existing-crops first to generate crops")
+            return 1
+        
+        metadata_path = max(metadata_files, key=lambda p: p.stat().st_mtime)
+        _LOGGER.info("Loading metadata from: %s", metadata_path)
+        
+        with open(metadata_path) as f:
+            metadata = json.load(f)
+        
+        # Load crops into GhostBoxSample objects
+        ghost_samples = []
+        for item in metadata:
+            crop_path = crops_dir / item['filename']
+            if not crop_path.exists():
+                _LOGGER.error("Crop file not found: %s", crop_path)
+                continue
+            
+            roi_image = np.array(PILImage.open(crop_path))
+            
+            ghost_samples.append(GhostBoxSample(
+                original_annotation_token=item['original_annotation_token'],
+                sample_token=item['sample_token'],
+                camera_name=item['camera_name'],
+                image_path=Path(item.get('image_path', '')),
+                roi_image=roi_image,
+                bbox_2d=tuple(item['bbox_2d']),
+                bbox_2d_original=tuple(item['bbox_2d_original']),
+                shift_type=item['shift_type'],
+                shift_vector=tuple(item['shift_vector']),
+                original_gt_class=item['original_gt_class'],
+                distance=item.get('distance', 0.0),
+            ))
+        
+        _LOGGER.info("Loaded %d existing ghost box crops", len(ghost_samples))
+        
+    else:
+        # Generate new crops
+        # Step 1: Load nuScenes data
+        _LOGGER.info("")
+        _LOGGER.info("Step 1: Loading nuScenes data...")
+        loader = NuScenesDataLoader(data_root=args.data_root)
+        
+        # Step 2: Prepare ghost box samples
+        _LOGGER.info("")
+        _LOGGER.info("Step 2: Preparing ghost box samples (shifting real annotations)...")
+        ghost_samples = prepare_ghost_box_samples(
+            loader=loader,
+            num_samples=args.max_samples,
+            min_visibility=args.min_visibility,
+            max_distance=args.max_distance,
+        )
+        
+        if not ghost_samples:
+            _LOGGER.error("No ghost box samples could be created!")
+            return 1
+        
+        _LOGGER.info("Created %d ghost box samples", len(ghost_samples))
+        
+        # Step 3: Save crops (always save for ghost boxes)
+        _LOGGER.info("")
+        _LOGGER.info("Step 3: Saving ghost box crops...")
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        metadata = []
+        
+        for i, ghost in enumerate(ghost_samples):
+            filename = f"ghost_crop_{i:04d}_{ghost.shift_type}.png"
+            crop_path = crops_dir / filename
+            
+            # Save crop image
+            PILImage.fromarray(ghost.roi_image).save(crop_path)
+            
+            # Save metadata
+            metadata.append({
+                "filename": filename,
+                "original_annotation_token": ghost.original_annotation_token,
+                "sample_token": ghost.sample_token,
+                "camera_name": ghost.camera_name,
+                "shift_type": ghost.shift_type,
+                "shift_vector": ghost.shift_vector,
+                "original_gt_class": ghost.original_gt_class,
+                "bbox_2d": ghost.bbox_2d,
+                "bbox_2d_original": ghost.bbox_2d_original,  # Original bbox before shift
+            })
+            
+            _LOGGER.info(
+                "Saved ghost crop %d/%d: %s (shift=%s, original=%s)",
+                i + 1, len(ghost_samples), filename,
+                ghost.shift_type, ghost.original_gt_class,
+            )
+        
+        # Save metadata
+        metadata_path = crops_dir / f"ghost_metadata_{timestamp}.json"
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f, indent=2)
+        _LOGGER.info("Saved metadata to: %s", metadata_path)
+    
+    # If dry-run, stop here
+    if args.dry_run:
+        _LOGGER.info("")
+        _LOGGER.info("=" * 60)
+        _LOGGER.info("DRY RUN COMPLETE (VLM inference skipped)")
+        _LOGGER.info("=" * 60)
+        _LOGGER.info("Ghost crops saved to: %s", crops_dir)
+        return 0
+    
+    # Step 4: Initialize VLM judge
+    _LOGGER.info("")
+    _LOGGER.info("Step 4: Loading VLM model...")
+    judge = SemanticQAJudge(
+        model_path=args.model_path,
+        num_samples=3,  # Self-consistency with 3 samples
+    )
+    
+    # Step 5: Run VLM inference on ghost boxes
+    _LOGGER.info("")
+    _LOGGER.info("Step 5: Running VLM ghost box detection...")
+    
+    results = []
+    for i, ghost in enumerate(ghost_samples):
+        _LOGGER.info("")
+        _LOGGER.info("Processing ghost box %d/%d (shift=%s)...", 
+                     i + 1, len(ghost_samples), ghost.shift_type)
+        
+        result = judge.judge_ghost_box(ghost.roi_image)
+        
+        results.append({
+            "ghost_sample": ghost,
+            "vlm_result": result,
+        })
+        
+        _LOGGER.info(
+            "Result: exists=%s (agreement: %d/3, decision: %s, type: %s)",
+            result.exists, result.agreement, result.decision, result.object_type,
+        )
+    
+    # Step 6: Evaluate results
+    _LOGGER.info("")
+    _LOGGER.info("Step 6: Evaluating results...")
+    
+    correct = 0
+    total = len(results)
+    review_count = 0
+    
+    for item in results:
+        vlm_result = item["vlm_result"]
+        
+        # Ghost boxes should be detected as NO or UNCERTAIN
+        if vlm_result.exists == "NO":
+            correct += 1
+        elif vlm_result.exists == "UNCERTAIN":
+            review_count += 1
+            # Count UNCERTAIN as partially correct
+            correct += 0.5
+    
+    accuracy = (correct / total) * 100 if total > 0 else 0
+    review_rate = (review_count / total) * 100 if total > 0 else 0
+    
+    _LOGGER.info("")
+    _LOGGER.info("=" * 60)
+    _LOGGER.info("GHOST BOX DETECTION RESULTS")
+    _LOGGER.info("=" * 60)
+    _LOGGER.info("Total ghost boxes: %d", total)
+    _LOGGER.info("Correctly detected as empty (NO): %d", int(correct))
+    _LOGGER.info("Accuracy: %.1f%%", accuracy)
+    _LOGGER.info("Review rate (UNCERTAIN): %.1f%%", review_rate)
+    
+    # Step 7: Save results
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    results_path = args.output_dir / f"ghost_results_{timestamp}.json"
+    with open(results_path, "w") as f:
+        results_data = []
+        for item in results:
+            ghost = item["ghost_sample"]
+            vlm_result = item["vlm_result"]
+            results_data.append({
+                "shift_type": ghost.shift_type,
+                "original_class": ghost.original_gt_class,
+                "vlm_exists": vlm_result.exists,
+                "vlm_agreement": vlm_result.agreement,
+                "vlm_decision": vlm_result.decision,
+                "vlm_type": vlm_result.object_type,
+                "vlm_evidence": vlm_result.evidence,
+            })
+        json.dump({
+            "accuracy": accuracy,
+            "review_rate": review_rate,
+            "total_samples": total,
+            "results": results_data,
+        }, f, indent=2)
+    
+    _LOGGER.info("Results saved to: %s", results_path)
+    
+    # Step 8: Create visualization
+    _LOGGER.info("")
+    _LOGGER.info("Step 8: Creating visualization...")
+    
+    viz_path = create_ghost_box_visualization(
+        ghost_samples=ghost_samples,
+        results=results,
+        output_dir=args.output_dir,
+    )
+    _LOGGER.info("Visualization saved to: %s", viz_path)
+    
+    return 0
+
+
 def main() -> int:
     """Main entry point."""
     args = parse_args()
@@ -501,7 +973,11 @@ def main() -> int:
     if args.single_image is not None:
         return run_single_image_inference(args)
     
-    return run_experiment(args)
+    # Route to appropriate experiment
+    if args.experiment == "ghost":
+        return run_ghost_box_experiment(args)
+    else:
+        return run_experiment(args)
 
 
 if __name__ == "__main__":

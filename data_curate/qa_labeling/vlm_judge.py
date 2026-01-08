@@ -20,6 +20,7 @@ from .config import (
     GENERATION_CONFIG,
     VISUAL_ANCHOR_PREFIX,
     TWO_VIEW_PREFIX,
+    GHOST_BOX_PROMPT,
     get_decision,
 )
 
@@ -262,6 +263,35 @@ class SelfConsistencyResult:
     
     # Evidence from the majority prediction
     evidence: List[str]
+    
+    # All raw responses for debugging
+    raw_responses: List[str] = field(default_factory=list)
+
+
+@dataclass
+class GhostBoxResult:
+    """Result from ghost box detection."""
+    
+    # Individual sample predictions
+    samples: List[str]  # List of "YES", "NO", "UNCERTAIN"
+    
+    # Majority vote result
+    exists: str  # "YES", "NO", or "UNCERTAIN"
+    
+    # Agreement count
+    agreement: int
+    
+    # Decision based on agreement
+    decision: str  # "ACCEPT" (confident) or "REVIEW" (uncertain)
+    
+    # Object type if exists=YES
+    object_type: Optional[str] = None
+    
+    # Evidence from the VLM responses
+    evidence: List[str] = field(default_factory=list)
+    
+    # Raw responses for debugging
+    raw_responses: List[str] = field(default_factory=list)
     
     # All raw responses for debugging
     raw_responses: List[str] = field(default_factory=list)
@@ -542,4 +572,149 @@ class SemanticQAJudge:
             results.append(result)
         
         return results
+    
+    def judge_ghost_box(
+        self,
+        image: np.ndarray,
+    ) -> GhostBoxResult:
+        """Check if a region contains a real object (ghost box detection).
+        
+        Uses self-consistency voting to determine if the highlighted region
+        contains a real physical traffic participant or is empty/background.
+        
+        Args:
+            image: Input image (H, W, C) - should be a crop of the region to check
+            
+        Returns:
+            GhostBoxResult with exists decision
+        """
+        samples = []
+        object_types = []
+        evidence_list = []
+        raw_responses = []
+        
+        _LOGGER.info("Running ghost box detection (num_samples=%d)", self.num_samples)
+        
+        # Build messages
+        messages = build_semantic_qa_messages(image, GHOST_BOX_PROMPT)
+        
+        for i in range(self.num_samples):
+            # Run inference
+            with torch.no_grad():
+                inputs = self.processor.apply_chat_template(
+                    messages,
+                    tokenize=True,
+                    add_generation_prompt=True,
+                    return_dict=True,
+                    return_tensors="pt",
+                )
+                inputs = inputs.to(self.model.device)
+                
+                generated_ids = self.model.generate(
+                    **inputs,
+                    max_new_tokens=self.max_new_tokens,
+                    do_sample=self.do_sample,
+                    temperature=self.temperature,
+                    top_p=self.top_p,
+                )
+                
+                generated_ids_trimmed = [
+                    out_ids[len(in_ids):]
+                    for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+                ]
+                
+                output_text = self.processor.batch_decode(
+                    generated_ids_trimmed,
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=False,
+                )
+            
+            response = output_text[0].strip()
+            parsed = self._parse_ghost_box_response(response)
+            
+            samples.append(parsed["exists"])
+            object_types.append(parsed.get("type"))
+            evidence_list.append(parsed.get("evidence", []))
+            raw_responses.append(response)
+            
+            _LOGGER.debug("Ghost box sample %d: %s", i + 1, parsed["exists"])
+        
+        # Majority vote
+        counter = Counter(samples)
+        exists, agreement = counter.most_common(1)[0]
+        
+        # Get object type if exists=YES (take from majority)
+        object_type = None
+        if exists == "YES":
+            type_counter = Counter([t for t in object_types if t])
+            if type_counter:
+                object_type = type_counter.most_common(1)[0][0]
+        
+        # Get evidence from the majority prediction
+        evidence = []
+        for i, sample in enumerate(samples):
+            if sample == exists and evidence_list[i]:
+                evidence = evidence_list[i]
+                break
+        
+        # Decision: ACCEPT if 3/3 or 2/3, REVIEW if no consensus
+        if agreement >= 2:
+            decision = "ACCEPT"
+        else:
+            decision = "REVIEW"
+        
+        result = GhostBoxResult(
+            samples=samples,
+            exists=exists,
+            agreement=agreement,
+            decision=decision,
+            object_type=object_type,
+            evidence=evidence,
+            raw_responses=raw_responses,
+        )
+        
+        _LOGGER.info(
+            "Ghost box result: %s (agreement: %d/3, decision: %s, type: %s)",
+            exists, agreement, decision, object_type,
+        )
+        
+        return result
+    
+    def _parse_ghost_box_response(self, response: str) -> Dict[str, Any]:
+        """Parse ghost box VLM response.
+        
+        Args:
+            response: Raw text response from VLM
+            
+        Returns:
+            Dict with 'exists', 'type', 'evidence' fields
+        """
+        response = response.strip()
+        
+        # Handle markdown code blocks
+        if "```json" in response:
+            match = re.search(r"```json\s*(.*?)\s*```", response, re.DOTALL)
+            if match:
+                response = match.group(1)
+        elif "```" in response:
+            match = re.search(r"```\s*(.*?)\s*```", response, re.DOTALL)
+            if match:
+                response = match.group(1)
+        
+        try:
+            parsed = json.loads(response)
+            return {
+                "exists": parsed.get("exists", "UNCERTAIN"),
+                "type": parsed.get("type"),
+                "evidence": parsed.get("evidence", []),
+            }
+        except json.JSONDecodeError:
+            # Try to extract exists from text
+            response_upper = response.upper()
+            if "EXISTS" in response_upper and "YES" in response_upper:
+                return {"exists": "YES", "type": None, "evidence": [response]}
+            elif "EXISTS" in response_upper and "NO" in response_upper:
+                return {"exists": "NO", "type": None, "evidence": [response]}
+            else:
+                return {"exists": "UNCERTAIN", "type": None, "evidence": [response]}
 

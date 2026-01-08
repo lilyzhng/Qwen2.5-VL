@@ -147,6 +147,38 @@ CAMERA_NAMES: Final[List[str]] = [
 ]
 
 # =============================================================================
+# Ghost Box Detection (Experiment 2)
+# =============================================================================
+
+GHOST_BOX_PROMPT: Final[str] = """You are checking whether a bounding box is correctly aligned with an object.
+
+Question: Does this bounding box contain a complete, properly framed traffic participant?
+
+Answer with JSON:
+- "exists": ONE of {YES, NO, UNCERTAIN}
+- "type": if YES, specify the object type (VEHICLE, PEDESTRIAN, CYCLIST, etc.)
+- "evidence": 2-3 visual features supporting your choice
+
+Guidelines:
+- YES: The box clearly contains a complete, well-framed object
+- NO: The box is empty or shows only background (road, sky, buildings)
+- UNCERTAIN: The box is MOSTLY empty but shows partial object parts, OR you cannot confidently determine - FLAG FOR REVIEW
+- Do NOT hallucinate objects
+
+Examples:
+{{"exists": "YES", "type": "VEHICLE", "evidence": ["complete car visible", "wheels and body clearly shown"]}}
+{{"exists": "NO", "evidence": ["empty road surface", "no objects present"]}}
+{{"exists": "UNCERTAIN", "evidence": ["mostly sky and overpass", "small partial object at edge", "insufficient content for confident labeling"]}}"""
+
+# Ghost box shift strategies (in pixels in image space)
+GHOST_BOX_SHIFTS: Final[List[Dict[str, float]]] = [
+    {"dx": 0, "dy": -400, "name": "shift_up"},     # Sample 1: Shift 400px up
+    {"dx": 0, "dy": 200, "name": "shift_down"},    # Sample 2: Shift 200px down
+    {"dx": 0, "dy": -400, "name": "shift_up"},     # Sample 3: Shift 400px up
+    {"dx": 350, "dy": 0, "name": "shift_right"},   # Sample 4+: Shift 350px right (if needed)
+]
+
+# =============================================================================
 # Evaluation Configuration
 # =============================================================================
 

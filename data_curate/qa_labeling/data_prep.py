@@ -24,7 +24,7 @@ from nuscenes.nuscenes import NuScenes
 from nuscenes.utils.data_classes import Box
 from nuscenes.utils.geometry_utils import box_in_image, view_points
 
-from .config import NUSCENES_TO_QA_CLASS, VRU_CLASSES
+from .config import NUSCENES_TO_QA_CLASS, VRU_CLASSES, GHOST_BOX_SHIFTS
 
 _LOGGER: Final = logging.getLogger(__name__)
 
@@ -59,6 +59,25 @@ class ROISample:
     category_name: str = ""  # Original nuScenes category (e.g., human.pedestrian.adult)
     injected_class: Optional[str] = None  # Synthetic error class (if any)
     distance: float = 0.0  # Distance from ego
+    is_ghost: bool = False  # True if this is a synthetic ghost box (empty region)
+    ghost_shift_type: Optional[str] = None  # Type of shift applied (e.g., "shift_right")
+
+
+@dataclass
+class GhostBoxSample:
+    """A ghost box sample - a shifted box that should show empty/background."""
+    
+    original_annotation_token: str
+    sample_token: str
+    camera_name: str
+    image_path: Path
+    roi_image: Optional[np.ndarray] = None
+    bbox_2d: Optional[Tuple[int, int, int, int]] = None  # Shifted bbox
+    bbox_2d_original: Optional[Tuple[int, int, int, int]] = None  # Original bbox before shift
+    shift_type: str = ""  # e.g., "shift_right", "shift_left"
+    shift_vector: Tuple[float, float, float] = (0.0, 0.0, 0.0)  # (dx, dy, dz) in pixels
+    original_gt_class: str = ""  # What the real object was
+    distance: float = 0.0
 
 
 @dataclass 
@@ -814,3 +833,222 @@ def _prepare_balanced_samples(
     
     _LOGGER.info("Prepared %d balanced ROI samples", len(balanced_samples))
     return balanced_samples
+
+
+def create_ghost_box_from_annotation(
+    loader: NuScenesDataLoader,
+    annotation_token: str,
+    sample_token: str,
+    camera_name: str,
+    shift_config: Dict[str, float],
+) -> Optional[GhostBoxSample]:
+    """Create a ghost box by shifting an annotation's 2D bounding box in pixel space.
+    
+    Projects the 3D box to 2D once, then shifts the 2D coordinates directly.
+    This maintains the exact box size while changing location.
+    
+    Args:
+        loader: NuScenes data loader
+        annotation_token: Token of the annotation to shift
+        sample_token: Sample token
+        camera_name: Camera to project to
+        shift_config: Dict with 'dx', 'dy' (pixels) and 'name'
+        
+    Returns:
+        GhostBoxSample if successful, None if projection fails
+    """
+    # Get the annotation
+    ann_record = loader.nusc.get("sample_annotation", annotation_token)
+    
+    # Get the original 3D box
+    box = Box(
+        ann_record["translation"],
+        ann_record["size"],
+        Quaternion(ann_record["rotation"]),
+    )
+    
+    # Get camera data
+    sample = loader.nusc.get("sample", sample_token)
+    camera_token = sample["data"][camera_name]
+    
+    # Transform box to camera frame
+    sd = loader.nusc.get("sample_data", camera_token)
+    cs = loader.nusc.get("calibrated_sensor", sd["calibrated_sensor_token"])
+    ego_pose = loader.nusc.get("ego_pose", sd["ego_pose_token"])
+    
+    # Transform: global -> ego -> sensor
+    box.translate(-np.array(ego_pose["translation"]))
+    box.rotate(Quaternion(ego_pose["rotation"]).inverse)
+    box.translate(-np.array(cs["translation"]))
+    box.rotate(Quaternion(cs["rotation"]).inverse)
+    
+    # Get camera intrinsic
+    camera_intrinsic = loader.get_camera_intrinsic(sample_token, camera_name)
+    
+    # Check if box is in image
+    if not box_in_image(box, camera_intrinsic, (1600, 900)):
+        return None
+    
+    # Project original box to 2D ONCE
+    try:
+        original_bbox_2d = loader.project_box_to_image(box, camera_intrinsic)
+    except Exception as e:
+        _LOGGER.warning("Failed to project box: %s", e)
+        return None
+    
+    x1, y1, x2, y2 = original_bbox_2d
+    
+    # Apply pixel shift to the 2D bbox (keep same width/height)
+    dx_pixels = int(shift_config["dx"])
+    dy_pixels = int(shift_config["dy"])
+    
+    shifted_bbox_2d = (
+        x1 + dx_pixels,
+        y1 + dy_pixels,
+        x2 + dx_pixels,
+        y2 + dy_pixels,
+    )
+    
+    # Load image
+    image_path = loader.get_camera_image_path(sample_token, camera_name)
+    with Image.open(image_path) as img:
+        img_array = np.array(img)
+    
+    h, w = img_array.shape[:2]
+    xs1, ys1, xs2, ys2 = shifted_bbox_2d
+    
+    # Check if shifted box is still mostly in image bounds
+    if xs2 < 0 or xs1 > w or ys2 < 0 or ys1 > h:
+        # Completely out of bounds
+        return None
+    
+    # Clip to image bounds if partially out
+    xs1_clipped = max(0, xs1)
+    ys1_clipped = max(0, ys1)
+    xs2_clipped = min(w, xs2)
+    ys2_clipped = min(h, ys2)
+    
+    # Check if clipping removed too much of the box
+    original_width = xs2 - xs1
+    original_height = ys2 - ys1
+    clipped_width = xs2_clipped - xs1_clipped
+    clipped_height = ys2_clipped - ys1_clipped
+    
+    # If more than 50% is clipped, skip
+    if clipped_width < original_width * 0.5 or clipped_height < original_height * 0.5:
+        return None
+    
+    shifted_bbox_2d_clipped = (xs1_clipped, ys1_clipped, xs2_clipped, ys2_clipped)
+    
+    # Skip if too small after clipping
+    if (xs2_clipped - xs1_clipped) < 20 or (ys2_clipped - ys1_clipped) < 20:
+        return None
+    
+    # Crop ROI from the shifted location (NO PADDING - we want exact same size)
+    roi_image = img_array[ys1_clipped:ys2_clipped, xs1_clipped:xs2_clipped]
+    
+    if roi_image.shape[0] < 32 or roi_image.shape[1] < 32:
+        return None
+    
+    # Get original GT class
+    original_qa_class = NUSCENES_TO_QA_CLASS.get(ann_record["category_name"], "UNKNOWN")
+    
+    return GhostBoxSample(
+        original_annotation_token=annotation_token,
+        sample_token=sample_token,
+        camera_name=camera_name,
+        image_path=image_path,
+        roi_image=roi_image,
+        bbox_2d=shifted_bbox_2d_clipped,  # The shifted bbox (same size as original)
+        bbox_2d_original=original_bbox_2d,  # Store original for visualization
+        shift_type=shift_config["name"],
+        shift_vector=(dx_pixels, dy_pixels, 0),
+        original_gt_class=original_qa_class,
+        distance=0.0,
+    )
+
+
+def prepare_ghost_box_samples(
+    loader: NuScenesDataLoader,
+    num_samples: int = 10,
+    min_visibility: int = 2,
+    min_lidar_pts: int = 5,
+    max_distance: float = 60.0,
+    camera_name: str = "CAM_FRONT",
+) -> List[GhostBoxSample]:
+    """Prepare ghost box samples by shifting real annotations.
+    
+    For each sample, picks ONE random shift type to create a unique ghost box.
+    This simulates misaligned bounding boxes during labeling.
+    
+    Args:
+        loader: NuScenes data loader
+        num_samples: Number of ghost box samples to create
+        min_visibility: Minimum visibility for source annotations
+        min_lidar_pts: Minimum LiDAR points for source annotations
+        max_distance: Maximum distance for source annotations
+        camera_name: Which camera to use
+        
+    Returns:
+        List of ghost box samples
+    """
+    ghost_samples = []
+    attempts = 0
+    max_attempts = num_samples * 50  # Allow many attempts
+    
+    for sample_token in loader.get_all_sample_tokens():
+        if len(ghost_samples) >= num_samples:
+            break
+        if attempts >= max_attempts:
+            break
+        
+        # Get annotations for this sample
+        annotations = loader.get_annotations_for_sample(sample_token, camera_name)
+        
+        for ann in annotations:
+            if len(ghost_samples) >= num_samples:
+                break
+            if attempts >= max_attempts:
+                break
+            
+            # Filter by quality
+            if ann.visibility < min_visibility:
+                continue
+            if ann.num_lidar_pts < min_lidar_pts:
+                continue
+            if ann.distance > max_distance:
+                continue
+            
+            # Use shift types in order: shift_up, shift_down, shift_up, shift_down, ...
+            # This gives us predictable shifts for each sample
+            shift_index = len(ghost_samples) % len(GHOST_BOX_SHIFTS)
+            shift_config = GHOST_BOX_SHIFTS[shift_index]
+            
+            attempts += 1
+            
+            # Create ghost box
+            ghost_sample = create_ghost_box_from_annotation(
+                loader,
+                ann.token,
+                sample_token,
+                camera_name,
+                shift_config,
+            )
+            
+            if ghost_sample is not None:
+                ghost_samples.append(ghost_sample)
+                _LOGGER.info(
+                    "Created ghost box %d/%d (shift=%s, original_class=%s)",
+                    len(ghost_samples),
+                    num_samples,
+                    ghost_sample.shift_type,
+                    ghost_sample.original_gt_class,
+                )
+    
+    _LOGGER.info(
+        "Prepared %d ghost box samples (attempts=%d)",
+        len(ghost_samples),
+        attempts,
+    )
+    return ghost_samples
+
