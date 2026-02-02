@@ -443,7 +443,18 @@ python -m qa_labeling.run_experiment \
   --data-root data/v1.0-mini
 ```
 
-### 8.3 Visualization Examples
+### 8.3 SAM3 Lane Evaluation (Map-Based)
+
+Requires nuScenes mini with `maps/` available under `data/v1.0-mini`. This
+projects HD map lane dividers into CAM_FRONT and evaluates SAM3 masks.
+
+```bash
+python sam3_lane_eval.py \
+  --data-root data/v1.0-mini \
+  --output-dir data/sam3_results
+```
+
+### 8.4 Visualization Examples
 
 All visualizations include:
 - **Top row**: Original/ghost box crops
@@ -466,5 +477,7 @@ See files:
 ---
 
 **End of Report**
+
+
 
 

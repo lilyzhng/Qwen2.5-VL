@@ -843,36 +843,83 @@ def load_database_info(branch: str) -> DatabaseInfo:
     )
 
 
-def display_text_search(branch: str, top_k: int) -> None:
-    """Handle text search functionality."""
-    text_query = st.text_input(
-        "Text Query",
-        placeholder="pedestrians crossing street",
-        label_visibility="collapsed",
-    )
+def display_text_search(
+    branch: str,
+    top_k: int,
+    db_info: DatabaseInfo,
+    similarity_threshold_min: float,
+    similarity_threshold_max: float,
+    auto_search: bool = False,
+) -> str:
+    """Handle text search functionality.
 
-    if st.button("🔍 Search by Text", use_container_width=True):
+    Args:
+        branch: Database branch to query
+        top_k: Maximum number of results to return
+        similarity_threshold_min: Minimum similarity score (inclusive)
+        similarity_threshold_max: Maximum similarity score (inclusive)
+        auto_search: If True, automatically trigger search without button click
+
+    Returns:
+        The text query string.
+    """
+
+    initial_value = st.session_state.get("selected_query", "")
+    available_cameras = sorted(db_info.sensor_names_csv.split(", ") if db_info.sensor_names_csv else [])
+
+    # Create two columns for text prompt and camera on same row
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        text_query = st.text_input(
+            "Text Query",
+            value=initial_value,
+            placeholder="person walking right in front of the ego car",
+            label_visibility="collapsed",
+        )
+
+    with col2:
+        selected_camera = st.selectbox(
+            "Camera View",
+            available_cameras,
+            help="Select camera view - results will be from the same camera",
+            label_visibility="collapsed",
+            key="text_search_camera_view",
+        )
+
+    # Trigger search automatically if auto_search is True and we have a query
+    should_search = auto_search and text_query.strip() and "search_results" not in st.session_state
+
+    if st.button(":mag: Search by Text", use_container_width=True) or should_search:
+        if "selected_query" in st.session_state:
+            del st.session_state.selected_query
+
         if text_query.strip():
             with st.spinner("Searching..."):
                 try:
                     results = run_text_query(
-                        branch, text_query.strip(), top_k, MODEL_SIZE
+                        branch,
+                        text_query.strip(),
+                        top_k,
+                        MODEL_SIZE,
+                        selected_camera,
+                        similarity_threshold_min,
+                        similarity_threshold_max,
                     )
                     if results:
-                        st.success(f"Found {len(results)} results!")
                         st.session_state["search_results"] = results
                         st.session_state["search_type"] = "text"
-                        st.session_state["search_info"] = (
-                            f'Text: "{text_query.strip()}"'
-                        )
+                        st.session_state["search_info"] = f'Text: "{text_query.strip()}"'
                     else:
                         st.warning("No results returned.")
                 except Exception as e:
-                    message = f"❌ Search failed: {e}"
+                    message = f":x: Search failed: {e}"
                     st.error(message)
         else:
             st.warning("Please enter a search query")
 
+    return cast(str, text_query)
+    
 
 def display_video_search(
     branch: str, available_slice_ids: list[str], top_k: int
@@ -884,6 +931,7 @@ def display_video_search(
             available_slice_ids,
             help="Choose a slice from the database to find similar videos",
             label_visibility="collapsed",
+            key="video_search_slice_id",
         )
 
         if st.button("🎥 Search by Video", use_container_width=True):
@@ -1054,6 +1102,7 @@ def main() -> None:
             ["Image Only", "Video Only"],
             index=1,
             help="Choose how to display search results: Image Only shows static frames, Video Only shows video clips",
+            key="display_mode_selector",
         )
 
         deduplicate_results = st.checkbox(
